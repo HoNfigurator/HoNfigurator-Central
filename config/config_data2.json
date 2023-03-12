@@ -42,7 +42,7 @@
         "starting_voice_port" : 10060,
         "enable_proxy": false,
         "svr_login": "AUSFRANKHOST",
-        "svr_password": "",
+        "svr_password": " ",
         "svr_name": "T4NK",
         "svr_location": "NEWERTH"
     }
