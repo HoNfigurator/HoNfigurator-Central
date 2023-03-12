@@ -16,6 +16,7 @@ import re
 import cogs.data_handler as data_handler
 from launcher import GameServer
 import asyncio
+import fnmatch
 
 # processed_data_dict = dmgr.mData().returnDict()
 
@@ -23,8 +24,9 @@ class honCMD:
     """
         Only used for controlling HoN server instances
     """
-    def __init__(self,server):
-        self.server = server
+    def __init__(self,id):
+        self.id = id
+        self.status = {}
     async def start_server(self):
         if await self.get_running_server():
             return
@@ -33,14 +35,13 @@ class honCMD:
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
         if free_mem > 1000000000:
             #   Server instances write files to location dependent on USERPROFILE and APPDATA variables
-            os.environ["USERPROFILE"] = self.server.config.gbl['hon_data']['hon_home_directory']
-            os.environ["APPDATA"] = self.server.config.gbl['hon_data']['hon_home_directory']
+            os.environ["USERPROFILE"] = self.gbl_config['hon_data']['hon_home_directory']
+            os.environ["APPDATA"] = self.gbl_config['hon_data']['hon_home_directory']
 
             DETACHED_PROCESS = 0x00000008
-            params = ';'.join(' '.join((f"set {key}",str(val))) for (key,val) in self.server.config.local['params'].items())
-            cmdline_args = [self.server.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,f"-masterserver {self.server.config.local['params']['sv_masterName']}"]
+            params = ';'.join(' '.join((f"set {key}",str(val))) for (key,val) in self.local_config['params'].items())
+            cmdline_args = [self.local_config['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.gbl_config['hon_data']['master_server']]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
-            print(' '.join(cmdline_args))
     def stop_server(self):
         return
     def schedule_stop_server(self):
@@ -54,10 +55,10 @@ class honCMD:
         self.params = params
     def set_server_id(self,id):
         self.id = id
-    def set_server_config(self,data):
-        self.server_data = data
+    def set_local_config(self,data):
+        self.local_config = data
     def set_global_config(self,data):
-        self.gbl_data = data
+        self.gbl_config = data
     def set_runtime_variables(self):
         return
     def get_server_params(self):
@@ -66,15 +67,76 @@ class honCMD:
         return self.server_data
     def get_server_id(self):
         return self.id
+    def get_current_slave_log(self):
+        #   get list of files that matches pattern
+        pattern=f"Slave{self.id}_M*.clog"
+        files = []
+        for file in os.listdir(self.gbl_config['hon_data']['hon_logs_directory']):
+            if fnmatch.fnmatch(file, pattern):
+                files.append(os.path.join(self.gbl_config['hon_data']['hon_logs_directory'], file))
+        #   sort by modified time
+        files.sort(key=lambda x: os.path.getmtime(x))
+        if len(files) > 0:
+            match_file = os.path.basename(files[-1])
+            return match_file
+        else:
+            return False
     def get_current_match_time(self):
         return
-    def get_current_state(self):
-        return
+    def get_current_match_id(self):
+        try:
+            slave_log = self.get_current_slave_log
+            if not slave_log:
+                # TODO: check if this does what I want it to. Initalise the match check even tho there's no match files
+                # self.status.update({'initialised':True})
+                return False
+            matchID = re.findall(r'_(\w+)_', slave_log)
+            if len(matchID) > 0:
+                matchID = matchID[0]
+            else: raise(f"Unable to correctly parse the match ID from the slave log file: {slave_log}")
+
+            # hard_data = honCMD.compare_filesizes(self,match_file,"match")
+            # soft_data = os.stat(match_file).st_size # initial file size
+
+            # if 'initialised' not in self.status:
+            #     self.status.update({'initialised':True})
+            #     return True
+            # if 'match_id' in self.status:
+            #     if matchID != self.status['match_id']:
+            #         print("refreshing match ID")
+            #         return True
+            # else: self.status.update({'match_id':matchID})
+            return matchID
+        except Exception:
+            print(traceback.format_exc())
+        return False
+    def get_status_dict(self):
+        return self.status
+    def get_readiness(self):
+        self.get_current_match_id()
+        if Misc.check_port(self.local_config['params']['svr_proxyLocalVoicePort']):
+            return True
+        return False
+    async def get_state(self):
+        await self.get_running_server()
+        player_count = self.get_player_count()
+        state = ""
+        if player_count == -3:
+            return "offline"
+        elif player_count == -1:
+            return "starting"
+        elif player_count == 0:
+            if self.get_readiness():
+                return "idle"
+            else:
+                return "starting"
+        elif player_count > 0:
+            return "online"
     async def get_running_server(self):
         """
             Check if existing hon server is running.
         """
-        running_procs = Misc.get_proc(self.server.config.get_local_by_key('file_name'))
+        running_procs = Misc.get_proc(self.local_config['config']['file_name'])
         last_good_proc = None
 
         while len(running_procs) > 0:
@@ -83,11 +145,12 @@ class honCMD:
                 if player_count >= 0:
                     last_good_proc = running_procs.pop()
                 elif player_count < 0:
-                    if last_good_proc: proc.terminate()
+                    if not Misc.check_port(self.local_config['params']['svr_port']):
+                        proc.terminate()
 
         if last_good_proc:
             #   update the process information with the healthy instance PID. Healthy playercount is either -3 (off) or >= 0 (alive)
-            self.server.status.update({
+            self.status.update({
                 'now':f'{"idle" if player_count == 0 else "online" if player_count > 0 else "offline" if player_count < 0 else ""}',
                 'player_count':player_count,
                 '_pid':proc.pid,
@@ -102,13 +165,13 @@ class honCMD:
                 print(traceback.format_exc())
                 self.append_log_file(f"{traceback.format_exc()}","WARNING")
         else:
-            self.server.status.update({'now':'offline'})
+            self.status.update({'now':'offline'})
             return False
     def get_player_count(self,*pid):
-        arg1 = self.server.config.gbl['hon_data']['count_players_exe']
+        arg1 = self.gbl_config['hon_data']['count_players_exe']
         if len(pid) > 0:
             arg2 = str(pid[0])
-        else: arg2 = self.server.config.local["config"]["file_name"]
+        else: arg2 = self.local_config["config"]["file_name"]
         check = subprocess.Popen([arg1,arg2],stdout=subprocess.PIPE, text=True)
         i = int(check.stdout.read())
         check.terminate()
@@ -1857,3 +1920,11 @@ class Misc:
             if proc.name() == proc_name:
                 procs.append(proc)
         return procs
+    def check_port(port):
+        command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)
+        result = command.stdout.read()
+        result = result.decode()
+        if f"0.0.0.0:{port}" in result:
+            return True
+        else:
+            return False

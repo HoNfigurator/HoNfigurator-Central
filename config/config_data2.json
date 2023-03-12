@@ -3,19 +3,25 @@
         "token": "asdfasd",
         "admin_username": "frank"
     },
-    "application_data" :{
+    "application_data" : {
         "timers" : {
-            "heartbeat" : 1,
-            "ingame_check" : 5,
-            "lobby_check" : 5,
-            "health_checks" : {
-                "lag":300,
-                "general":120,
-                "public_ip":1800
+            "game_server": {
+                "health_checks": {
+                    "lag_healthcheck": 300,
+                    "general_healthcheck": 120
+                },
+                "heartbeat_frequency": 5,
+                "ingame_check": 5,
+                "lobby_check": 5,
+                "leftover_game": 180,
+                "replay_wait": 330
             },
-            "leftover_game" : 180,
-            "replay_wait" : 330,
-            "firewall_checK" : 1800
+            "manager": {
+                "health_checks" : {
+                    "public_ip_healthcheck": 1800
+                },
+                "heartbeat_frequency": 10
+            }
         },
         "log_file": "C:\\temp\\honfigurator.log"
     },
@@ -29,15 +35,15 @@
         "hon_install_directory": "C:\\Program Files\\Heroes of Newerth x64 - Kongor\\",
         "hon_home_directory": "C:\\Program Files\\HON_SERVER_INSTANCES",
         "count_players_exe": "C:\\Program Files\\Heroes of Newerth x64 - Kongor\\pingplayerconnected-DC.exe",
+        "master_server": "api.kongor.online",
         "server_total": 10,
         "server_name" : "T4NK",
         "starting_game_port" : 10000,
         "starting_voice_port" : 10060,
-        "enable_proxy": true,
-        "svr_login": "FrankDaT4nk",
-        "svr_password": "123456",
-        "sv_masterName": "api.kongor.online",
+        "enable_proxy": false,
+        "svr_login": "AUSFRANKHOST",
+        "svr_password": "",
         "svr_name": "T4NK",
-        "svr_location": "AU"
+        "svr_location": "NEWERTH"
     }
 }

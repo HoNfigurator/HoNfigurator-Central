@@ -52,7 +52,8 @@ def get_global_configuration():
     public_ip = Enrichment().get_public_ip()
     with open("C:\\Users\\honserver4\\Documents\\GitHub\\honfigurator-central\\config\\config_data2.json", "r") as jsonfile:
         gbl = json.load(jsonfile)
-        gbl.update({'svr_ip':public_ip})
+        gbl['hon_data']['svr_ip'] = public_ip
+        gbl['hon_data']['hon_logs_directory'] = f"{gbl['hon_data']['hon_home_directory']}\\Documents\\Heroes of Newerth x64\\game\\logs"
         return gbl
 
 global_config = get_global_configuration()
@@ -76,12 +77,6 @@ class ConfigManagement():
             try: return d[k]
             except: pass
         return None
-    def get_global_configuration(self):
-        public_ip = Enrichment().get_public_ip()
-        with open("C:\\Users\\honserver4\\Documents\\GitHub\\honfigurator-central\\config\\config_data2.json", "r") as jsonfile:
-            self.gbl = json.load(jsonfile)
-            self.gbl.update({'svr_ip':public_ip})
-            return self.gbl
     def get_local_configuration(self):
         self.local = ({
             'config' : {
@@ -92,7 +87,7 @@ class ConfigManagement():
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
                 'svr_password':self.get_global_by_key('svr_password'),
                 'svr_description':Enrichment().get_svr_description(),
-                'sv_masterName':f"{self.get_global_by_key('sv_masterName')}",
+                'sv_masterName':f"{self.get_global_by_key('svr_login')}:",
                 'svr_slave':self.id,
                 'svr_adminPassword':"",
                 'svr_name':f"{self.get_global_by_key('svr_name')} {self.id} 0",
@@ -123,7 +118,8 @@ class ConfigManagement():
                 'sv_remoteAdmins':'',
                 'sv_logcollection_highping_value':100,
                 'sv_logcollection_highping_reportclientnum':1,
-                'sv_logcollection_highping_interval':120000
+                'sv_logcollection_highping_interval':120000,
+                'host_affinity':self.id - 1
             },
             'name' : f'{self.get_global_by_key("server_name")}-{self.id}'
         })
