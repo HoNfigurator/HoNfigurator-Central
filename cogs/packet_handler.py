@@ -8,12 +8,15 @@ import aioconsole
 import logging
 import logging.handlers
 import sys,os
+import math
+from collections import OrderedDict
+import traceback
 
 # Get the path of the current script
 script_dir = os.path.dirname(os.path.abspath(__file__))
 
 # Define the logging directory (in this case, a subdirectory called 'logs')
-log_dir = os.path.join(script_dir, '..\\logs')
+log_dir = os.path.join(script_dir, '..', 'logs')
 
 # Create the logging directory if it doesn't already exist
 if not os.path.exists(log_dir):
@@ -21,80 +24,82 @@ if not os.path.exists(log_dir):
 
 # Set up logging to write to a file in the logging directory
 log_path = os.path.join(log_dir, 'server.log')
-logging.basicConfig(filename=log_path, level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %(message)s')
 
 # Set a maximum file size of 10MB for the log file
 max_file_size = 10 * 1024 * 1024  # 10MB in bytes
 file_handler = logging.handlers.RotatingFileHandler(log_path, maxBytes=max_file_size, backupCount=5)
-file_handler.setLevel(logging.DEBUG)
+file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
-logging.getLogger().addHandler(file_handler)
+
+# Create a logger with a specific name for this module
+logger = logging.getLogger("Server")
+logger.addHandler(file_handler)
+logger.setLevel(logging.DEBUG)
 
 def exception_handler(type, value, traceback):
-    logging.exception("Uncaught exception: ", exc_info=(type, value, traceback))
+    logger.exception("Uncaught exception: ", exc_info=(type, value, traceback))
 
 # Install exception handler
 sys.excepthook = exception_handler
 
 def my_print(*args, **kwargs):
     msg = ' '.join(map(str, args))
-    logging.debug(msg)
-    #logging.debug(">")  # Add '>' to log file/console
+    logger.info(msg)
+    #logger.debug(">")  # Add '>' to log file/console
     print(msg, **kwargs)
     print(">", end=" ", flush=True)
 
 class ClientConnection:
-    def __init__(self, sock, addr, client_index):
-        self.sock = sock
+    def __init__(self, reader, writer, addr):
+        self.reader = reader
+        self.writer = writer
         self.addr = addr
-        self.last_received = time.time()
+        self.port = None
+        self.id = None
         self.game = {}
-        self.id = client_index
+    
+        # Set TCP keepalive on the socket
+        sock = self.writer.get_extra_info('socket')
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 15)
+        sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
 
-    async def run(self):
-        global client_connections
+    async def receive_packet(self, timeout=600):
+        try:
+            # Read the first 2 bytes to get the length of the packet
+            length_bytes = await asyncio.wait_for(self.reader.readexactly(2), timeout)
 
-        while True:
-            try:
-                packet = await self.receive_packet()
-            except ConnectionResetError:
-                # Connection closed by client
-                break
-            if packet[0] is None or packet[0] == b'':
-                # Connection closed by client
-                #   TODO: Check if this should be continue
-                break
-            await self.handle_packet(packet)
+            # Check if the length bytes contain at least 2 bytes of data
+            if len(length_bytes) < 2:
+                raise ValueError("Incomplete length field in packet")
 
-        del client_connections[self.id]
-        self.sock.close()
-        my_print(f"Client#{self.id} disconnected from {self.addr[0]}:{self.addr[1]}")
+            # Convert the length bytes to an integer
+            length = int.from_bytes(length_bytes, "little")
 
-    async def receive_packet(self):
-        # Read the first two bytes to get the length of the packet
-        length_bytes = await asyncio.get_running_loop().sock_recv(self.sock, 2)
-        length = int.from_bytes(length_bytes, "little")
+            # Wait for the next `length` bytes to get the packet data
+            data = await asyncio.wait_for(self.reader.readexactly(length), timeout)
 
-        # Read the remaining bytes of the packet
-        remaining_bytes = length
-        data = b""
-        while remaining_bytes > 0:
-            chunk = await asyncio.get_running_loop().sock_recv(self.sock, remaining_bytes)
-            if not chunk:
-                # The socket has been closed
-                return None
-            data += chunk
-            remaining_bytes -= len(chunk)
+            # Concatenate the length and data bytes to form the complete packet
+            packet = length_bytes + data
 
-        # Check if there are any remaining bytes after parsing the packet
-        if len(data) > length:
-            # Recursively call receive_packet to parse the remaining bytes
-            remaining_data = data[length:]
-            remaining_packet = await self.receive_packet(remaining_data)
-            return (length_bytes + data[:length], data[:length]) + remaining_packet
-        else:
-            return length_bytes + data, data
+            return packet, data
 
+        except asyncio.TimeoutError:
+            logger.exception("An error occurred: %s",traceback.format_exc())
+            # Raise a timeout error if the packet did not arrive within the specified timeout
+            raise TimeoutError("Packet reception timed out")
+
+        except (ConnectionResetError, asyncio.IncompleteReadError):
+            logger.exception("An error occurred: %s",traceback.format_exc())
+            # Connection closed by client or incomplete packet received
+            raise
+
+        except ValueError as e:
+            logger.exception("An error occurred: %s",traceback.format_exc())
+            # Handle incomplete length field in packet
+            my_print(f"Error receiving packet: {e}")
+            return b"", b""
 
     async def handle_packet(self, packet):
         original_packet, split_packet = packet
@@ -117,40 +122,88 @@ class ClientConnection:
             await self.replay_update(split_packet)
         else:
             await self.unhandled_packet(split_packet)
-    async def schedule_shutdown(self):
+
+    def set_id(self, client_id):
+        self.id = client_id
+
+    async def run(self, timeout=30):
         while True:
-            if self.game['num_clients'] == 0:
-                await self.shutdown_server()
+            try:
+                packet = await self.receive_packet(timeout=timeout)
+
+                if not packet:
+                    # The connection has been closed
+                    break
+            except (ConnectionResetError, asyncio.IncompleteReadError):
+                logger.exception("An error occurred: %s",traceback.format_exc())
+                # Connection closed by client or incomplete packet received
                 break
-            else:
-                await asyncio.sleep(1)
+            except TimeoutError:
+                logger.exception("An error occurred: %s",traceback.format_exc())
+                # Packet reception timed out
+                my_print(f"{self.id} Packet reception timed out")
+                continue
+
+            await self.handle_packet(packet)
+
+            # Add a small delay to allow other clients to send packets
+            await asyncio.sleep(0.01)
+
+        # Remove this client connection from the dictionary
+        if self.port in client_connections:
+            my_print(f"Client #{self.id} has been disconnected.")
+            del client_connections[self.port]
+
+    async def send_packet(self, packet):
+        data = bytes(packet)
+        self.writer.write(data)
+        await self.writer.drain()
 
     async def shutdown_server(self):
-        """ 
-            Send a command to shut down the server.
-            By default this does NOT schedule shut down, scheduling must be managed separately
         """
-        self.sock.send(b'\x01\x00')
-        self.sock.send(b'"')
-        #self.sock.close()
-        my_print(f"Shutdown packet sent to client #{self.id}")
+        Send a command to shut down the server.
+        By default, this does NOT schedule shut down, scheduling must be managed separately
+        """
+        length_bytes = b'\x01\x00'
+        message_bytes = b'"'
+        self.writer.write(length_bytes)
+        self.writer.write(message_bytes)
+        await self.writer.drain()
+        my_print(f"Shutdown packet sent to {self.addr[0]}:{self.addr[1]}")
 
     async def wake_server(self):
-        self.sock.send(b'\x01\x00')
-        self.sock.send(b'!')
-        my_print(f"Wake packet sent to client #{self.id}")
+        length_bytes = b'\x01\x00'
+        message_bytes = b'!'
+        self.writer.write(length_bytes)
+        self.writer.write(message_bytes)
+        await self.writer.drain()
+        my_print(f"Wake packet sent to {self.addr[0]}:{self.addr[1]}")
 
     async def sleep_server(self):
-        self.sock.send(b'\x01\x00')
-        self.sock.send(b' ')
-        my_print(f"Sleep packet sent to client #{self.id}")
-    
-    async def server_message(self,message):
-        length = len(message)
+        length_bytes = b'\x01\x00'
+        message_bytes = b' '
+        self.writer.write(length_bytes)
+        self.writer.write(message_bytes)
+        await self.writer.drain()
+        my_print(f"Sleep packet sent to {self.addr[0]}:{self.addr[1]}")
+
+    async def server_message(self, message_bytes):
+        #message_bytes = message.encode('utf-8')
+        length = len(message_bytes)
         length_bytes = length.to_bytes(2, byteorder='little')
-        self.sock.send(length_bytes)
-        self.sock.send(message)
-        my_print(f"Message packet sent to client #{self.id}")
+        self.writer.write(length_bytes)
+        self.writer.write(message_bytes)
+        await self.writer.drain()
+        my_print(f"Message packet sent to {self.addr[0]}:{self.addr[1]}")
+
+    async def close(self):
+        global client_connections
+        my_print(f"Terminating client #{self.id}..")
+        self.writer.close()
+        await self.writer.wait_closed()
+        # Remove this client connection from the dictionary
+        if self.port in client_connections:
+            del client_connections[self.port]
 
     async def server_announce(self,packet):
         global client_connections
@@ -161,7 +214,6 @@ class ClientConnection:
         """
         #my_print(f"Client #{self.id} Received server announce packet")
         self.port = int.from_bytes(packet[1:],byteorder='little')
-        my_print(f"Client #{self.id} is operating under port: {self.port}")
         self.game['port'] = self.port
 
 
@@ -282,7 +334,13 @@ class ClientConnection:
             # Find the null byte that terminates the current string
             null_byte_index = packet[current_index:].index(b'\x00')
             # Extract the current string and append it to the list of strings
-            string_value = packet[current_index:current_index+null_byte_index].decode('utf-8')
+            try:
+                string_value = packet[current_index:current_index+null_byte_index].decode('utf-8')
+            except UnicodeDecodeError:
+                logger.exception("An error occurred: %s",traceback.format_exc())
+                my_print(f"Client #{self.id} Error decoding string value from this packet: {packet}")
+                string_value = ""
+                return
             strings.append(string_value)
             # Update the current index to point to the next string
             current_index += null_byte_index + 1
@@ -331,169 +389,289 @@ class ClientConnection:
             my_print(f"Client #{self.id} Received unknown packet:", packet)
 
     async def get_status(self):
-        return self.game
-async def handle_client_connection(client_sock, client_addr, client_index):
+        def format_time(seconds):
+            minutes, seconds = divmod(seconds, 60)
+            hours, minutes = divmod(minutes, 60)
+            days, hours = divmod(hours, 24)
+
+            time_str = ""
+            if days > 0:
+                time_str += f"{days}d "
+            if hours > 0:
+                time_str += f"{hours}h "
+            if minutes > 0:
+                time_str += f"{math.ceil(minutes)}m "
+            if seconds > 0:
+                time_str += f"{math.ceil(seconds)}s"
+
+            return time_str.strip()
+
+        temp = {
+            'ID': self.id,
+            'Port': self.port,
+            'Status': 'Unknown',
+            'Game Phase': 'Unknown',
+            'Players': 0,
+            'Uptime': 'Unknown'
+        }
+
+        if self.game.get('status') == 1:
+            temp['Status'] = 'Ready'
+        elif self.game.get('status') == 3:
+            temp['Status'] = 'Active'
+
+        game_phase_mapping = {
+            0: '',
+            1: 'In-Lobby',
+            2: 'Picking Phase',
+            3: 'Picking Phase',
+            4: 'Loading into match..',
+            5: 'Preparation Phase',
+            6: 'Match Started',
+        }
+        temp['Game Phase'] = game_phase_mapping.get(self.game.get('game_phase'), 'Unknown')
+        temp['Players'] = self.game.get('num_clients', 0)
+        temp['Uptime'] = format_time(self.game.get('uptime', 0) / 1000)
+
+        return temp
+    
+async def handle_client_connection(client_reader, client_writer):
     global client_connections
+
+    # Get the client address
+    client_addr = client_writer.get_extra_info("peername")
 
     my_print(f"Client connected from {client_addr[0]}:{client_addr[1]}")
 
     # Create a new ClientConnection object to handle this client
-    client_connection = ClientConnection(client_sock, client_addr, client_index)
-    
+    client_connection = ClientConnection(client_reader, client_writer, client_addr)
+
     # Wait for the server hello packet
     try:
         packet = await client_connection.receive_packet()
-    except ConnectionResetError:
-        # Connection closed by client
+    except (ConnectionResetError, asyncio.exceptions.IncompleteReadError):
+        logger.exception("An error occurred: %s",traceback.format_exc())
+        # Connection closed by client or incomplete packet received
+        async with client_writer:
+            client_writer.close()
+        my_print(f"Connection closed by client {client_addr[0]}:{client_addr[1]}")
         return
+
     if packet[1][0] != 0x40:
-        my_print(f"Waiting for server hello from Client #{client_connection.id}...")
+        my_print(f"Waiting for server hello from {client_addr[0]}:{client_addr[1]}...")
+        async with client_writer:
+            client_writer.close()
         return
-    await client_connection.handle_packet(packet)
+
+    # Process the server hello packet
+    try:
+        await client_connection.handle_packet(packet)
+    except:
+        logger.exception("An error occurred: %s",traceback.format_exc())
+        client_writer.close()
+        return
 
     # Add client connection object to the dictionary
-    client_connections[client_index] = client_connection
-    
-    # Sort client connections based on server port
-    client_connections = {c.id: c for c in sorted(client_connections.values(), key=lambda c: getattr(c, 'game', {}).get('port', None))}
-    
-    # Run the client connection coroutine
-    await client_connection.run()
+    client_connections[client_connection.port] = client_connection
 
-async def handle_input():
+    # Sort client connections based on server port
+    client_connections = OrderedDict(sorted(client_connections.items(), key=lambda c: c[1].port))
+
+    # Set client ids based on the order in the sorted dictionary
+    for i, client in enumerate(client_connections.values(), 1):
+        client.set_id(i)
+
+    # Run the client connection coroutine
+    try:
+        await client_connection.run()
+    except asyncio.CancelledError:
+        logger.exception("An error occurred: %s", traceback.format_exc())
+        # Connection closed by server
+        await client_connection.close()
+        my_print(f"Connection closed by server {client_addr[0]}:{client_addr[1]}")
+    finally:
+        if client_connection.port in client_connections:
+            my_print(f"Client #{client_connection.id} has been disconnected.")
+            del client_connections[client_connection.port]
+
+
+async def handle_input(stop_event):
     global client_connections
 
-    while True:
+    while not stop_event.is_set():
         command = await aioconsole.ainput("> ")
-        if not command:
-            print("> ",end="")
-            continue  # Skip if command is empty
-        elif command == "quit":
-            # Close all client connections and exit
-            for connection in client_connections.values():
-                connection.sock.close()
-            break
-        elif command.lower() == "list":
-            # Print list of connected clients
-            if len(client_connections) == 0:
-                my_print("No clients connected.")
-                continue
-            headers = ["Index", "IP Address", "Port"]
-            rows = []
-            for client in client_connections.values():
-                rows.append([client.id, client.addr[0], client.port if client.port is not None else 'None'])
-            table = columnar(rows, headers=headers)
-            my_print(table)
-        elif command == "status":
-            # Print status of all connected clients
-            if len(client_connections) == 0:
-                my_print("No clients connected.")
-                continue
-            data = []
-            for client in client_connections.values():
-                status = await client.get_status()
-                data.append([client.id,client.port if client.port is not None else 'None', status])
-            headers = ["#", "Port", "Status"]
-            table = columnar(data, headers=headers)
-            my_print(table)
-        elif command.lower().startswith("sleep"):
-            # Parse sleep command
-            parts = command.split()
-            if len(parts) < 2:
-                raise ValueError("Usage: sleep <client_index>")
-            client_index = int(parts[1]) - 1
-            if client_index < 0 or client_index >= len(client_connections):
-                raise ValueError(f"Invalid client index: {client_index+1}")
-            client = list(client_connections.values())[client_index]
-            await client.sleep_server()
-        elif command.lower().startswith("wake"):
-            # Parse sleep command
-            parts = command.split()
-            if len(parts) < 2:
-                raise ValueError("Usage: wake <client_index>")
-            client_index = int(parts[1]) - 1
-            if client_index < 0 or client_index >= len(client_connections):
-                raise ValueError(f"Invalid client index: {client_index+1}")
-            client = list(client_connections.values())[client_index]
-            await client.wake_server()
-        elif command.lower().startswith("send"):
-            # Parse send command
-            parts = command.split()
-            if len(parts) < 3:
-                raise ValueError("Usage: send <client_index> <data>")
-            client_index = int(parts[1]) - 1
-            if client_index < 0 or client_index >= len(client_connections):
-                raise ValueError(f"Invalid client index: {client_index+1}")
-            client = list(client_connections.values())[client_index]
-            data = b''
-            for part in parts[2:]:
-                if re.fullmatch(r'[0-9a-fA-F]+', part):
-                    # If part is a hex string, convert it to bytes
-                    data += bytes.fromhex(part)
-                else:
-                    # Otherwise, it's an ASCII string, encode it to bytes
-                    data += part.encode('ascii')
-            await client.sock.send(data)
-        elif command.lower().startswith("message"):
-                # Parse message command
+        try:
+            if not command:
+                print("> ", end="")
+                continue  # Skip if command is empty
+            elif command == "quit":
+                # Set the stop event to signal that the server should stop
+                stop_event.set()
+                break
+            elif command == "reconnect":
+                # Close all client connections, forcing them to reconnect
+                for connection in client_connections.values():
+                    await connection.close()
+            elif command.lower() == "list":
+                # Print list of connected clients
+                if len(client_connections) == 0:
+                    my_print("No clients connected.")
+                    continue
+                headers = ["Index", "IP Address", "Port"]
+                rows = []
+                for client in client_connections.values():
+                    rows.append([client.id, client.addr[0], client.port if client.port is not None else 'None'])
+                table = columnar(rows, headers=headers)
+                my_print(table)
+            elif command == "status":
+                # Print status of all connected clients
+                if len(client_connections) == 0:
+                    my_print("No clients connected.")
+                    continue
+
+                headers = []
+                rows = []
+                for client in client_connections.values():
+                    try:
+                        status = await client.get_status()
+                    except Exception:
+                        logger.exception("An error occurred: %s",traceback.format_exc())
+                    data = []
+                    for k, v in status.items():
+                        if k not in headers:
+                            headers.append(k)
+                        data.append(v)
+                    rows.append(data)
+
+                table = columnar(rows, headers=headers)
+                my_print(table)
+            elif command.lower().startswith("sleep"):
+                # Parse sleep command
                 parts = command.split()
-                if len(parts) < 3:
-                    raise ValueError("Usage: message <client_index> <message>")
+                if len(parts) < 2:
+                    raise ValueError("Usage: sleep <client_index>")
                 client_index = int(parts[1]) - 1
                 if client_index < 0 or client_index >= len(client_connections):
                     raise ValueError(f"Invalid client index: {client_index+1}")
                 client = list(client_connections.values())[client_index]
-                message = ' '.join(parts[2:])
-                data = b'$' + message.encode('ascii') + b'\x00'
-                await client.server_message(data)
-        elif command.lower().startswith("shutdown"):
-            # Parse shutdown command
-            parts = command.split()
-            if len(parts) < 2:
-                raise ValueError("Usage: shutdown <client_index>")
-            client_index = int(parts[1]) - 1
-            if client_index < 0 or client_index >= len(client_connections):
-                raise ValueError(f"Invalid client index: {client_index+1}")
-            client = list(client_connections.values())[client_index]
-            await client.schedule_shutdown()
-        elif command.lower() == "help":
-            headers = ["Command", "Description"]
-            rows = [
-                ["list", "Show list of connected clients"],
-                ["status", "Show status of connected clients"],
-                ["send <index> <data>", "Send data to a client"],
-                ["shutdown <index>", "Shutdown a client server"],
-                ["exit", "Exit the command shell"]
-            ]
-            table = columnar(rows, headers=headers)
-            my_print(table)
-        else:
-            raise ValueError(f"Invalid command: {command}")
-        # else:
-        #     my_print("Unknown command:", command)
+                await client.sleep_server()
+            elif command.lower().startswith("wake"):
+                # Parse sleep command
+                parts = command.split()
+                if len(parts) < 2:
+                    raise ValueError("Usage: wake <client_index>")
+                client_index = int(parts[1]) - 1
+                if client_index < 0 or client_index >= len(client_connections):
+                    raise ValueError(f"Invalid client index: {client_index+1}")
+                client = list(client_connections.values())[client_index]
+                await client.wake_server()
+            elif command.lower().startswith("send"):
+                # Parse send command
+                parts = command.split()
+                if len(parts) < 3:
+                    raise ValueError("Usage: send <client_index> <data>")
+                client_index = int(parts[1]) - 1
+                if client_index < 0 or client_index >= len(client_connections):
+                    raise ValueError(f"Invalid client index: {client_index+1}")
+                client = list(client_connections.values())[client_index]
+                data = b''
+                for part in parts[2:]:
+                    if re.fullmatch(r'[0-9a-fA-F]+', part):
+                        # If part is a hex string, convert it to bytes
+                        data += bytes.fromhex(part)
+                    else:
+                        # Otherwise, it's an ASCII string, encode it to bytes
+                        data += part.encode('ascii')
+                await client.sock.send(data)
+            elif command.lower().startswith("message"):
+                    # Parse message command
+                    parts = command.split()
+                    if len(parts) < 3:
+                        raise ValueError("Usage: message <client_index> <message>")
+                    client_index = int(parts[1]) - 1
+                    if client_index < 0 or client_index >= len(client_connections):
+                        raise ValueError(f"Invalid client index: {client_index+1}")
+                    client = list(client_connections.values())[client_index]
+                    message = ' '.join(parts[2:])
+                    data = b'$' + message.encode('ascii') + b'\x00'
+                    await client.server_message(data)
+            elif command.lower().startswith("shutdown"):
+                # Parse shutdown command
+                parts = command.split()
+                if len(parts) < 2:
+                    raise ValueError("Usage: shutdown <client_index>")
+                client_index = int(parts[1]) - 1
+                if client_index < 0 or client_index >= len(client_connections):
+                    raise ValueError(f"Invalid client index: {client_index+1}")
+                client = list(client_connections.values())[client_index]
+                await client.schedule_shutdown()
+            elif command.lower() == "help":
+                headers = ["Command", "Description"]
+                rows = [
+                    ["list", "Show list of connected clients"],
+                    ["status", "Show status of connected clients"],
+                    ["sleep <index>", "Put a client server to sleep"],
+                    ["wake <index>", "Wake up a client server"],
+                    ["send <index> <data>", "Send data to a client"],
+                    ["message <index> <message>", "Send a message to a client"],
+                    ["shutdown <index>", "Shutdown a client server"],
+                    ["reconnect", "Close all client connections, forcing them to reconnect"],
+                    ["quit", "Quit the proxy server"],
+                    ["help", "Show this help text"],
+                ]
+                table = columnar(rows, headers=headers)
+                my_print(table)
+            else:
+                my_print("Unknown command:", command)
+            # else:
+            #     my_print("Unknown command:", command)
+        except Exception:
+            logger.exception("An error occurred: %s",traceback.format_exc())
+
+async def handle_clients(client_reader, client_writer):
+    # Create a new task to handle this client connection
+    asyncio.create_task(handle_client_connection(client_reader, client_writer))
 
 async def main():
     global client_connections
 
     host = "127.0.0.1"
-    port = 1135
+    port = 1234
     client_connections = {}  # dictionary to store client connections
 
-    server_sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_sock.bind((host, port))
-    server_sock.listen(10)
+    server = await asyncio.start_server(
+        handle_clients, host, port
+    )
 
     my_print(f"Listening on {host}:{port}")
 
-    # Handle user input in a separate coroutine
-    loop = asyncio.get_running_loop()
-    loop.create_task(handle_input())
+    # Create a stop event to signal when the server should stop
+    stop_event = asyncio.Event()
 
-    client_index = 0
-    while True:
-        client_sock, client_addr = await loop.sock_accept(server_sock)
-        # Create a new task to handle this client connection
-        loop.create_task(handle_client_connection(client_sock, client_addr, client_index))
-        client_index += 1
+    # Handle user input in a separate coroutine
+    input_task = asyncio.create_task(handle_input(stop_event))
+
+    # Wait for either the stop event to be set or for the client task to complete
+    done, pending = await asyncio.gather(
+        stop_event.wait(),
+        input_task,
+        return_exceptions=True
+    )
+
+    if pending is not None:
+        for task in pending:
+            # Cancel any remaining pending tasks here
+            task.cancel()
+
+    # Close all client connections
+    for connection in client_connections.values():
+        await connection.close()
+
+    # Close the server
+    server.close()
+    await server.wait_closed()
+
+    my_print("Server stopped.")
+
 if __name__ == "__main__":
     asyncio.run(main())
