@@ -38,7 +38,7 @@ logger.addHandler(file_handler)
 
 # Create a stream handler for outputting logs to the console
 console_handler = logging.StreamHandler(sys.stdout)
-console_handler.setLevel(logging.INFO)
+console_handler.setLevel(logging.WARNING)
 console_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 logger.addHandler(console_handler)
 
@@ -87,7 +87,6 @@ class PacketParser:
             await handler(split_packet)
         except Exception as e:
             logger.error(f"Error in handler for packet type {packet_type}: {e}")
-            traceback.print_exc()
 
     async def server_announce(self,packet):        
         """ 0x40  Server announce
@@ -213,10 +212,9 @@ class PacketParser:
             # Extract the current string and append it to the list of strings
             try:
                 string_value = packet[current_index:current_index+null_byte_index].decode('utf-8')
-            except UnicodeDecodeError as e:
-                current_function_name = inspect.currentframe().f_code.co_name
-                logger.error(f"An error occurred while handling the {current_function_name} function, and this packet {packet}: {e}")
-                traceback.print_exc()
+            except (UnicodeDecodeError, ValueError) as e:
+                inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+                logger.exception(f"An error occurred while handling the %s function: %s with this packet: {packet}", inspect.currentframe().f_code.co_name, traceback.format_exc())
                 string_value = ""
                 return
             strings.append(string_value)
@@ -309,7 +307,6 @@ class Commands:
 
             except Exception as e:
                 logger.exception("An error occurred while handling the command: %s", e)
-                traceback.print_exc()
     
     async def cmd_shutdown_server(self, *cmd_args):
         global client_connections
@@ -327,9 +324,8 @@ class Commands:
             my_print(f"Shutdown packet sent to {client.addr[0]}:{client.addr[1]}")
 
         except Exception as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
     async def cmd_wake_server(self, *cmd_args):
         global client_connections
@@ -346,9 +342,8 @@ class Commands:
             await client.writer.drain()
             my_print(f"Wake packet sent to {client.addr[0]}:{client.addr[1]}")
         except Exception as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
     async def cmd_sleep_server(self, *cmd_args):
         global client_connections
@@ -365,9 +360,8 @@ class Commands:
             await client.writer.drain()
             my_print(f"Sleep packet sent to {client.addr[0]}:{client.addr[1]}")
         except Exception as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
     async def cmd_server_message(self, *cmd_args):
         global client_connections
@@ -385,9 +379,8 @@ class Commands:
             await client.writer.drain()
             my_print(f"Message packet sent to {client.addr[0]}:{client.addr[1]}")
         except Exception as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
     
     async def cmd_custom_cmd(self, *cmd_args):
         global client_connections
@@ -408,9 +401,8 @@ class Commands:
             client.writer.write(data)
             await client.writer.drain()
         except Exception as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
     async def status(self):
         global client_connections
@@ -434,9 +426,8 @@ class Commands:
             table = columnar(rows, headers=headers)
             my_print(table)
         except Exception as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
     async def reconnect(self):
         try:
@@ -444,9 +435,8 @@ class Commands:
             for connection in client_connections.values():
                 await connection.close()
         except Exception as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
     
     async def help(self):
         try:
@@ -466,9 +456,8 @@ class Commands:
             table = columnar(rows, headers=headers)
             my_print(table)
         except Exception as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 class GameState:
     def __init__(self, client_id):
         self.status = None
@@ -556,44 +545,40 @@ class ClientConnection:
         self.packet_parser.update_client_id(new_id)
         self.game_state.update_client_id(new_id)
 
-    async def receive_packet(self, timeout=600):
+    async def receive_packet(self, timeout = 600):
         try:
-            # Read the first 2 bytes to get the length of the packet
-            length_bytes = await asyncio.wait_for(self.reader.readexactly(2), timeout)
+            # Try to read up to 2 bytes for the length field
+            length_bytes = await self.reader.read(2)
 
-            # Check if the length bytes contain at least 2 bytes of data
-            if len(length_bytes) < 2:
-                raise ValueError("Incomplete length field in packet")
+            # If we didn't receive at least 2 bytes, return None
+            if len(length_bytes) == 0:
+                return None
+            elif len(length_bytes) == 1:
+                my_print(f"Client #{self.id} Single byte packet: {length_bytes} received.")
+                logging.warn(f"Client #{self.id} Single byte packet: {length_bytes} received.")
 
-            # Convert the length bytes to an integer
-            length = int.from_bytes(length_bytes, "little")
-
+            # Otherwise, proceed to read the rest of the packet
+            length = int.from_bytes(length_bytes, byteorder='little')
             # Wait for the next `length` bytes to get the packet data
             data = await asyncio.wait_for(self.reader.readexactly(length), timeout)
 
-            # Concatenate the length and data bytes to form the complete packet
-            packet = length_bytes + data
-
+            packet = (length, data)
             return packet, data
 
         except asyncio.TimeoutError as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
             # Raise a timeout error if the packet did not arrive within the specified timeout
             raise TimeoutError("Packet reception timed out")
 
-        except (ConnectionResetError, asyncio.IncompleteReadError) as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
-            # Connection closed by client or incomplete packet received
-            raise
+        except ConnectionResetError as e:
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+            # Check if the writer object is not None before closing it
+            if self.writer is not None:
+                await self.writer.close()
 
         except ValueError as e:
-            current_function_name = inspect.currentframe().f_code.co_name
-            logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-            traceback.print_exc()
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
             # Handle incomplete length field in packet
             my_print(f"Error receiving packet: {e}")
             return b"", b""
@@ -607,26 +592,21 @@ class ClientConnection:
             try:
                 packets = await self.receive_packet()
 
-                if not packets:
-                    # The connection has been closed
+                if packets is None:
+                    # Handle the case where the packet is incomplete
+                    my_print(f"Client #{self.id} Incomplete packet: {packets}. Closing connection..")
                     break
             except (ConnectionResetError, asyncio.IncompleteReadError) as e:
-                current_function_name = inspect.currentframe().f_code.co_name
-                logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-                traceback.print_exc()
+                logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 # Connection closed by client or incomplete packet received
                 break
             except TimeoutError as e:
-                current_function_name = inspect.currentframe().f_code.co_name
-                logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-                traceback.print_exc()
+                logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 # Packet reception timed out
                 my_print(f"{self.id} Packet reception timed out")
                 continue
             except Exception as e:
-                current_function_name = inspect.currentframe().f_code.co_name
-                logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-                traceback.print_exc()
+                logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 # Handle other unexpected exceptions gracefully
                 my_print(f"An unexpected error occurred: {e}")
                 break
@@ -635,6 +615,10 @@ class ClientConnection:
 
             # Add a small delay to allow other clients to send packets
             await asyncio.sleep(0.01)
+        # Remove this client connection from the dictionary
+        if self.game_state.port in client_connections:
+            my_print(f"Client #{self.id} has been disconnected.")
+            del client_connections[self.game_state.port]
 
     async def send_packet(self, packet):
         data = bytes(packet)
@@ -645,6 +629,7 @@ class ClientConnection:
     async def close(self):
         global client_connections
         my_print(f"Terminating client #{self.id}..")
+        self.reader.close()
         self.writer.close()
         await self.writer.wait_closed()
         # Remove this client connection from the dictionary
@@ -665,6 +650,11 @@ async def handle_client_connection(client_reader, client_writer):
     try:
         # Wait for the server hello packet
         packets = await client_connection.receive_packet()
+
+        if packets is None:
+            # Handle the case where the packet is incomplete
+            my_print(f"Incomplete packet received from {client_addr[0]}:{client_addr[1]}")
+            return
 
         if packets[1][0] != 0x40:
             my_print(f"Waiting for server hello from {client_addr[0]}:{client_addr[1]}...")
@@ -687,9 +677,7 @@ async def handle_client_connection(client_reader, client_writer):
         await client_connection.run()
 
     except (ConnectionResetError, asyncio.exceptions.IncompleteReadError, asyncio.CancelledError) as e:
-        current_function_name = inspect.currentframe().f_code.co_name
-        logger.error(f"An error occurred while handling the {current_function_name} function: {e}")
-        traceback.print_exc()
+        logger.exception(f"Client #{client_connection.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
         # Connection closed by client, server, or incomplete packet received
 
     finally:
@@ -710,7 +698,7 @@ async def main():
     host = "127.0.0.1"
     port = 1234
     client_connections = {}  # dictionary to store client connections
-
+    
     server = await asyncio.start_server(
         handle_clients, host, port
     )
@@ -749,4 +737,7 @@ async def main():
     my_print("Server stopped.")
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("Shutting down the server gracefully...")

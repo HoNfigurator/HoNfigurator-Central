@@ -32,7 +32,7 @@ file_handler.setLevel(logging.INFO)
 file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(message)s'))
 
 # Create a logger with a specific name for this module
-logger = logging.getLogger("Server")
+logger = logging.getLogger(__name__)
 logger.addHandler(file_handler)
 logger.setLevel(logging.DEBUG)
 
@@ -452,15 +452,13 @@ async def handle_client_connection(client_reader, client_writer):
     except (ConnectionResetError, asyncio.exceptions.IncompleteReadError):
         logger.exception("An error occurred: %s",traceback.format_exc())
         # Connection closed by client or incomplete packet received
-        async with client_writer:
-            client_writer.close()
+        client_writer.close()
         my_print(f"Connection closed by client {client_addr[0]}:{client_addr[1]}")
         return
 
     if packet[1][0] != 0x40:
         my_print(f"Waiting for server hello from {client_addr[0]}:{client_addr[1]}...")
-        async with client_writer:
-            client_writer.close()
+        client_writer.close()
         return
 
     # Process the server hello packet
