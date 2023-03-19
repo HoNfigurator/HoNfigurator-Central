@@ -12,9 +12,9 @@ REMOTE_ADDR = '212.181.3.23'
 REMOTE_PORT_SVR = 11032  # Port of the remote chat server
 REMOTE_PORT_MGR = 11033  # Port of the remote chat server
 
-def parse_packet(data):
+def parse_packet(data,src_name,dst_name):
     msg_len = int.from_bytes(data[0:2],byteorder='little')
-    msg_type = int.from_bytes(data[0:2], byteorder='little')
+    msg_type = int.from_bytes(data[2:4], byteorder='little')
     packet_len = len(data)
     if packet_len > 2:
         modified_packet = data[4:]
@@ -150,17 +150,17 @@ def forward(src, dst, src_name, dst_name):
             if len(data) == 0:
                 break
             if src_name == "manager":
-                msg_len, msg_type, original_packet, new_packet = parse_packet(data)
+                msg_len, msg_type, original_packet, new_packet = parse_packet(data,src_name,dst_name)
                 handle_manager_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet)
             elif src_name == "gameserver":
-                msg_len, msg_type, original_packet, new_packet = parse_packet(data)
+                msg_len, msg_type, original_packet, new_packet = parse_packet(data,src_name,dst_name)
                 handle_gameserver_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet)
             elif src_name == "chatserver":
                 if dst_name == "manager":
-                    msg_len, msg_type, original_packet, new_packet = parse_packet(data)
+                    msg_len, msg_type, original_packet, new_packet = parse_packet(data,src_name,dst_name)
                     handle_chatserver_to_manager_packet(msg_len, msg_type, original_packet, new_packet)
                 if dst_name == "gameserver":
-                    msg_len, msg_type, original_packet, new_packet = parse_packet(data)
+                    msg_len, msg_type, original_packet, new_packet = parse_packet(data,src_name,dst_name)
                     handle_chatserver_to_gameserver_packet(msg_len, msg_type, original_packet, new_packet)
             dst.sendall(data)
     except ConnectionResetError:
