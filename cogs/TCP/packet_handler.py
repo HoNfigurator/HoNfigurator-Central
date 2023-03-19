@@ -12,6 +12,11 @@ import math
 from collections import OrderedDict
 import traceback
 import inspect
+import json
+import requests
+from masterserver_handler import MasterServerHandler
+from chatserver_handler import ChatServerHandler
+import phpserialize
 
 # Get the path of the current script
 script_dir = os.path.dirname(os.path.abspath(__file__))
@@ -57,6 +62,17 @@ def my_print(*args, **kwargs):
     print(msg, **kwargs)
     print(">", end=" ", flush=True)
 
+    
+def flatten_dict(d, parent_key='', sep='_'):
+    items = []
+    for k, v in d.items():
+        new_key = parent_key + sep + k if parent_key else k
+        if isinstance(v, dict):
+            items.extend(flatten_dict(v, new_key, sep=sep).items())
+        else:
+            items.append((new_key, v))
+    return dict(items)
+
 class PacketParser:
     def __init__(self, game_state, client_id):
         self.packet_handlers = {
@@ -86,7 +102,8 @@ class PacketParser:
         try:
             await handler(split_packet)
         except Exception as e:
-            logger.error(f"Error in handler for packet type {packet_type}: {e}")
+            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
+            logger.exception(f"An error occurred while handling the %s function: %s with this packet type: {packet_type}", inspect.currentframe().f_code.co_name, traceback.format_exc())
 
     async def server_announce(self,packet):        
         """ 0x40  Server announce
@@ -149,6 +166,8 @@ class PacketParser:
         })
         # If the packet only contains fixed-length fields, print the game info and return
         if len(packet) == 54:
+            if self.game_state.get('num_clients') == 0 and self.game_state.get('players') != '':
+                self.game_state.update({'players':''})
             return
 
         # Otherwise, extract player data sections from the packet
@@ -184,8 +203,16 @@ class PacketParser:
         """  0x43 Lobby status
         typically this occurs when a lobby is created, or a lobby is started. Unsure what a lot of the info is. All the clients are in here, however I focused on parsing them in 0x42 as 0x42 contains all the same info from what I can see.
         to summarise, a mostly useless packet.
+        int 1 msg type 
+        int 2 skipped frame LE
+
+
         """
-        my_print(f"Client #{self.id} Received lobby status update")
+        #my_print(f"Client #{self.id} Received lobby status update: {packet}")
+        skipped_frames = int.from_bytes(packet[1:3],byteorder='little')
+        print(f"Client #{self.id} skipped server frame: {skipped_frames}msec")
+        #if self.game_state.get('match_started') == 1:
+        self.game_state.increment_skipped_frames(skipped_frames)
 
 
     async def lobby_created(self,packet):
@@ -233,6 +260,11 @@ class PacketParser:
         }
         self.game_state.update({'match_info':lobby_info})
 
+        # set the current match ID and reset the skipped frame sum
+        if self.game_state.current_match_id != match_id:
+            self.game_state.current_match_id = match_id
+            self.game_state.reset_skipped_frames()
+
         # Print the lobby information
         my_print(f"Client #{self.id} {lobby_info}")
 
@@ -245,9 +277,12 @@ class PacketParser:
             'match_id': '',
             'map': '',
             'name': '',
-            'mode': ''
+            'mode': '',
+            'players':''
         }
         self.game_state.update({'match_info':empty_lobby_info})
+        self.game_state.save()
+        self.game_state.reset_skipped_frames()
 
 
     async def server_connection(self,packet):
@@ -265,11 +300,25 @@ class PacketParser:
             Most likely for the manager to upload incrementally, if that setting is on (default not on)
         """
         my_print(f"Client #{self.id} Received replay zip update:", packet)
+        if self.game_state.current_match_id == None:
+            match = re.search(rb"/(\d+)/", packet)
+            if match:
+                match_id = int(match.group(1))
+                print("Match ID:", match_id)
+                self.game_state.update({'current_match_id':match_id})
+                self.game_state.load()
+            else:
+                print("Match ID not found")
 
 
     async def unhandled_packet(self,packet):
             """    Any unhandled packet
+
+            Unknowns:
+                b'F\x00\x00'
+                b'H\x00\x00'
             """
+
             my_print(f"Client #{self.id} Received unknown packet:", packet)
 
 class Commands:
@@ -312,7 +361,7 @@ class Commands:
         global client_connections
         try:
             if len(cmd_args) != 1:
-                raise ValueError("Usage: shutdown <client_index>")
+                my_print("Usage: shutdown <client_index>")
 
             client_index = int(cmd_args[0]) - 1
             client = list(client_connections.values())[client_index]
@@ -331,8 +380,8 @@ class Commands:
         global client_connections
         try:
             if len(cmd_args) != 1:
-                raise ValueError("Usage: wake <client_index>")
-
+                my_print("Usage: wake <client_index>")
+                return
             client_index = int(cmd_args[0]) - 1
             client = list(client_connections.values())[client_index]
             length_bytes = b'\x01\x00'
@@ -349,8 +398,8 @@ class Commands:
         global client_connections
         try:
             if len(cmd_args) != 1:
-                raise ValueError("Usage: sleep <client_index>")
-
+                my_print("Usage: sleep <client_index>")
+                return
             client_index = int(cmd_args[0]) - 1
             client = list(client_connections.values())[client_index]
             length_bytes = b'\x01\x00'
@@ -367,11 +416,13 @@ class Commands:
         global client_connections
         try:
             if len(cmd_args) < 2:
-                raise ValueError("Usage: message <client_index> <message>")
+                my_print("Usage: message <client_index> <message>")
+                return
             client_index = int(cmd_args[0]) - 1
             client = list(client_connections.values())[client_index]
             message = ' '.join(cmd_args[1:])
-            message_bytes = message.encode('ascii')
+            message_bytes = b'$' + message.encode('ascii') + b'\x00'
+            #message_bytes = message.encode('ascii')
             length = len(message_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
             client.writer.write(length_bytes)
@@ -386,8 +437,8 @@ class Commands:
         global client_connections
         try:
             if len(cmd_args) < 2:
-                raise ValueError("Usage: cmd <client_index> <data>")
-
+                my_print("Usage: cmd <client_index> <data>")
+                return
             client_index = int(cmd_args[0]) - 1
             if client_index < 0 or client_index >= len(client_connections):
                 raise ValueError(f"Invalid client index: {client_index+1}")
@@ -411,13 +462,13 @@ class Commands:
             if len(client_connections) == 0:
                 my_print("No clients connected.")
                 return
-
             headers = []
             rows = []
             for client in client_connections.values():
                 status = client.game_state.get_status()
+                flattened_status = flatten_dict(status)
                 data = []
-                for k, v in status.items():
+                for k, v in flattened_status.items():
                     if k not in headers:
                         headers.append(k)
                     data.append(v)
@@ -459,24 +510,82 @@ class Commands:
             inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
             logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 class GameState:
-    def __init__(self, client_id):
+    def __init__(self, client_id, data_dir=f"{os.path.join(script_dir, '..', 'game_states')}"):
         self.status = None
         self.uptime = None
         self.num_clients = None
         self.match_started = None
         self.game_state_phase = None
+        self.match_skipped_frames = {}  # Add this line to store skipped frames for matches
+        self.grandtotal_skipped_frames = 0
+        self.total_ingame_skipped_frames = 0
+        self.now_ingame_skipped_frames = 0
+        self.current_match_id = None
         self.players = []
         self.port = None
         self.id = client_id
-    
-    def update_client_id(self, new_id):
+        self.data = {}
+        #   this variable is overriden once the client is assigned an ID.
+        self.data_file = os.path.join(data_dir, f"Client-{self.id}_state_data.json")
+
+    def load(self):
+        if os.path.exists(self.data_file):
+            with open(self.data_file, "r") as f:
+                self.data = json.load(f)
+                self.grandtotal_skipped_frames = self.data.get('grandtotal_skipped_frames', 0)
+                self.total_ingame_skipped_frames = self.data.get('total_ingame_skipped_frames', 0)
+                # Load match-specific data if it exists
+                if 'match_data' in self.data and str(self.current_match_id) in self.data['match_data']:
+                    match_skipped_frames = self.data['match_data'][str(self.current_match_id)]['skipped_frames']
+                    self.now_ingame_skipped_frames = match_skipped_frames
+        else:
+            self.data = {}
+
+    def save(self):
+        self.data['grandtotal_skipped_frames'] = self.grandtotal_skipped_frames
+        self.data['total_ingame_skipped_frames'] = self.total_ingame_skipped_frames
+
+        # Save match-specific data
+        if 'match_data' not in self.data:
+            self.data['match_data'] = {}
+
+        if self.current_match_id is not None:
+            match_id_str = str(self.current_match_id)
+            if match_id_str not in self.data['match_data']:
+                self.data['match_data'][match_id_str] = {}
+            
+            self.data['match_data'][match_id_str]['skipped_frames'] = self.now_ingame_skipped_frames
+
+        if self.id != None:
+            with open(self.data_file, "w") as f:
+                json.dump(self.data, f)
+
+
+    def update_client_id(self, new_id, data_dir="game_states"):
         self.id = new_id
+                
+        self.data_dir = data_dir
+        self.data_file = os.path.join(data_dir, f"Client-{self.id}_state_data.json")
+        
+        if not os.path.exists(data_dir):
+            os.makedirs(data_dir)
+        else:
+            self.load()
 
     def update(self, game_data):
         self.__dict__.update(game_data)
 
     def get(self, attribute, default=None):
         return getattr(self, attribute, default)
+    
+    def reset_skipped_frames(self):
+        self.ingame_skipped_frames = 0
+    
+    def increment_skipped_frames(self, frames):
+        self.grandtotal_skipped_frames += frames
+        if self.match_started == 1:
+            self.total_ingame_skipped_frames += frames
+            self.now_ingame_skipped_frames += frames
     
     def get_status(self):
         def format_time(seconds):
@@ -501,8 +610,10 @@ class GameState:
             'Port': self.port,
             'Status': 'Unknown',
             'Game Phase': 'Unknown',
-            'Players': 0,
-            'Uptime': 'Unknown'
+            'Num Clients': 0,
+            'Players': 'Unknown',
+            'Uptime': 'Unknown',
+            'Server Lag': f"{self.grandtotal_skipped_frames/1000} sec (grand total)\n{self.total_ingame_skipped_frames/1000} sec (total while in game)\n{self.now_ingame_skipped_frames/1000} sec (current game)"
         }
 
         if self.status == 1:
@@ -519,11 +630,13 @@ class GameState:
             5: 'Preparation Phase',
             6: 'Match Started',
         }
+        player_names = [player['name'] for player in self.players] if hasattr(self, 'players') else []
         temp['Game Phase'] = game_phase_mapping.get(self.game_phase, 'Unknown')
-        temp['Players'] = self.num_clients
+        temp['Num Clients'] = self.num_clients
+        temp['Players'] = ', '.join(player_names)
         temp['Uptime'] = format_time(self.uptime / 1000) if self.uptime is not None else 'Unknown'
 
-        return temp
+        return flatten_dict(temp)
 class ClientConnection:
     def __init__(self, reader, writer, addr):
         self.reader = reader
@@ -629,9 +742,12 @@ class ClientConnection:
     async def close(self):
         global client_connections
         my_print(f"Terminating client #{self.id}..")
-        self.reader.close()
         self.writer.close()
         await self.writer.wait_closed()
+        try:
+            self.game_state.save()
+        except Exception as e:
+            logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
         # Remove this client connection from the dictionary
         if self.game_state.port in client_connections:
             del client_connections[self.game_state.port]
@@ -681,12 +797,7 @@ async def handle_client_connection(client_reader, client_writer):
         # Connection closed by client, server, or incomplete packet received
 
     finally:
-        client_writer.close()
-        await client_writer.wait_closed()
-
-        if client_connection.game_state.port in client_connections:
-            my_print(f"Client #{client_connection.id} has been disconnected.")
-            del client_connections[client_connection.game_state.port]
+        await client_connection.close()
 
 async def handle_clients(client_reader, client_writer):
     # Create a new task to handle this client connection
@@ -696,7 +807,7 @@ async def main():
     global client_connections
 
     host = "127.0.0.1"
-    port = 1234
+    port = 1246
     client_connections = {}  # dictionary to store client connections
     
     server = await asyncio.start_server(
@@ -714,12 +825,37 @@ async def main():
     # Handle user input in a separate coroutine
     input_task = asyncio.create_task(commands.handle_input(stop_event))
 
-    # Wait for either the stop event to be set or for the client task to complete
-    done, pending = await asyncio.gather(
-        stop_event.wait(),
-        input_task,
-        return_exceptions=True
+    # Initialize MasterServerHandler and send requests
+    master_server_handler = MasterServerHandler(master_server="api.kongor.online",version="4.10.6.0")
+    mserver_auth_response = master_server_handler.send_replay_auth("AUSFRANKHOST:", "5d08754849eed968b4e8a6fec75556ba")
+    parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
+    parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
+    my_print(f"AUTHENTICATION: [{mserver_auth_response[1]}]")
+    spectator_header_response = master_server_handler.get_spectator_header()
+    my_print(f"SERVER REQUESTOR: [{spectator_header_response[1]}]\n{spectator_header_response[0]}")
+    mserver_upstream_patch_response = await master_server_handler.compare_upstream_patch()
+    parsed_mserver_upstream_patch = phpserialize.loads(mserver_upstream_patch_response[0].encode('utf-8'))
+    parsed_mserver_upstream_patch = {k.decode(): (v.decode() if isinstance(v, bytes) else v) for k, v in parsed_mserver_upstream_patch.items() if isinstance(v, (bytes, bytearray, memoryview))} if isinstance(parsed_mserver_upstream_patch, dict) else parsed_mserver_upstream_patch
+
+    # Create a new ChatServerHandler instance and connect to the chat server
+    chat_server_handler = ChatServerHandler(
+        parsed_mserver_auth_response["chat_address"],
+        parsed_mserver_auth_response["chat_port"],
+        parsed_mserver_auth_response["session"],
+        parsed_mserver_auth_response["server_id"]
     )
+    await chat_server_handler.connect_and_handle()
+
+    try:
+        # Wait for either the stop event to be set or for the client task to complete
+        done, pending = await asyncio.gather(
+            stop_event.wait(),
+            input_task,
+            return_exceptions=True
+        )
+    except KeyboardInterrupt:
+        my_print("Server shutting down...")
+        stop_event.set()
 
     if pending is not None:
         for task in pending:
@@ -736,8 +872,9 @@ async def main():
 
     my_print("Server stopped.")
 
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        print("Shutting down the server gracefully...")
+        my_print("Server shutting down...")
