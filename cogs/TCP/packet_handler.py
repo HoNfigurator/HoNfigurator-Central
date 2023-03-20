@@ -807,7 +807,7 @@ async def main():
     global client_connections
 
     host = "127.0.0.1"
-    port = 1246
+    port = 1234
     client_connections = {}  # dictionary to store client connections
     
     server = await asyncio.start_server(

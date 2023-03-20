@@ -3,6 +3,7 @@ import threading
 import struct
 import sys
 import traceback
+import re
 
 # Connection details
 LOCAL_ADDR = '127.0.0.1'
@@ -12,31 +13,48 @@ REMOTE_ADDR = '212.181.3.23'
 REMOTE_PORT_SVR = 11032  # Port of the remote chat server
 REMOTE_PORT_MGR = 11033  # Port of the remote chat server
 
-def parse_packet(data,src_name,dst_name):
-    msg_len = int.from_bytes(data[0:2],byteorder='little')
-    msg_type = int.from_bytes(data[2:4], byteorder='little')
+def parse_packet(data, src, dst, src_name, dst_name):
+    if src_name == "gameserver":
+        msg_len = int.from_bytes(data[0:2], byteorder='little')
+        if len(data) == 2:
+            next_packet_data = src.recv(msg_len)
+            msg_type = int.from_bytes(next_packet_data[0:2], byteorder='little')
+            modified_packet = next_packet_data
+            dst.sendall(data)
+            dst.sendall(next_packet_data)
+            return msg_len, msg_type, data, modified_packet,False
+        # elif len(data) == 2 and msg_len == 2:
+        #     return msg_len, 0x2a00, data, data
+        else:
+            msg_len = int.from_bytes(data[0:2], byteorder='little')     # msg_len doesn't appear to be in the gameserver >>> comms
+            msg_type = int.from_bytes(data[2:4], byteorder='little')
+    else:
+        msg_len = int.from_bytes(data[0:2], byteorder='little')
+        msg_type = int.from_bytes(data[2:4], byteorder='little')
     packet_len = len(data)
     if packet_len > 2:
         modified_packet = data[4:]
-    else: modified_packet = data
-    return msg_len,msg_type, data, modified_packet
+    else:
+        modified_packet = data
+    return msg_len, msg_type, data, modified_packet,True
+
 
 def handle_gameserver_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet):
     packet_len = len(new_packet)
-    if msg_len != packet_len -2:
+    if msg_len != packet_len:
         if msg_type == 0x0: pass    # this is expected because the msg len is provided in the first msg not the 2nd one
-        elif msg_type in [0x2afd,0x2ae5,0x2afc,0x2afe,0x2aff,0x2b00,0x2b01,0x2b02,0x2b03]: pass     # found that the msg type changes based on the region
         else:
-            print(f">>> [type:{hex(msg_type)}] Most likely the type for this packet is wrong, as the len taken from this packet is not correct.. original packet: {original_packet}")
+            print(f">>> [type:{hex(msg_type)}] LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
     if msg_type == 0x500:
         #   Log in
         session_id = new_packet[4:].split(b'\x00', 1)[0].decode('utf-8')
         print(f">>> [type:{hex(msg_type)}] Logging in...\n\tSession ID: {session_id}")
-    elif msg_type == 0x0:
+    elif msg_type == 0x2a00:
         #   send heartbeat
-        if new_packet[1] != 0x0:    # ignore the first packet which defines the size of the msg in this case
-            print(f">>> [type:{hex(msg_type)}] Sending heartbeat..")
-    elif msg_type in [0x2afd,0x2ae5,0x2afc,0x2afe,0x2aff,0x2b00,0x2b01,0x2b02,0x2b03]:
+        #if new_packet[1] != 0x0:    # ignore the first packet which defines the size of the msg in this case
+        print(f">>> [type:{hex(msg_type)}] Sending heartbeat..")
+    elif msg_type == 0x502:
+    #elif msg_type in [0x2afd,0x2ae5,0x2afc,0x2afe,0x2aff,0x2b00,0x2b01,0x2b02,0x2b03]:
         """Send server information
         The above hex values represent the following regions:
             SEA = 2afd
@@ -51,7 +69,11 @@ def handle_gameserver_to_chatserver_packet(msg_len, msg_type, original_packet, n
         """
         #   Send server information
         # Parse IP address, region, and server name
-        ip_addr, _, remaining_data = new_packet[2:].partition(b'\x00')
+        ip_regex = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
+        ip_match = ip_regex.search(new_packet.decode('utf-8','ignore'))
+        if ip_match:
+            ip_index = ip_match.start()
+        ip_addr, _, remaining_data = new_packet[ip_index+1:].partition(b'\x00')
         region, _, remaining_data = remaining_data[2:].partition(b'\x00')
         server_name, _, _ = remaining_data.partition(b'\x00')
         ip_addr = ip_addr.decode('utf-8')
@@ -74,7 +96,7 @@ def handle_manager_to_chatserver_packet(msg_len, msg_type, original_packet, new_
     if msg_len != packet_len -2:
         if msg_type == 0x0: pass    # this is expected because the msg len is provided in the first msg not the 2nd one
         else:
-            print(f">>> [type:{hex(msg_type)}] Most likely the len taken from this packet is not correct.. original packet: {original_packet}")
+            print(f">>> [type:{hex(msg_type)}] LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
     if msg_type == 0x1600:
         #   b'+\x00\x00\x16Y\xf0\x02\x007f9c6567063d467cbf604aa21f220c40\x00F\x00\x00\x00' -mine
         #   b'+\x00\x00\x16Y\xf0\x02\x00f7851dd680764deaabf4bcc447ce5b57\x00F\x00\x00\x00'  -working
@@ -107,7 +129,7 @@ def handle_chatserver_to_gameserver_packet(msg_len, msg_type, original_packet, n
     if msg_len != packet_len -2:
         if msg_type == 0x0: pass    # this is expected because the msg len is provided in the first msg not the 2nd one
         else:
-            print(f"<<< [type:{hex(msg_type)}] Most likely the len taken from this packet is not correct.. original packet: {original_packet}")
+            print(f"<<< [type:{hex(msg_type)}] LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
     if msg_type == 0x1500:
         #   Authenticated
         print(f"<<< [type:{hex(msg_type)}] Authenticated to Chat Server")
@@ -121,7 +143,7 @@ def handle_chatserver_to_manager_packet(msg_len, msg_type, original_packet, new_
     if msg_len != packet_len -2:
         if msg_type == 0x0: pass    # this is expected because the msg len is provided in the first msg not the 2nd one
         else:
-            print(f"<<< [type:{hex(msg_type)}] Most likely the len taken from this packet is not correct.. original packet: {original_packet}")
+            print(f"<<< [type:{hex(msg_type)}] LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
     if msg_type == 0x1700:
         print(f'<<< [{hex(msg_type)}] Handshake accepted')
     elif msg_type == 0x1704:
@@ -150,19 +172,19 @@ def forward(src, dst, src_name, dst_name):
             if len(data) == 0:
                 break
             if src_name == "manager":
-                msg_len, msg_type, original_packet, new_packet = parse_packet(data,src_name,dst_name)
+                msg_len, msg_type, original_packet, new_packet, process_next = parse_packet(data, src, dst, src_name, dst_name)
                 handle_manager_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet)
             elif src_name == "gameserver":
-                msg_len, msg_type, original_packet, new_packet = parse_packet(data,src_name,dst_name)
+                msg_len, msg_type, original_packet, new_packet, process_next = parse_packet(data, src, dst, src_name, dst_name)
                 handle_gameserver_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet)
             elif src_name == "chatserver":
                 if dst_name == "manager":
-                    msg_len, msg_type, original_packet, new_packet = parse_packet(data,src_name,dst_name)
+                    msg_len, msg_type, original_packet, new_packet, process_next = parse_packet(data, src, dst, src_name, dst_name)
                     handle_chatserver_to_manager_packet(msg_len, msg_type, original_packet, new_packet)
                 if dst_name == "gameserver":
-                    msg_len, msg_type, original_packet, new_packet = parse_packet(data,src_name,dst_name)
+                    msg_len, msg_type, original_packet, new_packet, process_next = parse_packet(data, src, dst, src_name, dst_name)
                     handle_chatserver_to_gameserver_packet(msg_len, msg_type, original_packet, new_packet)
-            dst.sendall(data)
+            if process_next: dst.sendall(data)
     except ConnectionResetError:
         print(f"ConnectionResetError: {traceback.format_exc()}")
         dst.close()
@@ -173,6 +195,7 @@ def forward(src, dst, src_name, dst_name):
 
     dst.close()
     src.close()
+
 
 
 
