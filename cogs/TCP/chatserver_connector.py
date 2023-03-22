@@ -2,13 +2,15 @@ import socket
 import threading
 import struct
 import asyncio
+import traceback
 
 class ChatServerHandler:
-    def __init__(self, chat_address, chat_port, session_id, server_id):
+    def __init__(self, chat_address, chat_port, session_id, server_id,udp_ping_responder_port):
         self.chat_address = chat_address
         self.chat_port = chat_port
         self.session_id = session_id
         self.server_id = server_id
+        self.udp_ping_responder_port = udp_ping_responder_port
         self.server = None
         self.reader = None
         self.writer = None
@@ -30,7 +32,7 @@ class ChatServerHandler:
                 print("Connection refused by the chat server. Retrying in 10 seconds...")
                 await asyncio.sleep(10)
             except OSError as e:
-                print(f"OSError: {e}")
+                print(f"OSError: {traceback.format_exc()}")
                 break
             finally:
                 # Close connection
@@ -52,21 +54,21 @@ class ChatServerHandler:
         print(f">>> Sending Handshake packet to ChatServer\n\tSession ID: {session_id}\n\tServer ID: {server_id}")
         return packet
     
-    def create_server_info_packet(self, username, region, server_name, version, ip_addr):
-        msg_type = 0xf059
-        packet_data = b'\x02'
-        packet_data += b'\x00' + username.encode('utf-8') + b'\x00'
+    def create_server_info_packet(self, server_id, username, region, server_name, version, ip_addr, udp_ping_responder_port):
+        msg_type = 0x1602
+        packet_data = struct.pack('<H', msg_type)
+        packet_data += int.to_bytes(server_id,4,byteorder='little')
+        packet_data += username.encode('utf-8') + b'\x00'
         packet_data += region.encode('utf-8') + b'\x00'
         packet_data += server_name.encode('utf-8') + b'\x00'
         packet_data += version.encode('utf-8') + b'\x00'
         packet_data += ip_addr.encode('utf-8') + b'\x00'
-        packet_data += b'\xe3+\x00'
-        packet = struct.pack('<H', msg_type) + packet_data
-        packet = b'\x02\x16' + packet
-        packet_len = len(packet)
+        packet_data += int.to_bytes(udp_ping_responder_port,2,byteorder='little')
+        packet_data += b'\x00' #    0 = running, 1 = shutting down
+        packet_len = len(packet_data)
         len_packet = struct.pack('<H', packet_len)
-        print(f">>> Sending server information to chat server\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Address: {ip_addr}")
-        return len_packet, packet
+        print(f">>> Sending server information to chat server\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Address: {ip_addr}\n\tAuto-Ping Port: {udp_ping_responder_port}")
+        return len_packet, packet_data
 
 
 
@@ -81,6 +83,7 @@ class ChatServerHandler:
     async def close_connection(self):
         if self.writer:
             self.writer.close()
+            # TODO: handle this exception = ConnectionResetError
             await self.writer.wait_closed()
 
     async def receive_packets(self):
@@ -97,14 +100,14 @@ class ChatServerHandler:
             except asyncio.CancelledError:
                 print("Packet receiving task cancelled.")
                 break
-            except Exception as e:
-                print(f"Error while receiving packets: {e}")
+            except Exception:
+                print(f"Error while receiving packets: {traceback.format_exc()}")
                 break
 
     async def handle_received_packet(self, msg_len, msg_type, data):
         if msg_type == 0x1700:
             print(f"<<< Handshake accepted by the chat server.")
-            len, server_info_packet = self.create_server_info_packet("AUSFRANKHOST:", "NEWERTH", "T4NK 0", "4.10.6.0", "103.193.80.121")
+            len, server_info_packet = self.create_server_info_packet(self.server_id, "AUSFRANKHOST:", "NEWERTH", "T4NK 0", "4.10.6.0", "103.193.80.121", self.udp_ping_responder_port)
             self.writer.write(len)
             await self.writer.drain()
             self.writer.write(server_info_packet)
@@ -122,7 +125,7 @@ class ChatServerHandler:
 
             asyncio.create_task(send_keepalive())
         elif msg_type == 0x2a01:
-            print("<<< OK - Received heartbeat.")
+            print("<<< Received heartbeat.")
 
 
 

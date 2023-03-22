@@ -14,7 +14,7 @@ from datetime import datetime
 import traceback
 import re
 import cogs.data_handler as data_handler
-from launcher import GameServer
+from Manager import GameServer
 import asyncio
 import fnmatch
 

@@ -11,12 +11,9 @@ def show_exception_and_exit(exc_type, exc_value, tb):
 # sys.excepthook = show_exception_and_exit
 
 #import cogs.db_broker as db_broker
-import os,psutil,subprocess,ctypes,json,time,cogs.behemothHeart as heart,asyncio,cogs.data_handler as data_handler,cogs.server_controller as GameServer_Controller
-from threading import Thread
-from concurrent.futures import ProcessPoolExecutor
+import ctypes,cogs.behemothHeart as heart,asyncio,cogs.data_handler as data_handler,cogs.server_controller as GameServer_Controller
 from columnar import columnar
 from enum import Enum
-from cogs import socket_lsnr4
 
 # check if running as admin
 def is_admin():
@@ -49,7 +46,7 @@ class Manager:
         self.healthcheck_timers = {}
         self.healthcheck_timers.update(gbl_config['application_data']['timers']['manager']['health_checks'])
         return
-    def register(self,id):
+    def add_client(self,id):
         self.servers.update({id:GameServer(id)})
     def register_all(self):
         for id in range (1,gbl_config['hon_data']['server_total']+1):
@@ -102,8 +99,6 @@ class Manager:
     def run_health_checks(self,type):
         if type == HealthChecks.public_ip_healthcheck:
             print("checking public IP")
-
-
 class GameServer:
     def __init__(self,id):
         self.id = id

@@ -14,138 +14,127 @@ REMOTE_PORT_SVR = 11032  # Port of the remote chat server
 REMOTE_PORT_MGR = 11033  # Port of the remote chat server
 
 def parse_packet(data, src, dst, src_name, dst_name):
-    if src_name == "gameserver":
-        msg_len = int.from_bytes(data[0:2], byteorder='little')
-        if len(data) == 2:
-            next_packet_data = src.recv(msg_len)
+    msg_len = int.from_bytes(data[0:2], byteorder='little')
+    if len(data) == 2:  #   this means we have the len only.
+            next_packet_data = src.recv(msg_len)    # receive the message in full
             msg_type = int.from_bytes(next_packet_data[0:2], byteorder='little')
-            modified_packet = next_packet_data
-            dst.sendall(data)
-            dst.sendall(next_packet_data)
-            return msg_len, msg_type, data, modified_packet,False
-        # elif len(data) == 2 and msg_len == 2:
-        #     return msg_len, 0x2a00, data, data
-        else:
-            msg_len = int.from_bytes(data[0:2], byteorder='little')     # msg_len doesn't appear to be in the gameserver >>> comms
-            msg_type = int.from_bytes(data[2:4], byteorder='little')
-    else:
-        msg_len = int.from_bytes(data[0:2], byteorder='little')
-        msg_type = int.from_bytes(data[2:4], byteorder='little')
-    packet_len = len(data)
-    if packet_len > 2:
-        modified_packet = data[4:]
-    else:
-        modified_packet = data
+            dst.sendall(data)   # send the packet size
+            dst.sendall(next_packet_data)   # send the message
+            return msg_len, msg_type, data, next_packet_data,False
+    
+    msg_type = int.from_bytes(data[2:4], byteorder='little')
+    
+
+    modified_packet = data[2:]
+
     return msg_len, msg_type, data, modified_packet,True
 
 
 def handle_gameserver_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet):
     packet_len = len(new_packet)
+    print_prefix = f">>> [GAME|CHATSV] - [{hex(msg_type)}] "
     if msg_len != packet_len:
-        if msg_type == 0x0: pass    # this is expected because the msg len is provided in the first msg not the 2nd one
-        else:
-            print(f">>> [type:{hex(msg_type)}] LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
+        print(f"{print_prefix}LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
     if msg_type == 0x500:
         #   Log in
-        session_id = new_packet[4:].split(b'\x00', 1)[0].decode('utf-8')
-        print(f">>> [type:{hex(msg_type)}] Logging in...\n\tSession ID: {session_id}")
+        server_id = int.from_bytes(new_packet[2:6],byteorder='little')  # not the slave ID, the server ID given by master server
+        session_id,_,remaining_data = new_packet[6:].partition(b'\x00')     # session ID is cookie given by master server
+        chat_protocol = int.from_bytes(remaining_data,byteorder='little')   # unlikely to change
+        session_id = session_id.decode('utf8')
+        print(f"{print_prefix}Logging in...\n\tServer ID: {server_id}\n\tSession ID: {session_id}")
     elif msg_type == 0x2a00:
-        #   send heartbeat
-        #if new_packet[1] != 0x0:    # ignore the first packet which defines the size of the msg in this case
-        print(f">>> [type:{hex(msg_type)}] Sending heartbeat..")
+        print(f"{print_prefix}Sending heartbeat..")
     elif msg_type == 0x502:
-    #elif msg_type in [0x2afd,0x2ae5,0x2afc,0x2afe,0x2aff,0x2b00,0x2b01,0x2b02,0x2b03]:
         """Send server information
-        The above hex values represent the following regions:
-            SEA = 2afd
-            AU = 2ae5
-            NEWERTH = 2afc
-            USW = 2afe
-            USE = 2aff
-            TH = 2b00
-            RU = 2b01
-            EU = 2b02
-            BR = 2b03
         """
-        #   Send server information
-        # Parse IP address, region, and server name
-        ip_regex = re.compile(r'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')
-        ip_match = ip_regex.search(new_packet.decode('utf-8','ignore'))
-        if ip_match:
-            ip_index = ip_match.start()
-        ip_addr, _, remaining_data = new_packet[ip_index+1:].partition(b'\x00')
+        server_id = int.from_bytes(new_packet[2:6],byteorder='little')
+        ip_addr, _, remaining_data = new_packet[6:].partition(b'\x00')
+        port = int.from_bytes(remaining_data[0:2],byteorder='little')
         region, _, remaining_data = remaining_data[2:].partition(b'\x00')
-        server_name, _, _ = remaining_data.partition(b'\x00')
+        server_name, _, remaining_data = remaining_data.partition(b'\x00')
+        slave_id = int.from_bytes(remaining_data[0:2],byteorder='little')
+        #   2-4 ? b'\x00\x00'
+        match_id = int.from_bytes(remaining_data[4:8],byteorder='little')
+        u1 = new_packet[8]  # mb chatserver protocol
+        u2 = new_packet[9]  # ?
+        u3 = new_packet[10] # ?     this and above 2 combined = 2097155
+        #   8-10 ? b'x03\x00 '
         ip_addr = ip_addr.decode('utf-8')
         region = region.decode('utf-8')
         server_name = server_name.decode('utf-8')
-
-        reversed_bytes = new_packet[::-1]
-        second_null_index = reversed_bytes[1:].find(b'\x00')
-        version_index = second_null_index+8+2   #   there are always 8 null bytes after the hostname in the reversed byte array. add 2 to make up for the skipped null index at the start
-        version_number = reversed_bytes[version_index:].split(b'\x00', 1)[0].decode('utf-8')
-        version_number = version_number[::-1]
-        print(f">>> [{hex(msg_type)}] Server sent lobby information\n\tIP Addr: {ip_addr}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version_number}")
-    elif msg_type == 0x29de:
-        print()
+        #reversed_bytes = new_packet[::-1]
+        #second_null_index = reversed_bytes[1:].find(b'\x00')
+        # version_index = second_null_index+8+2   #   there are always 8 null bytes after the hostname in the reversed byte array. add 2 to make up for the skipped null index at the start
+        # version_number = reversed_bytes[version_index:].split(b'\x00', 1)[0].decode('utf-8')
+        # version_number = version_number[::-1]
+        print(f"{print_prefix}Server sent lobby information\n\tIP Addr: {ip_addr}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tSlave ID: {slave_id}\n\tMatch ID: {match_id}")
+    elif msg_type == 0x513:
+        print(f"{print_prefix}Player connection")
     else:
-        print(f">>> [type:{hex(msg_type)}] {new_packet}")
+        print(f"{print_prefix}{new_packet}")
 
 def handle_manager_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet):
     packet_len = len(new_packet)
-    if msg_len != packet_len -2:
+    print_prefix = f">>> [MGR|CHATSV] - [{hex(msg_type)}] "
+    if msg_len != packet_len:
         if msg_type == 0x0: pass    # this is expected because the msg len is provided in the first msg not the 2nd one
         else:
-            print(f">>> [type:{hex(msg_type)}] LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
+            print(f"{print_prefix}LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
     if msg_type == 0x1600:
+        #   Handshake
         #   b'+\x00\x00\x16Y\xf0\x02\x007f9c6567063d467cbf604aa21f220c40\x00F\x00\x00\x00' -mine
         #   b'+\x00\x00\x16Y\xf0\x02\x00f7851dd680764deaabf4bcc447ce5b57\x00F\x00\x00\x00'  -working
-        server_id = int.from_bytes(new_packet[0:4],byteorder='little')
-        session_id = new_packet[4:].split(b'\x00', 1)[0].decode('utf-8')
-        print(f'>>> [type:{hex(msg_type)}] Handshake\n\tServer ID: {server_id}\n\tSession: {session_id}')
-    elif msg_type == 0xf059:
-        #   b'8\x00Y\xf0\x01AUSFRANKHOST:\x00NEWERTH\x00TEST 0\x004.10.6.0\x00103.193.80.121\x00' - mine
+        server_id = int.from_bytes(new_packet[2:6],byteorder='little')
+        session_id = new_packet[6:].split(b'\x00', 1)[0].decode('utf-8')
+        print(f'{print_prefix}Handshake\n\tServer ID: {server_id}\n\tSession: {session_id}')
+    elif msg_type == 0x1602:
         #   b'\x02\x16Y\xf0\x02\x00AUSFRANKHOST:\x00NEWERTH\x00T4NK 0\x004.10.6.0\x00103.193.80.121\x00\xe3+\x00' - original
-        #  send server information
-        #   int 1 unknown
-        #   str username
-        #   str region
-        #   str server name
-        #   str version
-        #   str ip addr
-        unknown = new_packet[1]
-        username, region, server_name, version, ip_addr = [s.decode('utf-8') for s in new_packet[2:].split(b'\x00', 5)[:-1]]
-        print(f">>> [{hex(msg_type)}] Sending server info:\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Addr: {ip_addr}")
-    elif msg_type == 0x0:
-        if packet_len > 0:
-            print(f">>> [{hex(msg_type)}] Sending heartbeat..")
+        server_id = int.from_bytes(new_packet[2:6],byteorder='little')
+        username,_,remaining_data = new_packet[6:].partition(b'\x00')
+        region,_,remaining_data = remaining_data.partition(b'\x00')
+        server_name,_,remaining_data = remaining_data.partition(b'\x00')
+        version,_,remaining_data = remaining_data.partition(b'\x00')
+        ip_addr,_,remaining_data = remaining_data.partition(b'\x00')
+        port = int.from_bytes(remaining_data[0:2],byteorder='little')
+
+        username = username.decode('utf8')
+        region = region.decode('utf8')
+        server_name = server_name.decode('utf8')
+        version = version.decode('utf8')
+        ip_addr = ip_addr.decode('utf8')
+
+        print(f"{print_prefix}Sending server info:\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Addr: {ip_addr}\n\tAuto-Ping Port: {port}")
+    elif msg_type == 0x2a00:
+        print(f"{print_prefix}Sending heartbeat..")
     elif msg_type == 0x2a01:
-        print(f">>> [{hex(msg_type)}] Received heartbeat")
+        print(f"{print_prefix}Received heartbeat")
     else:
-        print(f">>> [type:{hex(msg_type)}] {new_packet}")
+        print(f"{print_prefix}{new_packet}")
 
 def handle_chatserver_to_gameserver_packet(msg_len, msg_type, original_packet, new_packet):
     packet_len = len(new_packet)
-    if msg_len != packet_len -2:
+    print_prefix = f"<<< [GAME|CHATSV] - [{hex(msg_type)}] "
+    if msg_len != packet_len:
         if msg_type == 0x0: pass    # this is expected because the msg len is provided in the first msg not the 2nd one
         else:
-            print(f"<<< [type:{hex(msg_type)}] LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
+            print(f"{print_prefix}LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
     if msg_type == 0x1500:
         #   Authenticated
-        print(f"<<< [type:{hex(msg_type)}] Authenticated to Chat Server")
+        print(f"{print_prefix}Authenticated to Chat Server")
     elif msg_type == 0x2a01:
-        print(f"<<< [type:{hex(msg_type)}] Received heartbeat")
+        print(f"{print_prefix}Received heartbeat")
     else:
-        print(f"<<< [type:{hex(msg_type)}] {new_packet}")
+        print(f"{print_prefix}{new_packet}")
 
 def handle_chatserver_to_manager_packet(msg_len, msg_type, original_packet, new_packet):
     packet_len = len(new_packet)
-    if msg_len != packet_len -2:
+    print_prefix = f"<<< [MGR|CHATSV] - [{hex(msg_type)}] "
+    if msg_len != packet_len:
         if msg_type == 0x0: pass    # this is expected because the msg len is provided in the first msg not the 2nd one
         else:
-            print(f"<<< [type:{hex(msg_type)}] LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
+            print(f"{print_prefix}LEN: {packet_len} MSG_LEN: {msg_len}.. original packet: {original_packet}")
     if msg_type == 0x1700:
-        print(f'<<< [{hex(msg_type)}] Handshake accepted')
+        print(f'{print_prefix}Handshake accepted')
     elif msg_type == 0x1704:
         #   Replay request
         account_id, match_id, ext_len, filehost_len, dir_len, upload_to_ftb, upload_to_s3 = struct.unpack('!I I I I I B B', new_packet[:22])
@@ -157,13 +146,13 @@ def handle_chatserver_to_manager_packet(msg_len, msg_type, original_packet, new_
         directory = new_packet[offset:offset + dir_len].decode('utf-8')
         offset += dir_len
         download_link = new_packet[offset:].decode('utf-8')
-        print(f'<<< [{hex(msg_type)}] Upload replay\n Account ID: {account_id}\n Match ID: {match_id}\n Extension: {extension}\n Filehost: {filehost}\n Directory: {directory}\n Upload to ftb: {upload_to_ftb}\n Upload to S3: {upload_to_s3}\n Download Link: {download_link}')
+        print(f'{print_prefix}Upload replay\n Account ID: {account_id}\n Match ID: {match_id}\n Extension: {extension}\n Filehost: {filehost}\n Directory: {directory}\n Upload to ftb: {upload_to_ftb}\n Upload to S3: {upload_to_s3}\n Download Link: {download_link}')
     elif msg_type == 0x2a01:
-        print(f"<<< [{hex(msg_type)}] Received heartbeat")
+        print(f"{print_prefix}Received heartbeat")
     else:
         # 0x1703: OK to server info? b'\x01\x01\x00\x01\x01\x01\x00\x00\x00'
         # 0x2a01: ? b''
-        print(f"<<< [{hex(msg_type)}] {new_packet}")
+        print(f"{print_prefix}{new_packet}")
 
 def forward(src, dst, src_name, dst_name):
     try:
@@ -227,12 +216,12 @@ def main():
     server_manager = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_manager.bind((LOCAL_ADDR, LOCAL_PORT_MGR))
     server_manager.listen(5)
-    print(f'[*] Listening on {LOCAL_ADDR}:{LOCAL_PORT_MGR}')
+    print(f'[*] Listening on {LOCAL_ADDR}:{LOCAL_PORT_MGR} - Manager')
 
     server_gameserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     server_gameserver.bind((LOCAL_ADDR, LOCAL_PORT_SVR))
     server_gameserver.listen(5)
-    print(f'[*] Listening on {LOCAL_ADDR}:{LOCAL_PORT_SVR}')
+    print(f'[*] Listening on {LOCAL_ADDR}:{LOCAL_PORT_SVR} - GameServer')
 
     try:
         t_manager = threading.Thread(target=handle_connections, args=(server_manager, REMOTE_PORT_MGR, "manager", "chatserver"))

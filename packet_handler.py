@@ -1,6 +1,4 @@
 import socket
-import struct
-import time
 import re
 import asyncio
 from columnar import columnar
@@ -13,9 +11,9 @@ from collections import OrderedDict
 import traceback
 import inspect
 import json
-import requests
-from masterserver_handler import MasterServerHandler
-from chatserver_handler import ChatServerHandler
+from cogs.TCP.masterserver_connector import MasterServerHandler
+from cogs.TCP.chatserver_connector import ChatServerHandler
+
 import phpserialize
 
 # Get the path of the current script
@@ -79,7 +77,7 @@ class PacketParser:
             0x40: self.server_announce,
             0x41: self.server_closed,
             0x42: self.server_status,
-            0x43: self.lobby_status,
+            0x43: self.long_frame,
             0x44: self.lobby_created,
             0x45: self.lobby_closed,
             0x47: self.server_connection,
@@ -110,7 +108,7 @@ class PacketParser:
         int 0 - msg type
         int 1: (to end) server port
         """
-        #my_print(f"Client #{self.id} Received server announce packet")
+        # 
         port = int.from_bytes(packet[1:],byteorder='little')
         self.game_state.port = port
 
@@ -199,19 +197,16 @@ class PacketParser:
         #my_print(f'{self.game_state.port} {self.game_state}')
 
 
-    async def lobby_status(self,packet):
-        """  0x43 Lobby status
-        typically this occurs when a lobby is created, or a lobby is started. Unsure what a lot of the info is. All the clients are in here, however I focused on parsing them in 0x42 as 0x42 contains all the same info from what I can see.
-        to summarise, a mostly useless packet.
+    async def long_frame(self,packet):
+        """  0x43 Long Frame
+        when there are skipped server frames, this packet contains the time spent skipping frames (msec)
         int 1 msg type 
         int 2 skipped frame LE
 
 
         """
-        #my_print(f"Client #{self.id} Received lobby status update: {packet}")
         skipped_frames = int.from_bytes(packet[1:3],byteorder='little')
         print(f"Client #{self.id} skipped server frame: {skipped_frames}msec")
-        #if self.game_state.get('match_started') == 1:
         self.game_state.increment_skipped_frames(skipped_frames)
 
 
@@ -430,7 +425,6 @@ class Commands:
             await client.writer.drain()
             my_print(f"Message packet sent to {client.addr[0]}:{client.addr[1]}")
         except Exception as e:
-            inspect.currentframe().f_code.co_name = inspect.currentframe().f_code.co_name
             logger.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
     
     async def cmd_custom_cmd(self, *cmd_args):
@@ -807,14 +801,15 @@ async def main():
     global client_connections
 
     host = "127.0.0.1"
-    port = 1234
+    game_server_to_mgr_port = 1135
+    udp_ping_responder_port = 9999
     client_connections = {}  # dictionary to store client connections
     
-    server = await asyncio.start_server(
-        handle_clients, host, port
+    game_server_mgr = await asyncio.start_server(
+        handle_clients, host, game_server_to_mgr_port
     )
 
-    my_print(f"Listening on {host}:{port}")
+    my_print(f"Listening on {host}:{game_server_to_mgr_port}")
 
     # Create a stop event to signal when the server should stop
     stop_event = asyncio.Event()
@@ -842,7 +837,8 @@ async def main():
         parsed_mserver_auth_response["chat_address"],
         parsed_mserver_auth_response["chat_port"],
         parsed_mserver_auth_response["session"],
-        parsed_mserver_auth_response["server_id"]
+        parsed_mserver_auth_response["server_id"],
+        udp_ping_responder_port=udp_ping_responder_port
     )
     await chat_server_handler.connect_and_handle()
 
@@ -867,8 +863,8 @@ async def main():
         await connection.close()
 
     # Close the server
-    server.close()
-    await server.wait_closed()
+    game_server_mgr.close()
+    await game_server_mgr.wait_closed()
 
     my_print("Server stopped.")
 
