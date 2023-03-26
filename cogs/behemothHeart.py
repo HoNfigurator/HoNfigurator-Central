@@ -3,7 +3,7 @@ from os.path import exists
 import discord
 from discord.ext import commands
 import asyncio
-import cogs.server_controller as server_controller
+import NEWCODE.cogs.server_controller as server_controller
 #import cogs.db_broker as db_broker
 from datetime import datetime
 import traceback

@@ -1,7 +1,4 @@
-#from cogs.dataManager import mData
-# import cogs.dataManager as dmgr
 import cogs.homecoming as udp_lsnr
-#import cogs.db_broker as db_broker
 import os
 import subprocess
 import psutil
@@ -14,7 +11,6 @@ from datetime import datetime
 import traceback
 import re
 import cogs.data_handler as data_handler
-from Manager import GameServer
 import asyncio
 import fnmatch
 
@@ -40,7 +36,7 @@ class honCMD:
 
             DETACHED_PROCESS = 0x00000008
             params = ';'.join(' '.join((f"set {key}",str(val))) for (key,val) in self.local_config['params'].items())
-            cmdline_args = [self.local_config['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.gbl_config['hon_data']['master_server']]
+            cmdline_args = [self.local_config['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.gbl_config['hon_data']['master_server'],"-register","127.0.0.1:1135"]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
     def stop_server(self):
         return

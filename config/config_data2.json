@@ -42,8 +42,10 @@
         "starting_voice_port" : 10060,
         "enable_proxy": false,
         "svr_login": "AUSFRANKHOST",
-        "svr_password": "",
+        "svr_password": "66sa#g8mYQQe7TE!",
         "svr_name": "T4NK",
-        "svr_location": "NEWERTH"
+        "svr_location": "AU",
+        "svr_priority": "HIGH",
+        "max_num_svrs_starting_at_once": 5
     }
 }

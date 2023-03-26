@@ -11,7 +11,7 @@ def show_exception_and_exit(exc_type, exc_value, tb):
 # sys.excepthook = show_exception_and_exit
 
 #import cogs.db_broker as db_broker
-import ctypes,cogs.behemothHeart as heart,asyncio,cogs.data_handler as data_handler,cogs.server_controller as GameServer_Controller
+import ctypes,cogs.behemothHeart as heart,asyncio,NEWCODE.cogs.data_handler as data_handler,NEWCODE.cogs.server_controller as GameServer_Controller
 from columnar import columnar
 from enum import Enum
 
@@ -32,7 +32,6 @@ class HealthChecks(Enum):
     public_ip_healthcheck = 1
     general_healthcheck = 2
     lag_healthcheck = 3
-
 def choose_health_check(type):
     for health_check in HealthChecks:
         if type.lower() == health_check.name.lower():
@@ -44,13 +43,17 @@ class Manager:
     def __init__(self):
         self.servers = {}
         self.healthcheck_timers = {}
-        self.healthcheck_timers.update(gbl_config['application_data']['timers']['manager']['health_checks'])
+        self.global_config = data_handler.global_config
+        self.healthcheck_timers.update(self.global_config['application_data']['timers']['manager']['health_checks'])
         return
-    def add_client(self,id):
-        self.servers.update({id:GameServer(id)})
+    def preflight_check(self):
+        print("Pre flight check.. LOOKS GOOD")
+    def register(self,id,port):
+        self.servers.update({port:GameServer(id,port,self.global_config)})
     def register_all(self):
-        for id in range (1,gbl_config['hon_data']['server_total']+1):
-            self.register(id)
+        for id in range (1,self.global_config['hon_data']['server_total']+1):
+            port = self.global_config['hon_data']['starting_game_port'] + id
+            self.register(id,port)
     def start(self):
         return
     async def start_all(self):
@@ -76,11 +79,11 @@ class Manager:
             if choice.lower() == "status": await self.get_status()
     async def master_poller(self):
         while True:
-            await asyncio.sleep(gbl_config['application_data']['timers']['manager']['heartbeat_frequency'])
+            await asyncio.sleep(self.global_config['application_data']['timers']['manager']['heartbeat_frequency'])
             for timer in self.healthcheck_timers:
-                self.healthcheck_timers[timer] -= gbl_config['application_data']['timers']['manager']['heartbeat_frequency']
+                self.healthcheck_timers[timer] -= self.global_config['application_data']['timers']['manager']['heartbeat_frequency']
                 if self.healthcheck_timers[timer] <= 0:
-                    self.healthcheck_timers[timer] = gbl_config['application_data']['timers']['manager']['health_checks'][timer]
+                    self.healthcheck_timers[timer] = self.global_config['application_data']['timers']['manager']['health_checks'][timer]
                     print(f"[Manager] performing health check: {timer}")
                     self.run_health_checks(choose_health_check(timer))
     async def my_async_function(self):
@@ -100,15 +103,17 @@ class Manager:
         if type == HealthChecks.public_ip_healthcheck:
             print("checking public IP")
 class GameServer:
-    def __init__(self,id):
+    def __init__(self,id,port,global_config):
         self.id = id
+        self.port = port
+        self.global_config = global_config
         self.set_configuration()
         self.set_controller()
         self.status = {
             'now':'pending'
         }
         self.healthcheck_timers = {}
-        self.healthcheck_timers.update(gbl_config['application_data']['timers']['game_server']['health_checks'])
+        self.healthcheck_timers.update(self.global_config['application_data']['timers']['game_server']['health_checks'])
     def start(self):
         """
             Take a GameServer dictionary, and spawn a GameServer Object?
@@ -119,11 +124,11 @@ class GameServer:
             self.game_server_control.get_current_match_id()
         except Exception: print(traceback.format_exc())
         while True:
-            await asyncio.sleep(gbl_config['application_data']['timers']['game_server']['heartbeat_frequency'])
+            await asyncio.sleep(self.global_config['application_data']['timers']['game_server']['heartbeat_frequency'])
             for timer in self.healthcheck_timers:
-                self.healthcheck_timers[timer] -= gbl_config['application_data']['timers']['game_server']['heartbeat_frequency']
+                self.healthcheck_timers[timer] -= self.global_config['application_data']['timers']['game_server']['heartbeat_frequency']
                 if self.healthcheck_timers[timer] <= 0:
-                    self.healthcheck_timers[timer] = gbl_config['application_data']['timers']['game_server']['health_checks'][timer]
+                    self.healthcheck_timers[timer] = self.global_config['application_data']['timers']['game_server']['health_checks'][timer]
                     print(f"[Game Server {self.id}] performing health check: {timer}")
                     self.run_health_checks(choose_health_check(timer))
             try:
@@ -139,7 +144,7 @@ class GameServer:
         self.config = data_handler.ConfigManagement(self.id)
     def set_controller(self):
         self.game_server_control = GameServer_Controller.honCMD(self.id)
-        self.game_server_control.set_global_config(gbl_config)
+        self.game_server_control.set_global_config(self.global_config)
         self.game_server_control.set_local_config(self.config.get_local_configuration())
     def run_health_checks(self,type):
         if type == HealthChecks.lag_healthcheck:
@@ -148,9 +153,9 @@ class GameServer:
             return
 
 async def main():
-    global gbl_config
+    # global self.global_config
 
-    gbl_config = data_handler.global_config
+    # self.global_config = data_handler.global_config
 
     manager = Manager()
     manager.register_all()

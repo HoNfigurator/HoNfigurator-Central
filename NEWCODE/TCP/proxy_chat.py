@@ -1,32 +1,23 @@
+import asyncio
 import socket
-import threading
-import struct
-import sys
 import traceback
-import re
+import struct
 
-# Connection details
-LOCAL_ADDR = '127.0.0.1'
-LOCAL_PORT_SVR = 11032  # Port the game server connects to
-LOCAL_PORT_MGR = 11033  # Port the manager connects to
-REMOTE_ADDR = '212.181.3.23'
-REMOTE_PORT_SVR = 11032  # Port of the remote chat server
-REMOTE_PORT_MGR = 11033  # Port of the remote chat server
-
-def parse_packet(data, src, dst, src_name, dst_name):
+async def parse_packet(data, src, dst, src_name, dst_name):
     msg_len = int.from_bytes(data[0:2], byteorder='little')
     if len(data) == 2:  #   this means we have the len only.
-            next_packet_data = src.recv(msg_len)    # receive the message in full
-            msg_type = int.from_bytes(next_packet_data[0:2], byteorder='little')
-            dst.sendall(data)   # send the packet size
-            dst.sendall(next_packet_data)   # send the message
-            return msg_len, msg_type, data, next_packet_data,False
+        next_packet_data = await src.readexactly(msg_len)    # receive the message in full
+        msg_type = int.from_bytes(next_packet_data[0:2], byteorder='little')
+        dst.write(data)   # send the packet size
+        dst.write(next_packet_data)   # send the message
+        await dst.drain()
+        return msg_len, msg_type, data, next_packet_data,False
     
     msg_type = int.from_bytes(data[2:4], byteorder='little')
     
 
     modified_packet = data[2:]
-
+    
     return msg_len, msg_type, data, modified_packet,True
 
 
@@ -42,6 +33,8 @@ def handle_gameserver_to_chatserver_packet(msg_len, msg_type, original_packet, n
         chat_protocol = int.from_bytes(remaining_data,byteorder='little')   # unlikely to change
         session_id = session_id.decode('utf8')
         print(f"{print_prefix}Logging in...\n\tServer ID: {server_id}\n\tSession ID: {session_id}")
+    elif msg_type == 0x501:
+        print(f"{print_prefix}Notifying of shutdown..")
     elif msg_type == 0x2a00:
         print(f"{print_prefix}Sending heartbeat..")
     elif msg_type == 0x502:
@@ -154,92 +147,90 @@ def handle_chatserver_to_manager_packet(msg_len, msg_type, original_packet, new_
         # 0x2a01: ? b''
         print(f"{print_prefix}{new_packet}")
 
-def forward(src, dst, src_name, dst_name):
+async def send_data(src_reader, dst_writer, handle_packet_fn, src_name, dst_name):
+    while True:
+        data = await src_reader.read(4096)
+        if len(data) == 0:
+            break
+                
+        msg_len, msg_type, original_packet, new_packet, process_next = await parse_packet(data, src_reader, dst_writer, src_name, dst_name)
+        handle_packet_fn(msg_len, msg_type, original_packet, new_packet)
+
+        if process_next:
+            dst_writer.write(data)
+            await dst_writer.drain()
+
+async def recv_data(src_reader, dst_writer, handle_packet_fn, src_name, dst_name):
+    while True:
+        data = await src_reader.read(4096)
+        if len(data) == 0:
+            break
+
+        msg_len, msg_type, original_packet, new_packet, process_next = await parse_packet(data, src_reader, dst_writer, src_name, dst_name)
+        handle_packet_fn(msg_len, msg_type, original_packet, new_packet)
+
+        if process_next:
+            dst_writer.write(data)
+            await dst_writer.drain()
+
+async def handle_game_connection(reader, writer):
+    remote_writer = None
     try:
-        while True:
-            data = src.recv(4096)
-            if len(data) == 0:
-                break
-            if src_name == "manager":
-                msg_len, msg_type, original_packet, new_packet, process_next = parse_packet(data, src, dst, src_name, dst_name)
-                handle_manager_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet)
-            elif src_name == "gameserver":
-                msg_len, msg_type, original_packet, new_packet, process_next = parse_packet(data, src, dst, src_name, dst_name)
-                handle_gameserver_to_chatserver_packet(msg_len, msg_type, original_packet, new_packet)
-            elif src_name == "chatserver":
-                if dst_name == "manager":
-                    msg_len, msg_type, original_packet, new_packet, process_next = parse_packet(data, src, dst, src_name, dst_name)
-                    handle_chatserver_to_manager_packet(msg_len, msg_type, original_packet, new_packet)
-                if dst_name == "gameserver":
-                    msg_len, msg_type, original_packet, new_packet, process_next = parse_packet(data, src, dst, src_name, dst_name)
-                    handle_chatserver_to_gameserver_packet(msg_len, msg_type, original_packet, new_packet)
-            if process_next: dst.sendall(data)
+        remote_reader, remote_writer = await asyncio.open_connection(remote_host, game_traffic_port)
+        
+        send_task = asyncio.create_task(send_data(reader, remote_writer, handle_gameserver_to_chatserver_packet, "gameserver", "chatserver"))
+        recv_task = asyncio.create_task(recv_data(remote_reader, writer, handle_chatserver_to_gameserver_packet, "chatserver", "gameserver"))
+
+        await asyncio.gather(send_task, recv_task)
+
     except ConnectionResetError:
         print(f"ConnectionResetError: {traceback.format_exc()}")
-        dst.close()
-        src.close()
-        return
     except Exception:
         print(f"An error occurred: {traceback.format_exc()}")
+    finally:
+        if remote_writer:
+            remote_writer.close()
+            await remote_writer.wait_closed()
+        writer.close()
+        await writer.wait_closed()
 
-    dst.close()
-    src.close()
-
-
-
-
-def handle_connections(server, remote_port, src_name, dst_name):
-    while True:
-        client, addr = server.accept()
-        print(f'[*] Accepted connection from {addr[0]}:{addr[1]} ({src_name})')
-
-        remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        remote_socket.connect((REMOTE_ADDR, remote_port))
-
-        t1 = threading.Thread(target=forward, args=(client, remote_socket, src_name, dst_name))
-        t2 = threading.Thread(target=forward, args=(remote_socket, client, dst_name, src_name))
-
-        t1.start()
-        t2.start()
-
-        try:
-            t1.join()
-            t2.join()
-        except ConnectionResetError:
-            print(f"Client disconnected: {addr[0]}:{addr[1]} ({src_name})")
-        finally:
-            client.close()
-            remote_socket.close()
-
-
-def main():
-    server_manager = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_manager.bind((LOCAL_ADDR, LOCAL_PORT_MGR))
-    server_manager.listen(5)
-    print(f'[*] Listening on {LOCAL_ADDR}:{LOCAL_PORT_MGR} - Manager')
-
-    server_gameserver = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server_gameserver.bind((LOCAL_ADDR, LOCAL_PORT_SVR))
-    server_gameserver.listen(5)
-    print(f'[*] Listening on {LOCAL_ADDR}:{LOCAL_PORT_SVR} - GameServer')
-
+async def handle_manager_connection(reader, writer):
+    remote_writer = None
     try:
-        t_manager = threading.Thread(target=handle_connections, args=(server_manager, REMOTE_PORT_MGR, "manager", "chatserver"))
-        t_gameserver = threading.Thread(target=handle_connections, args=(server_gameserver, REMOTE_PORT_SVR, "gameserver", "chatserver"))
+        remote_reader, remote_writer = await asyncio.open_connection(remote_host, manager_traffic_port)
 
-        t_manager.start()
-        t_gameserver.start()
+        send_task = asyncio.create_task(send_data(reader, remote_writer, handle_manager_to_chatserver_packet, "manager", "chatserver"))
+        recv_task = asyncio.create_task(recv_data(remote_reader, writer, handle_chatserver_to_manager_packet, "chatserver", "manager"))
 
-        t_manager.join()
-        t_gameserver.join()
+        await asyncio.gather(send_task, recv_task)
 
+    except ConnectionResetError:
+        print(f"ConnectionResetError: {traceback.format_exc()}")
+    except Exception:
+        print(f"An error occurred: {traceback.format_exc()}")
+    finally:
+        if remote_writer:
+            remote_writer.close()
+            await remote_writer.wait_closed()
+        writer.close()
+        await writer.wait_closed()
+
+
+async def main(game_traffic_port, manager_traffic_port, remote_host):
+    game_server = await asyncio.start_server(handle_game_connection, '0.0.0.0', game_traffic_port)
+    manager_server = await asyncio.start_server(handle_manager_connection, '0.0.0.0', manager_traffic_port)
+
+    async with game_server, manager_server:
+        await asyncio.gather(game_server.serve_forever(), manager_server.serve_forever())
+
+if __name__ == "__main__":
+    game_traffic_port = 11032
+    manager_traffic_port = 11033
+    remote_host = '212.181.3.23'
+    try:
+        asyncio.run(main(game_traffic_port, manager_traffic_port, remote_host))
     except KeyboardInterrupt:
-        print("Keyboard interrupt received. Shutting down.")
-        server_manager.close()
-        server_gameserver.close()
-        sys.exit(0)
-
-if __name__ == '__main__':
-    main()
-
+        pass
+    except Exception as e:
+        print(f"Error running proxy: {e}")
 

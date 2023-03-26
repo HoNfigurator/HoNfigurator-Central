@@ -1,6 +1,6 @@
-import socket
-import threading
+import asyncio
 import io
+import socket
 from http.server import BaseHTTPRequestHandler
 from urllib.parse import parse_qs
 from datetime import datetime
@@ -38,7 +38,9 @@ class CustomHTTPRequestHandler(BaseHTTPRequestHandler):
                 post_data_dict = parse_qs(post_data.decode("utf-8"))
                 my_print(f"POST request to {self.path} with data:")
                 for key, values in post_data_dict.items():
-                    print(f"  {key}: {values}")
+                    my_print(f"POST request to {self.path} with data:")
+                    for key, values in post_data_dict.items():
+                        print(f"  {key}: {values}")
             else:
                 my_print(f"POST request to {self.path} with unsupported content type: {content_type}")
 
@@ -46,36 +48,32 @@ def parse_http_request(request_data):
     handler = CustomHTTPRequestHandler(request_data)
     handler.handle_request()
 
-def handle_client(client_socket):
-    remote_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    remote_socket.connect((REMOTE_ADDR, REMOTE_PORT))
-
-    def forward_data(src_socket, dst_socket, parser=None):
-        while True:
-            data = src_socket.recv(4096)
-            if len(data) == 0:
-                break
-
-            if parser:
-                parser(data)
-
-            dst_socket.sendall(data)
-
-    threading.Thread(target=forward_data, args=(client_socket, remote_socket, parse_http_request)).start()
-    threading.Thread(target=forward_data, args=(remote_socket, client_socket)).start()
-
-def main():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    server.bind((LOCAL_ADDR, LOCAL_PORT))
-    server.listen(5)
-
-    print(f"[*] Listening on {LOCAL_ADDR}:{LOCAL_PORT}...")
-
+async def forward_data(src_reader, dst_writer, parser=None):
     while True:
-        client_socket, addr = server.accept()
-        print(f"[+] Connection from {addr}")
-        threading.Thread(target=handle_client, args=(client_socket,)).start()
+        data = await src_reader.read(4096)
+        if len(data) == 0:
+            break
+
+        if parser:
+            parser(data)
+
+        dst_writer.write(data)
+        await dst_writer.drain()
+
+async def handle_client(reader, writer):
+    remote_reader, remote_writer = await asyncio.open_connection(REMOTE_ADDR, REMOTE_PORT)
+
+    asyncio.create_task(forward_data(reader, remote_writer, parse_http_request))
+    asyncio.create_task(forward_data(remote_reader, writer))
+
+async def main():
+    server = await asyncio.start_server(handle_client, LOCAL_ADDR, LOCAL_PORT)
+
+    addr = server.sockets[0].getsockname()
+    print(f"[*] Listening on {addr[0]}:{addr[1]}...")
+
+    async with server:
+        await server.serve_forever()
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

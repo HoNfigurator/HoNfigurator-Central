@@ -13,6 +13,7 @@ import inspect
 import json
 from cogs.TCP.masterserver_connector import MasterServerHandler
 from cogs.TCP.chatserver_connector import ChatServerHandler
+from Manager import *
 
 import phpserialize
 
@@ -554,7 +555,6 @@ class GameState:
             with open(self.data_file, "w") as f:
                 json.dump(self.data, f)
 
-
     def update_client_id(self, new_id, data_dir="game_states"):
         self.id = new_id
                 
@@ -810,6 +810,11 @@ async def main():
     )
 
     my_print(f"Listening on {host}:{game_server_to_mgr_port}")
+
+    # launch game servers
+    manager = Manager()
+    manager.preflight_check()
+    manager.register_all()
 
     # Create a stop event to signal when the server should stop
     stop_event = asyncio.Event()

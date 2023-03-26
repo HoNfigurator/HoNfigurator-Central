@@ -1,10 +1,11 @@
-import requests
 import aiohttp
-import asyncio
+import traceback
+from cogs.custom_print import logger
+import inspect
 
 class MasterServerHandler:
 
-    def __init__(self,master_server="api.kongor.online",version="4.10.6.0",was="was-crIac6LASwoafrl8FrOa"):
+    def __init__(self, master_server="api.kongor.online", version="4.10.6.0", was="was-crIac6LASwoafrl8FrOa"):
         self.version = version
         self.was = was
         self.master_server = master_server
@@ -15,23 +16,25 @@ class MasterServerHandler:
             "Content-Type": "application/x-www-form-urlencoded"
         }
 
-    def send_replay_auth(self, login, password):
+    async def send_replay_auth(self, login, password):
         url = f"{self.base_url}/server_requester.php?f=replay_auth"
         data = {
             "login": login,
             "pass": password
         }
-        response = requests.post(url, data=data, headers=self.headers)
-        return response.text, response.status_code
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data, headers=self.headers) as response:
+                return await response.text(), response.status
 
-    def get_spectator_header(self):
+    async def get_spectator_header(self):
         url = f"{self.base_url}/server_requester.php"
         data = {
             "f": "get_spectator_header"
         }
-        response = requests.post(url, data=data, headers=self.headers)
-        return response.text, response.status_code
-    
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, data=data, headers=self.headers) as response:
+                return await response.text(), response.status
+
     async def compare_upstream_patch(self):
         url = f"{self.base_url}/patcher/patcher.php"
         headers = {
@@ -47,5 +50,5 @@ class MasterServerHandler:
                         return await response.text(), response.status
                     else:
                         return None
-            except aiohttp.ClientError as e:
-                print(e)
+            except aiohttp.ClientError:
+                logger.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
