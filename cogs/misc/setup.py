@@ -117,6 +117,8 @@ class SetupEnvironment:
         return True
 
     def check_configuration(self):
+        if not os.path.exists(f"{HOME_PATH}\\config"):
+            os.makedirs(HOME_PATH)
         if not os.path.exists(self.config_file):
             return self.create_configuration_file()
         else:
