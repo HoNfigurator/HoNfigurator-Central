@@ -11,6 +11,7 @@ import phpserialize
 from cogs.misc.logging import get_logger
 from enum import Enum
 import asyncio
+import hashlib
 
 LOGGER = get_logger()
 
@@ -171,7 +172,7 @@ class GameServerManager:
         """
         # Initialize MasterServerHandler and send requests
         master_server_handler = MasterServerHandler(master_server="api.kongor.online", version="4.10.6.0")
-        mserver_auth_response = await master_server_handler.send_replay_auth("AUSFRANKHOST:", "5d08754849eed968b4e8a6fec75556ba")
+        mserver_auth_response = await master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
             LOGGER.error("Authentication to MasterServer failed.")
             raise AuthenticationError(f"[{mserver_auth_response[1]}] Authentication error")
