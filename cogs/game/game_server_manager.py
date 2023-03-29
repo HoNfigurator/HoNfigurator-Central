@@ -1,17 +1,17 @@
 # Import required modules
-import traceback
-from cogs.game.game_server import GameServer
-from cogs.handlers.commands import Commands
-from cogs.TCP.listeners.packet_handler import handle_clients
-from cogs.TCP.listeners.auto_ping import AutoPingListener
-from cogs.connectors.masterserver_connector import MasterServerHandler
-from cogs.connectors.chatserver_connector import ChatServerHandler
-from cogs.misc.exceptions import ServerConnectionError, AuthenticationError
 import phpserialize
-from cogs.misc.logging import get_logger
-from enum import Enum
+import traceback
 import asyncio
 import hashlib
+from cogs.misc.exceptions import ServerConnectionError, AuthenticationError
+from cogs.connectors.masterserver_connector import MasterServerHandler
+from cogs.connectors.chatserver_connector import ChatServerHandler
+from cogs.TCP.listeners.packet_handler import handle_clients
+from cogs.TCP.listeners.auto_ping import AutoPingListener
+from cogs.game.game_server import GameServer
+from cogs.handlers.commands import Commands
+from cogs.misc.logging import get_logger
+from enum import Enum
 
 LOGGER = get_logger()
 
@@ -81,7 +81,7 @@ class GameServerManager:
                 await client_connection.writer.drain()
             else:
                 LOGGER.warn(f"No client connection found for port {game_server_port}")
-    
+
     async def start_autoping_listener(self, port):
         # Create an AutoPing Responder to handle ping requests from master server
         autoping_responder = AutoPingListener(
@@ -90,7 +90,7 @@ class GameServerManager:
             #   TODO: Get the real version number
             game_version="4.6.0.1")
         asyncio.create_task(autoping_responder.start_listener())
-    
+
     async def start_game_server_listener(self,host,game_server_to_mgr_port):
         """
         Starts a listener for incoming client connections on the specified host and port
@@ -166,7 +166,7 @@ class GameServerManager:
 
         Returns:
             dict: A dictionary containing the parsed response from the master server.
-        
+
         Raises:
             AuthenticationError: If the authentication fails.
         """
@@ -191,10 +191,10 @@ class GameServerManager:
             parsed_mserver_auth_response["server_id"],
             udp_ping_responder_port=udp_ping_responder_port
         )
-        
+
         # connect and authenticate to chatserver
         chat_auth_response = await chat_server_handler.connect()
-        
+
         if not chat_auth_response:
             LOGGER.error("Authentication to ChatServer failed.")
             raise AuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
@@ -313,7 +313,7 @@ class GameServerManager:
             #TODO: RAISE ERROR
             return False
 
-    
+
     def remove_client_connection(self,client_connection):
         """
         Removes a client connection from the client connection dictionary with the specified port as the key
@@ -330,7 +330,7 @@ class GameServerManager:
                 del self.client_connections[key]
                 return True
         return False
-        
+
     async def run_health_checks(self):
         """
         Perform health checks for the game servers.
@@ -346,7 +346,7 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 # Perform health checks for each game server here
                 pass
-    
+
     async def start_game_servers(self):
         """
         Start all game servers.

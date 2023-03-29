@@ -1,7 +1,7 @@
 from cogs.misc.logging import get_logger
+import traceback
 import inspect
 import re
-import traceback
 
 LOGGER = get_logger()
 
@@ -38,21 +38,21 @@ class PacketParser:
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the %s function: %s with this packet type: {packet_type}", inspect.currentframe().f_code.co_name, traceback.format_exc())
 
-    async def server_announce_preflight(packet):        
+    async def server_announce_preflight(packet):
         """ 0x40  Server announce
         int 0 - msg type
         int 1: (to end) server port
         """
-        # 
+        #
         port = int.from_bytes(packet[1:],byteorder='little')
         return port
-    
-    async def server_announce(self,packet):        
+
+    async def server_announce(self,packet):
         """ 0x40  Server announce
         int 0 - msg type
         int 1: (to end) server port
         """
-        # 
+        #
         port = int.from_bytes(packet[1:],byteorder='little')
         return port
 
@@ -72,7 +72,7 @@ class PacketParser:
 
     async def server_status(self,packet, game_server):
         """  0x42 Server status update packet.
-            
+
                 The most valuable packet so far, is sent multiple times a second, contains all "live" state including:
                 playercount, game phase, game state, client information
 
@@ -128,7 +128,7 @@ class PacketParser:
             location_start = data[name_end+1:].find(b'\x00') + name_end + 1
             location_end = data[location_start+1:].find(b'\x00') + location_start + 1
             location = data[location_start:location_end-1].decode('utf-8') if location_start > name_end+1 else ''
-            
+
             # Append extracted data to the clients list as a dictionary
             clients.append({
                 'account_id': account_id,
@@ -143,7 +143,7 @@ class PacketParser:
     async def long_frame(self,packet, game_server):
         """  0x43 Long Frame
         when there are skipped server frames, this packet contains the time spent skipping frames (msec)
-        int 1 msg type 
+        int 1 msg type
         int 2 skipped frame LE
 
 
@@ -224,15 +224,15 @@ class PacketParser:
 
     async def server_connection(self,packet, game_server):
         """ 0x47 Server selected / player joined
-                
+
                 This packet arrives any time someone begins connecting to the server
         """
         LOGGER.info(f"GameServer #{self.id} - Received server connection packet: {packet}")
-    
+
 
     async def replay_update(self,packet, game_server):
         """ 0x4A Replay status packet
-        
+
             This is an update from the game server regarding the status of the zipped replay file.
             Most likely for the manager to upload incrementally, if that setting is on (default not on)
         """

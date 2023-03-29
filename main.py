@@ -5,12 +5,12 @@ set_home(HOME_PATH)
 set_logger()
 
 
-import asyncio
-from cogs.game.game_server_manager import GameServerManager
-from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
-import traceback, sys, os.path
 import cogs.handlers.data_handler as data_handler
+import traceback, sys, os.path
+import asyncio
+from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
+from cogs.game.game_server_manager import GameServerManager
 
 LOGGER = get_logger()
 CONFIG_FILE = f"{HOME_PATH}\\config\\config.json"
@@ -36,7 +36,7 @@ async def main():
     else:
         LOGGER.exception(f"{traceback.format_exc()}")
         raise ConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
-    
+
 
     #global_config = data_handler.get_global_configuration(CONFIG_FILE)
 
@@ -68,7 +68,7 @@ async def main():
     start_task = asyncio.create_task(game_server_manager.start_game_servers())
 
     await asyncio.gather(auth_task, game_server_listener_task, auto_ping_listener_task, start_task)
-    
+
 if __name__ == "__main__":
     try:
         asyncio.run(main())

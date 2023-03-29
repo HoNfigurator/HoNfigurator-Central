@@ -1,5 +1,5 @@
-import logging
 import logging.handlers
+import logging
 import os, sys
 from prompt_toolkit.shortcuts import print_formatted_text
 

@@ -1,19 +1,19 @@
-import asyncio
 import nest_asyncio
 nest_asyncio.apply()
-from cogs.misc.logging import get_logger, get_script_dir, flatten_dict, print_formatted_text
-import inspect
 import traceback
+import asyncio
+import inspect
 import re
-from columnar import columnar
-from prompt_toolkit import prompt
-from prompt_toolkit.history import FileHistory
+from cogs.misc.logging import get_logger, get_script_dir, flatten_dict, print_formatted_text
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
-from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.completion import Completer, Completion
+from prompt_toolkit.completion import WordCompleter
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.history import FileHistory
 from prompt_toolkit.keys import Keys
+from prompt_toolkit import prompt
+from columnar import columnar
 
 script_dir = get_script_dir(__file__)
 LOGGER = get_logger()
@@ -96,14 +96,14 @@ class Commands:
         # Set up command completer and history
         self.command_completer = CustomCommandCompleter(command_handlers=self.command_handlers)
         self.history = FileHistory('.command_history')
-    
+
     async def handle_input(self, stop_event):
-        print_formatted_text(r'''    __  __           _   __    ____    _                                     __                
+        print_formatted_text(r'''    __  __           _   __    ____    _                                     __
    / / / /  ____    / | / /   / __/   (_)   ____ _  __  __   _____  ____ _  / /_  ____    _____
   / /_/ /  / __ \  /  |/ /   / /_    / /   / __ `/ / / / /  / ___/ / __ `/ / __/ / __ \  / ___/
- / __  /  / /_/ / / /|  /   / __/   / /   / /_/ / / /_/ /  / /    / /_/ / / /_  / /_/ / / /    
-/_/ /_/   \____/ /_/ |_/   /_/     /_/    \__, /  \__,_/  /_/     \__,_/  \__/  \____/ /_/     
-                                         /____/                                                
+ / __  /  / /_/ / / /|  /   / __/   / /   / /_/ / / /_/ /  / /    / /_/ / / /_  / /_/ / / /
+/_/ /_/   \____/ /_/ |_/   /_/     /_/    \__, /  \__,_/  /_/     \__,_/  \__/  \____/ /_/
+                                         /____/
 ''')
         await self.help()
         while not stop_event.is_set():
@@ -137,7 +137,7 @@ class Commands:
 
             except Exception as e:
                 LOGGER.exception("An error occurred while handling the command: %s", e)
-    
+
     async def cmd_shutdown_server(self, *cmd_args):
         try:
             if len(cmd_args) != 1:
@@ -149,7 +149,7 @@ class Commands:
             packets=(length_bytes,message_bytes)
             if cmd_args[0].lower() == "all":
                 for game_server in list(self.game_servers.values()):
-                    await self.send_svr_command_callback(self.cmd_name, game_server.port, (length_bytes,message_bytes))             
+                    await self.send_svr_command_callback(self.cmd_name, game_server.port, (length_bytes,message_bytes))
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
             else:
                 game_server =next((gs for gs in self.game_servers.values() if gs.id == int(cmd_args[0])), None)
@@ -200,7 +200,7 @@ class Commands:
             LOGGER.info(f"Command - Message packet sent to GameServer #{game_server.id}")
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def cmd_custom_cmd(self, *cmd_args):
         try:
             if len(cmd_args) < 2:
@@ -216,7 +216,7 @@ class Commands:
             await self.send_svr_command_callback(self.cmd_name, game_server.port, (data))
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def disconnect(self, *cmd_args):
         try:
             if len(cmd_args) < 1:
@@ -264,7 +264,7 @@ class Commands:
                 await connection.close()
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def help(self):
         try:
             headers = ["Command", "Description"]

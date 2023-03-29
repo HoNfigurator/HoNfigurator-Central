@@ -1,14 +1,14 @@
 import cogs.handlers.data_handler as data_handler
-from cogs.misc.logging import flatten_dict, get_logger, get_home
-from cogs.misc.utilities import Misc
-from cogs.TCP.parsers.packet_parser import PacketParser
-import os
-import json
-import math
-import psutil
 import subprocess
 import traceback
 import asyncio
+import psutil
+import json
+import math
+import os
+from cogs.misc.logging import flatten_dict, get_logger, get_home
+from cogs.TCP.parsers.packet_parser import PacketParser
+from cogs.misc.utilities import Misc
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
@@ -51,7 +51,7 @@ class GameServer:
         self.load(match_only=False)
         # Start the monitor_process method as a background task
         self.schedule_task(self.monitor_process())
-        
+
     def schedule_task(self, coro):
         task = asyncio.create_task(coro)
         self.tasks.append(task)
@@ -101,11 +101,11 @@ class GameServer:
                 self.game_state._state.update({'now_ingame_skipped_frames':self.game_state._state['now_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
     def save(self):
         current_match_id = str(self.game_state._state['current_match_id'])
-        
+
         if os.path.exists(self.data_file):
             with open(self.data_file, "r") as f:
                 performance_data = json.load(f)
-            
+
             performance_data = {
                 'grandtotal_skipped_frames':self.game_state._state['performance']['grandtotal_skipped_frames'],
                 'total_ingame_skipped_frames':self.game_state._state['performance']['total_ingame_skipped_frames'],
@@ -113,7 +113,7 @@ class GameServer:
                     'now_ingame_skipped_frames': self.game_state._state['performance'].get('now_ingame_skipped_frames', 0)
                 }
             }
-        
+
         else:
             performance_data = {
                 'grandtotal_skipped_frames': 0,
@@ -122,7 +122,7 @@ class GameServer:
                     'now_ingame_skipped_frames': self.game_state._state['performance'].get('now_ingame_skipped_frames', 0)
                 }
             }
-        
+
         with open(self.data_file, "w") as f:
             json.dump(performance_data, f)
 
@@ -131,16 +131,16 @@ class GameServer:
 
     def get(self, attribute, default=None):
         return getattr(self, attribute, default)
-    
+
     def reset_skipped_frames(self):
         self.game_state._state['performance']['now_ingame_skipped_frames'] = 0
-    
+
     def increment_skipped_frames(self, frames):
         self.game_state._state['performance']['grandtotal_skipped_frames'] +=frames
         if self.get_dict_value('match_started') == 1:
             self.game_state._state['performance']['total_ingame_skipped_frames'] += frames
             self.game_state._state['performance']['now_ingame_skipped_frames'] += frames
-    
+
     def get_pretty_status(self):
         def format_time(seconds):
             minutes, seconds = divmod(seconds, 60)
@@ -191,16 +191,16 @@ class GameServer:
         temp['Uptime'] = format_time(self.get_dict_value('uptime') / 1000) if self.get_dict_value('uptime') is not None else 'Unknown'
 
         return flatten_dict(temp)
-    
+
     async def start_server(self):
         if await self.get_running_server():
             return True
-        
+
         free_mem = psutil.virtual_memory().free
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
         if free_mem < 1000000000:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
-        
+
         #   Server instances write files to location dependent on USERPROFILE and APPDATA variables
         os.environ["USERPROFILE"] = self.global_config['hon_data']['hon_home_directory']
         os.environ["APPDATA"] = self.global_config['hon_data']['hon_home_directory']
@@ -216,7 +216,7 @@ class GameServer:
         self._proc_owner =self._proc_hook.username()
 
         return True
-    
+
     async def schedule_shutdown_server(self, client_connection, packet_data):
         while True:
             num_clients = self.game_state["num_clients"]

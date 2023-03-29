@@ -12,12 +12,12 @@ async def parse_packet(data, src, dst, src_name, dst_name):
         dst.write(next_packet_data)   # send the message
         await dst.drain()
         return msg_len, msg_type, data, next_packet_data,False
-    
+
     msg_type = int.from_bytes(data[2:4], byteorder='little')
-    
+
 
     modified_packet = data[2:]
-    
+
     return msg_len, msg_type, data, modified_packet,True
 
 
@@ -152,7 +152,7 @@ async def send_data(src_reader, dst_writer, handle_packet_fn, src_name, dst_name
         data = await src_reader.read(4096)
         if len(data) == 0:
             break
-                
+
         msg_len, msg_type, original_packet, new_packet, process_next = await parse_packet(data, src_reader, dst_writer, src_name, dst_name)
         handle_packet_fn(msg_len, msg_type, original_packet, new_packet)
 
@@ -177,7 +177,7 @@ async def handle_game_connection(reader, writer):
     remote_writer = None
     try:
         remote_reader, remote_writer = await asyncio.open_connection(remote_host, game_traffic_port)
-        
+
         send_task = asyncio.create_task(send_data(reader, remote_writer, handle_gameserver_to_chatserver_packet, "gameserver", "chatserver"))
         recv_task = asyncio.create_task(recv_data(remote_reader, writer, handle_chatserver_to_gameserver_packet, "chatserver", "gameserver"))
 

@@ -1,5 +1,5 @@
-import traceback
 import urllib.request
+import traceback
 import platform
 import json
 from cogs.misc.logging import get_logger,get_home
