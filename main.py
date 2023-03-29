@@ -10,7 +10,7 @@ from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 import traceback, sys, os.path
 import cogs.handlers.data_handler as data_handler
-from cogs.misc.setup import SetupEnvironment
+from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 
 LOGGER = get_logger()
 CONFIG_FILE = f"{HOME_PATH}\\config\\config.json"
@@ -25,6 +25,9 @@ def show_exception_and_exit(exc_type, exc_value, tb):
 # sys.excepthook = show_exception_and_exit
 
 async def main():
+
+    requirements_check = PrepareDependencies()
+    requirements_check.update_dependencies()
 
     setup = SetupEnvironment(CONFIG_FILE)
     config = setup.check_configuration()
