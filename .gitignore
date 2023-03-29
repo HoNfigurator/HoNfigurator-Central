@@ -3,6 +3,9 @@ config/num_server_rows
 utilities/honfigurator-installer.ps1
 utilities/install-beats.ps1
 *profile*.dat
+GameServer*state*.json
+config.json
+.command_history
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
