@@ -18,93 +18,61 @@ from prompt_toolkit.keys import Keys
 script_dir = get_script_dir(__file__)
 LOGGER = get_logger()
 
+COMMAND_LEN_BYTES = b'\x01\x00'
+SHUTDOWN_BYTES = b'"'
+SLEEP_BYTES = b' '
+WAKE_BYTES = b'!'
+
+class Command:
+    def __init__(self, name, description, function, sub_commands=None, arguments=None):
+        self.name = name
+        self.description = description
+        self.function = function
+        self.subcommands = sub_commands or {}
+        self.arguments = arguments or []
+
 class Commands:
     def __init__(self,game_servers,client_connections,global_config,send_svr_command_callback):
         self.game_servers = game_servers
         self.client_connections = client_connections
         self.send_svr_command_callback = send_svr_command_callback
         self.global_config = global_config
-        self.command_handlers = {
-            "shutdown": {
-                "function": self.cmd_shutdown_server,
-                "help": "Schedule shutdown one or ALL GameServers",
-                "subcommands": {
-                    "all": {
-                        "function": self.cmd_shutdown_server,
-                        "help": "Shutdown all GameServers"
-                    },
-                    # dynamically generate a list of sub commands based on the total number of game_servers
-                    "<game server id>": {
-                        "function": self.cmd_shutdown_server,
-                        "help": "Shutdown a specific GameServer by ID"
-                    },
-                }
-            },
-            "wake": {
-                "function": self.cmd_wake_server,
-                "help": "Wake up a GameServer",
-                "subcommands": {
-                    "<game server id>": {"function": self.cmd_wake_server, "help": "Wake up a specific GameServer by ID"},
-                }
-            },
-            "sleep": {
-                "function": self.cmd_sleep_server,
-                "help": "Put a GameServer to sleep",
-                "subcommands": {
-                    "<game server id>": {"function": self.cmd_sleep_server, "help": "Put a specific GameServer to sleep by ID"},
-                }
-            },
-            "message": {
-                "function": self.cmd_server_message,
-                "help": "Send a message to a GameServer",
-                "subcommands": {
-                    "<game server id>": {"function": self.cmd_server_message, "help": "Send a message to a specific GameServer by ID"},
-                    "<message>": {"function": self.cmd_server_message, "help": "The message to send to the GameServer"},
-                }
-            },
-            "cmd": {
-                "function": self.cmd_custom_cmd,
-                "help": "Send data to a GameServer",
-                "subcommands": {
-                    "<game server id>": {"function": self.cmd_custom_cmd, "help": "Send data to a specific GameServer by ID"},
-                    "<data>": {"function": self.cmd_custom_cmd, "help": "The data to send to the GameServer"},
-                }
-            },
-            "status": {
-                "function": self.status,
-                "help": "Show status of connected GameServers",
-                "subcommands": {}
-            },
-            "reconnect": {
-                "function": self.reconnect,
-                "help": "Close all GameServer connections, forcing them to reconnect",
-                "subcommands": {}
-            },
-            "disconnect": {
-                "function": self.disconnect,
-                "help": "Disconnect the specified GameServer. This only closes the network communication between the manager and game server, not shutdown.",
-                "subcommands": {
-                    "<game server id>": {"function": self.disconnect, "help": "Disconnect a specific GameServer by ID"},
-                }
-            },
-            "help": {
-                "function": self.help,
-                "help": "Show this help text",
-                "subcommands": {}
-            },
+    async def create_commands(self):
+        self.commands = {
+            "shutdown": Command("shutdown", "Schedule shutdown one or ALL GameServers", None, sub_commands=await self.create_shutdown_sub_commands("shutdown")),
+            "wake": Command("wake", "Wake up a GameServer", None),
+            "sleep": Command("sleep", "Put a GameServer to sleep", self.cmd_sleep_server),
+            "message": Command("message", "Send a message to a GameServer", self.cmd_server_message),
+            "status": Command("status", "Show status of connected GameServers", self.status),
+            "reconnect": Command("reconnect", "Close all GameServer connections, forcing them to reconnect", self.reconnect),
+            "disconnect": Command("disconnect", "Disconnect the specified GameServer. This only closes the network communication between the manager and game server, not shutdown.", self.disconnect),
+            "help": Command("help", "Show this help text", self.help)
         }
         # Set up command completer and history
-        self.command_completer = CustomCommandCompleter(command_handlers=self.command_handlers)
+        self.command_completer = CustomCommandCompleter(command_handlers=self.commands)
         self.history = FileHistory('.command_history')
+    async def create_shutdown_sub_commands(self,command):
+        sub_commands = {"all":await self.create_shutdown_function("all",command)}
+        for game_server in self.game_servers.values():
+            sub_commands[str(game_server.id)] = await self.create_shutdown_function(game_server.id,command)
+        return sub_commands
+
+    async def create_shutdown_function(self, server_id, command):
+        async def shutdown_server_all():
+            for game_server in list(self.game_servers.values()):
+                await self.send_svr_command_callback(command, game_server.port, (COMMAND_LEN_BYTES,SHUTDOWN_BYTES))             
+                LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
+        async def shutdown_server(game_server_id):
+            try:
+                game_server =next((gs for gs in self.game_servers.values() if gs.id == game_server_id), None)
+                await self.send_svr_command_callback(command, game_server.port, (COMMAND_LEN_BYTES,SHUTDOWN_BYTES))
+                LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
+            except Exception as e:
+                LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+        if server_id == "all": return shutdown_server_all
+        else: return shutdown_server
     
     async def handle_input(self, stop_event):
-        print_formatted_text(r'''    __  __           _   __    ____    _                                     __                
-   / / / /  ____    / | / /   / __/   (_)   ____ _  __  __   _____  ____ _  / /_  ____    _____
-  / /_/ /  / __ \  /  |/ /   / /_    / /   / __ `/ / / / /  / ___/ / __ `/ / __/ / __ \  / ___/
- / __  /  / /_/ / / /|  /   / __/   / /   / /_/ / / /_/ /  / /    / /_/ / / /_  / /_/ / / /    
-/_/ /_/   \____/ /_/ |_/   /_/     /_/    \__, /  \__,_/  /_/     \__,_/  \__/  \____/ /_/     
-                                         /____/                                                
-''')
         await self.help()
         while not stop_event.is_set():
             # Create custom key bindings
@@ -137,7 +105,7 @@ class Commands:
 
             except Exception as e:
                 LOGGER.exception("An error occurred while handling the command: %s", e)
-    
+        
     async def cmd_shutdown_server(self, *cmd_args):
         try:
             if len(cmd_args) != 1:
@@ -294,18 +262,12 @@ class CustomCommandCompleter(WordCompleter):
         super().__init__(words, **kwargs)
 
     def extract_words_from_command_handlers(self):
-        words = []
+        words = set()
 
-        for command, handler in self.command_handlers.items():
-            words.append(command)
-
-            subcommands = handler.get('subcommands', {})
-            for subcommand in subcommands.keys():
-                words.append(subcommand)
-
-            arg_suggestions = handler.get('args', [])
-            for suggestion in arg_suggestions:
-                words.append(suggestion)
+        for handler in self.command_handlers.values():
+            words.add(handler.name)
+            for subcommand in handler.subcommands:
+                words.add(subcommand)
 
         return words
 

@@ -47,12 +47,13 @@ class GameServerManager:
         self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.send_svr_command)
         # Create an event and task for handling input commands
         stop_event = asyncio.Event()
-        asyncio.create_task(self.commands.handle_input(stop_event))
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         for id in range (1,self.global_config['hon_data']['svr_total']+1):
             port = global_config['hon_data']['svr_starting_gamePort'] + id
             self.create_game_server(port)
+        
+        asyncio.create_task(self.commands.handle_input(stop_event))
         # Start running health checks
         asyncio.create_task(self.run_health_checks())
 
@@ -219,6 +220,7 @@ class GameServerManager:
         id = game_server_port - self.global_config['hon_data']['svr_starting_gamePort']
         game_server = GameServer(id, game_server_port, self.global_config, self.remove_game_server)
         self.game_servers[game_server_port] = game_server
+        asyncio.create_task(self.commands.create_commands())
         return game_server
 
     def find_next_available_ports(self):
