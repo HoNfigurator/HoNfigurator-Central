@@ -1,18 +1,18 @@
 import os.path, os, sys
-import json
-from cogs.misc.hide_pass import getpass
-from cogs.misc.logging import get_logger, get_home
-import traceback
 import subprocess as sp
+import traceback
+import json
+from cogs.misc.logging import get_logger, get_home
+from cogs.misc.hide_pass import getpass
 
-ALLOWED_REGIONS = ["AU","TH","USE","USW","BR","RU","SEA"]
+ALLOWED_REGIONS = ["AU", "BR", "EU", "RU", "SEA", "TH", "USE", "USW" ]
 LOGGER = get_logger()
 HOME_PATH = get_home()
 
 class SetupEnvironment:
     def __init__(self,config_file):
         self.config_file = config_file
-    
+
     def get_default_configuration(self):
         return {
             "discord_data": {
@@ -92,10 +92,10 @@ class SetupEnvironment:
                             hon_data[key] = value.lower() == value.lower()
                             minor_issues.append("Resolved: Invalid boolean value for {}: {}".format(key, value))
                         except Exception:
-                            major_issues.append("Invalid boolean value for {}: {}".format(key, value))    
+                            major_issues.append("Invalid boolean value for {}: {}".format(key, value))
                     else:
                         major_issues.append("Invalid boolean value for {}: {}".format(key, value))
-            
+
             elif key in ["svr_region"]:
                 if not isinstance(value, str):
                     major_issues.append("Invalid string value for {}: {}".format(key,value))
@@ -109,7 +109,7 @@ class SetupEnvironment:
         if major_issues:
             error_message = "Configuration file validation issues:\n" + "\n".join(major_issues)
             raise ValueError(error_message)
-        
+
         if minor_issues:
             print("\n".join(minor_issues))
             self.save_configuration_file(hon_data)
@@ -126,11 +126,11 @@ class SetupEnvironment:
             if self.validate_hon_data(hon_data):
                 return True
             else: return False
-    
+
     def save_configuration_file(self,hon_data):
         with open(self.config_file, 'w') as config_file:
             json.dump(hon_data, config_file, indent=4)
-        
+
     def create_configuration_file(self):
         default_config = self.get_default_configuration()
         hon_data = default_config['hon_data']
@@ -169,7 +169,7 @@ class SetupEnvironment:
         config = self.get_default_configuration()
         config['hon_data'] = hon_data
         return config
-    
+
     def get_final_configuration(self):
         return self.merge_config(self.get_existing_configuration())
 

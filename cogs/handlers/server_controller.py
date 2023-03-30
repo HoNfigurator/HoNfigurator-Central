@@ -1,18 +1,18 @@
 import cogs.TCP.listeners.auto_ping as udp_lsnr
-import os
-import subprocess
-import psutil
-from os.path import exists
-from threading import Thread
-import glob
-import time
-import shutil
-from datetime import datetime
-import traceback
-import re
 import cogs.data_handler as data_handler
+import subprocess
+import traceback
 import asyncio
 import fnmatch
+import shutil
+import psutil
+import glob
+import time
+import os
+import re
+from datetime import datetime
+from threading import Thread
+from os.path import exists
 
 # processed_data_dict = dmgr.mData().returnDict()
 
@@ -26,7 +26,7 @@ class honCMD:
     async def start_server(self):
         if await self.get_running_server():
             return
-        
+
         free_mem = psutil.virtual_memory().free
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
         if free_mem > 1000000000:
@@ -188,7 +188,7 @@ class honCMD2():
             it attempts to add write permission and then retries.
 
             If the error is for another reason it re-raises the error.
-            
+
             Usage : ``shutil.rmtree(path, onerror=onerror)``
             """
             import stat
@@ -279,7 +279,7 @@ class honCMD2():
         if self.server_status["game_log_location"] == "empty":
             honCMD().get_current_game_log()
         #print("checking for game started now")
-        
+
         hard_data = honCMD.compare_filesizes(self,self.server_status["game_log_location"],"game")
         soft_data = os.stat(self.server_status['game_log_location']).st_size # initial file size
 
@@ -307,7 +307,7 @@ class honCMD2():
                             except AttributeError as e:
                                 print(e)
                             #if "Server Skipped" in line:
-            f.close()             
+            f.close()
     def get_match_information(self):
         tempData = {}
         #if honCMD().compare_num_matches_played():
@@ -431,7 +431,7 @@ class honCMD2():
                     try:
                         total_slots = slots + spectators + referees
                     except Exception: total_slots = 10
-                    # 
+                    #
                     #   Set firstrunthrough to false so we don't accidentally come back here and waste IO.
                     #   Also set some other booleans for code logic later on
                     self.first_run = False
@@ -465,7 +465,7 @@ class honCMD2():
         #
         if self.server_status["match_log_location"] == "empty":
             return False
-        
+
         hard_data = honCMD.compare_filesizes(self,self.server_status["game_log_location"],"match")
         soft_data = os.stat(self.server_status['game_log_location']).st_size # initial file size
 
@@ -475,7 +475,7 @@ class honCMD2():
                 for line in f:
                     if line.startswith("GAME_END"):
                         return True
-            f.close()                   
+            f.close()
         return
     def check_game_started(self):
         tempData = {}
@@ -483,7 +483,7 @@ class honCMD2():
         if self.server_status["game_log_location"] == "empty":
             honCMD().get_current_game_log()
         #print("checking for game started now")
-        
+
         hard_data = honCMD.compare_filesizes(self,self.server_status["game_log_location"],"game")
         soft_data = os.stat(self.server_status['game_log_location']).st_size # initial file size
 
@@ -501,7 +501,7 @@ class honCMD2():
                         honCMD.updateStatus(self,tempData)
                         honCMD().append_line_to_file(f"{processed_data_dict['app_log']}",f"Match started. {match_status['match_id']}","INFO")
                         return True
-            f.close()                   
+            f.close()
         return
     def compare_num_matches_played(self):
         tempList = []
@@ -521,8 +521,8 @@ class honCMD2():
             print("NO GAME FILE EITHER, we should make one")
             with open(processed_data_dict['hon_logs_dir']+'\\M0000.log', 'w'): pass
             tempList.append("M0000.log")
-        
-        
+
+
         try:
             resulting_list = sorted(list(set(total_games_from_file + tempList)))
         except UnboundLocalError:
@@ -555,7 +555,7 @@ class honCMD2():
 
             self.server_status.update({"match_log_location":matchLoc})
             print("Most recent match log, matching {}: {}".format(match_status["match_id"],matchLoc))
-            
+
             # for item in os.listdir():
             #     if "game" in item or (item.startswith("M") and item.endswith(".log")):
             #         tempList.append(item)
@@ -627,7 +627,7 @@ class honCMD2():
                             else:
                                 if os.stat(file) > os.stat(replays_dest_dir+file):
                                     os.remove(replays_dest_dir+file)
-                                else: 
+                                else:
                                     os.remove(file)
                                     shutil.move(processed_data_dict['hon_replays_dir']+"\\"+file,replays_dest_dir)
                         else:
@@ -677,7 +677,7 @@ class honCMD2():
                                 else:
                                     if os.stat(file) > os.stat(replays_dest_dir+file):
                                         os.remove(replays_dest_dir+file)
-                                    else: 
+                                    else:
                                         os.remove(file)
                                         shutil.move(processed_data_dict['hon_replays_dir']+"\\"+file,replays_dest_dir)
                             else:
@@ -867,7 +867,7 @@ class honCMD2():
                 #match_status.update({'now':'idle'})
                 honCMD().initialise_variables("reload","reload - called by post game replay checker")
                 return True
-        else: 
+        else:
             print(f"[{match_status['match_id']}] Generating replay for match. Delaying restart for up to 5 minutes ({replay_wait}/{wait}sec until server is restarted).")
             if 'replay_notif_in_log' not in match_status or match_status['replay_notif_in_log'] == False:
                 honCMD().append_line_to_file(f"{processed_data_dict['app_log']}",f"[{match_status['match_id']}] Match finished. Waiting for generation of replay (can take up to {wait} seconds","INFO")
@@ -1028,7 +1028,7 @@ class honCMD2():
             self.server_status.update({"slave_log_location":"empty"})
             return
         #print(f"Initialising variables. Data dump: {processed_data_dict}")
-        
+
         honCMD.append_line_to_file(self,f"{processed_data_dict['app_log']}",f"Initialising variables. Data dump: {processed_data_dict}","INFO")
         #
         # Remove log files older than 7 days
@@ -1130,7 +1130,7 @@ class honCMD2():
             for proc in psutil.process_iter():
                 if proc.name() == hon_process_name:
                     hon_procs.append(proc)
-                
+
             timer = 0
             while len(hon_procs) > 0:
                 for i in range(len(hon_procs)):
@@ -1151,7 +1151,7 @@ class honCMD2():
                 '_proc_hook':psutil.Process(pid=proc.pid),
                 '_pid_owner':proc.username()
             })
-                
+
             try:
                 honCMD().initialise_variables("","server start - but found pid")
                 return server
@@ -1161,7 +1161,7 @@ class honCMD2():
             return False
         else:
             """ The process hasn't been found. Begin code to prepare starting server """
-            
+
             #   prepare UDP listener port for the UDP auto-server selection listener, for best ping response
             if processed_data_dict['use_proxy'] == 'False':
                 udp_listener_port = int(processed_data_dict['game_starting_port']) - 1
@@ -1215,7 +1215,7 @@ class honCMD2():
                 tempData.update({'svr_proxyLocalVoicePort':svr_proxyLocalVoicePort})
                 tempData.update({'svr_proxyport':svr_proxyport})
                 tempData.update({'svr_proxyRemoteVoicePort':svr_proxyRemoteVoicePort})
-                
+
                 # update the global dictionary
                 honCMD.updateStatus(self,tempData)
 
@@ -1234,7 +1234,7 @@ class honCMD2():
                 hon_commandline = dmgr.mData().return_commandline(processed_data_dict)
                 DETACHED_PROCESS = 0x00000008
                 self.honEXE = subprocess.Popen(hon_commandline,close_fds=True, creationflags=DETACHED_PROCESS)
-                
+
                 honCMD().append_line_to_file(processed_data_dict['app_log'],f"Server starting. Reason: {reason}","INFO")
 
                 # update the dictionary with the process PID information
@@ -1265,7 +1265,7 @@ class honCMD2():
                 self.server_status.update({'crash':True})
                 honCMD().append_line_to_file(f"{processed_data_dict['app_log']}",f"Insufficient RAM to start server.","WARNING")
                 return "ram"
-                
+
     def stopSERVER(self,force,reason):
         """ StopServer: used to terminate the HoN server instance
         force is a boolean used to enforce the stoppage despite playercount """
@@ -1492,8 +1492,8 @@ class honCMD2():
                 print("NO GAME FILE EITHER, we should make one")
                 with open(processed_data_dict['hon_logs_dir']+'\\M0000.log', 'w'): pass
                 tempList.append("M0000.log")
-            
-            
+
+
             try:
                 resulting_list = sorted(list(set(total_games_from_file + tempList)))
             except UnboundLocalError:
@@ -1521,7 +1521,7 @@ class honCMD2():
                 if self.server_status["game_log_location"] == "empty":
                     honCMD.getData(self,"getLogList_Game")
                 #print("checking for game started now")
-                
+
                 hard_data = honCMD.compare_filesizes(self,self.server_status["game_log_location"],"game")
                 soft_data = os.stat(self.server_status['game_log_location']).st_size # initial file size
 
@@ -1565,7 +1565,7 @@ class honCMD2():
                                         except AttributeError as e:
                                             print(e)
                                     #if "Server Skipped" in line:
-                    f.close()                   
+                    f.close()
             return
         elif dtype == "MatchInformation":
             tempData = {}
@@ -1669,7 +1669,7 @@ class honCMD2():
                 match_status.update({'match_id':matchID})
                 self.server_status.update({"match_log_location":matchLoc})
                 print("Most recent match, matching {}: {}".format(pattern,matchLoc))
-                
+
                 # for item in os.listdir():
                 #     if "game" in item or (item.startswith("M") and item.endswith(".log")):
                 #         tempList.append(item)
@@ -1678,7 +1678,7 @@ class honCMD2():
                 print(traceback.format_exc())
                 honCMD().append_line_to_file(f"{processed_data_dict['app_log']}",f"{traceback.format_exc()}","WARNING")
                 pass
-            
+
             return True
         #
         #   Get latest game lobby logs
@@ -1706,7 +1706,7 @@ class honCMD2():
                 print(f"Lobby created: {match_id}")
                 honCMD().append_line_to_file(f"{processed_data_dict['app_log']}",f"Lobby created: {match_id}","INFO")
                 print("Most recent file matching {}: {}".format(pattern,gameLoc))
-                
+
                 # for item in os.listdir():
                 #     if "game" in item or (item.startswith("M") and item.endswith(".log")):
                 #         tempList.append(item)
@@ -1722,7 +1722,7 @@ class honCMD2():
             print("checking slave logs")
             tempList = []
             for item in os.listdir(processed_data_dict['hon_logs_dir']):
-                if (item.startswith("Slave") and item.endswith(".log")) and "Slave-1_M_console.clog" not in item and 'Slave-Temp.log' not in item: #or (item.startswith("Slave-1_M") and item.endswith("console.clog")) 
+                if (item.startswith("Slave") and item.endswith(".log")) and "Slave-1_M_console.clog" not in item and 'Slave-Temp.log' not in item: #or (item.startswith("Slave-1_M") and item.endswith("console.clog"))
                     tempList.append(item)
             if not tempList:
                 # catch error where there is no slave log, create a temp one.
@@ -1732,7 +1732,7 @@ class honCMD2():
             slaveLog = tempList[len(tempList)-1]
             self.server_status.update({"slave_log_location":slaveLog})
             return True
-            
+
         #
         #   Get the file size of the slave log and write it to a temporary file
         elif dtype == "loadHardSlave":
@@ -1782,7 +1782,7 @@ class honCMD2():
         # Come here when a lobby has been created, and the real slave log byte is different to the current byte size, and start collecting lobby information.
         elif dtype == "GameCheck":
             tempData = {}
-            
+
             if self.server_status['slave_log_location'] == "empty":
                 honCMD.getData(self,"getLogList_Slave")
             #softSlave = mData.getData(self,"loadSoftSlave")
@@ -1855,7 +1855,7 @@ class honCMD2():
                         try:
                             total_slots = slots + spectators + referees
                         except Exception: total_slots = 10
-                        # 
+                        #
                         #   Set firstrunthrough to false so we don't accidentally come back here and waste IO.
                         #   Also set some other booleans for code logic later on
                         self.first_run = False
@@ -1891,7 +1891,7 @@ class honCMD2():
                 honCMD().getData("getLogList_Slave")
             file1 = os.stat(self.server_status['slave_log_location']) # initial file size
             file1_size = file1.st_size
-        
+
             # your script here that collects and writes data (increase file size)
             time.sleep(1)
             file2 = os.stat(self.server_status['slave_log_location']) # updated file size

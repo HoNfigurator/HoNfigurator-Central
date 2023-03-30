@@ -19,10 +19,10 @@ On Windows, the msvcrt module will be used.
 # Ammendment for asterisk: Ashish Kumawat
 
 import contextlib
+import warnings
+import sys
 import io
 import os
-import sys
-import warnings
 
 __all__ = ["getpass","getuser","GetPassWarning"]
 
@@ -113,18 +113,18 @@ def win_getpass(prompt='Password: ', stream=None):
         if c == '\003':
             raise KeyboardInterrupt
         if c == '\b':
-            
+
             if len(pw) > 0:
                 pw = pw[:-1]
                 msvcrt.putwch('\b')
                 msvcrt.putwch(' ')
                 msvcrt.putwch('\b')
-            
+
         else:
             pw = pw + c
             msvcrt.putwch('*')
-            
-            
+
+
     msvcrt.putwch('\r')
     msvcrt.putwch('\n')
     return pw

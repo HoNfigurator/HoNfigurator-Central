@@ -1,7 +1,7 @@
-import struct
-import asyncio
 import traceback
+import asyncio
 import inspect
+import struct
 from cogs.misc.logging import get_logger
 
 LOGGER = get_logger()
@@ -62,7 +62,7 @@ class ChatServerHandler:
 
         LOGGER.debug(f">>> Sending Handshake packet to ChatServer\n\tSession ID: {session_id}\n\tServer ID: {server_id}")
         return packet
-    
+
     def create_server_info_packet(self, server_id, username, region, server_name, version, ip_addr, udp_ping_responder_port):
         msg_type = 0x1602
         packet_data = struct.pack('<H', msg_type)
@@ -78,7 +78,7 @@ class ChatServerHandler:
         len_packet = struct.pack('<H', packet_len)
         LOGGER.debug(f">>> Sending manager information to chat server\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Address: {ip_addr}\n\tAuto-Ping Port: {udp_ping_responder_port}")
         return len_packet, packet_data
-    
+
     def parse_packet(self, data):
         msg_len = int.from_bytes(data[0:2], byteorder='little')
         msg_type = int.from_bytes(data[2:4], byteorder='little')

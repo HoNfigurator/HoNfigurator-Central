@@ -1,7 +1,7 @@
-import aiohttp
 import traceback
-from cogs.misc.logging import get_logger
+import aiohttp
 import inspect
+from cogs.misc.logging import get_logger
 
 LOGGER = get_logger()
 

@@ -1,9 +1,9 @@
-import socket
-import asyncio
 import traceback
+import asyncio
 import inspect
-from cogs.misc.logging import get_logger
+import socket
 from cogs.TCP.parsers.packet_parser import PacketParser
+from cogs.misc.logging import get_logger
 
 LOGGER = get_logger()
 
@@ -16,7 +16,7 @@ class ClientConnection:
         self.game_server_manager = game_server_manager
         self.closed = False
         self.id = None
-    
+
         # Set TCP keepalive on the socket
         sock = self.writer.get_extra_info('socket')
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
@@ -108,11 +108,11 @@ class ClientConnection:
                     self.game_server_manager.remove_client_connection(self)
             except Exception:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def handle_packet(self, packets):
         # Use the PacketParser instance to handle the packet
         await self.packet_parser.handle_packet(packets)
-    
+
 async def handle_client_connection(client_reader, client_writer, game_server_manager):
     # Get the client address
     client_addr = client_writer.get_extra_info("peername")
