@@ -7,13 +7,14 @@ set_logger()
 
 import cogs.handlers.data_handler as data_handler
 import traceback, sys, os.path
+import pathlib
 import asyncio
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
 
 LOGGER = get_logger()
-CONFIG_FILE = f"{HOME_PATH}\\config\\config.json"
+CONFIG_FILE = pathlib.Path.cwd() / 'config' / 'config.json'
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """

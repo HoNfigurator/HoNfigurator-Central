@@ -1,7 +1,9 @@
 import urllib.request
 import traceback
 import platform
+import pathlib
 import json
+import sys
 from cogs.misc.logging import get_logger,get_home
 
 LOGGER = get_logger()
@@ -25,12 +27,15 @@ class Enrichment:
         return f"cpu: {self.get_cpu()}"
 
 def get_global_configuration():
-    with open(f"{HOME_PATH}\\config\\config.json", "r") as jsonfile:
+    with open(pathlib.Path.cwd() / 'config' / 'config.json') as jsonfile:
         gbl = json.load(jsonfile)
         if 'svr_ip' not in gbl['hon_data']:
             public_ip = Enrichment().get_public_ip()
             gbl['hon_data']['svr_ip'] = public_ip
-        gbl['hon_data']['hon_logs_directory'] = f"{gbl['hon_data']['hon_home_directory']}\\Documents\\Heroes of Newerth x64\\game\\logs"
+        if sys.platform == "win32":
+            gbl['hon_data']['hon_logs_directory'] = f"{gbl['hon_data']['hon_home_directory']}\\Documents\\Heroes of Newerth x64\\game\\logs"
+        else:
+            gbl['hon_data']['hon_logs_directory'] = pathlib.path(gbl['hon_data']['hon_home_directory'] / 'logs')
         return gbl
 
 #global_config = get_global_configuration()
@@ -98,4 +103,6 @@ class ConfigManagement():
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
+        if sys.platform == "linux":
+            self.local['config']['file_path'] = self.get_global_by_key("hon_install_directory") + "hon-x86_64-server"
         return self.local

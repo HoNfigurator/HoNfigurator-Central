@@ -5,6 +5,7 @@ import asyncio
 import psutil
 import json
 import math
+import sys
 import os
 from cogs.misc.logging import flatten_dict, get_logger, get_home
 from cogs.TCP.parsers.packet_parser import PacketParser
@@ -196,7 +197,7 @@ class GameServer:
         if await self.get_running_server():
             return True
 
-        free_mem = psutil.virtual_memory().free
+        free_mem = psutil.virtual_memory().available
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
         if free_mem < 1000000000:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
@@ -208,7 +209,10 @@ class GameServer:
         DETACHED_PROCESS = 0x00000008
         params = ';'.join(' '.join((f"set {key}",str(val))) for (key,val) in self.config.local['params'].items())
         cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register","127.0.0.1:1135"]
-        exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+        if sys.platform == "win32":
+            exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+        else:
+            exe = subprocess.Popen(cmdline_args,close_fds=True, shell = True, start_new_session=True)
 
         self._pid = exe.pid
         self._proc = exe
