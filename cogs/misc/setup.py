@@ -97,13 +97,13 @@ class SetupEnvironment:
                         major_issues.append("Invalid boolean value for {}: {}".format(key, value))
 
             elif key in ["svr_region"]:
-                if not isinstance(value, str):
+                if not isinstance(value, str) or value == '':
                     major_issues.append("Invalid string value for {}: {}".format(key,value))
                 elif value not in ALLOWED_REGIONS:
                     major_issues.append("Incorrect region. Can only be one of {}".format((',').join(ALLOWED_REGIONS)))
 
             else:
-                if not isinstance(value, str):
+                if not isinstance(value, str) or value == '':
                     major_issues.append("Invalid string value for {}: {}".format(key, value))
 
         if major_issues:
@@ -160,10 +160,9 @@ class SetupEnvironment:
                     else:
                         hon_data[key] = user_input
                 break
-
         self.save_configuration_file(hon_data)
-
         print("Configuration file created: {}".format(self.config_file))
+        return True
 
     def merge_config(self,hon_data):
         config = self.get_default_configuration()
@@ -196,9 +195,6 @@ class PrepareDependencies:
             missing = set(required) - set(installed_packages_list)
             if missing:
                 python_path = sp.getoutput('where python').split("\n")[0]
-                if isinstance(python_path, list) and len(python_path) > 1:
-                    LOGGER.warn(f"More than 1 python path.. {python_path}\nSetting to {python_path[0]}")
-                    python_path = python_path[0]
                 result = sp.run([python_path, '-m', 'pip', 'install', *missing])
                 if result.returncode == 0:
                     LOGGER.info(f"SUCCESS, upgraded the following packages: {', '.join(missing)}")
