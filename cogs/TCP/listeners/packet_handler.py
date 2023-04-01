@@ -105,7 +105,7 @@ class ClientConnection:
                 if self.game_server is not None:
                     self.game_server.save()
                     self.game_server_manager.remove_game_server(self.game_server)
-                    self.game_server_manager.remove_client_connection(self)
+                    await self.game_server_manager.remove_client_connection(self)
             except Exception:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
     
@@ -144,7 +144,7 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
         # TODO: What about when a game server connects and there's no reference to it in game server manager
 
         # register the client connection in the game server manager
-        game_server_manager.add_client_connection(client_connection,game_server_port)
+        await game_server_manager.add_client_connection(client_connection,game_server_port)
 
         # register the game server in the client connection
         if game_server is None:
@@ -162,7 +162,7 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
 
     finally:
         # Don't forget to unregister the client connection in the `finally` block
-        game_server_manager.remove_client_connection(client_connection)
+        await game_server_manager.remove_client_connection(client_connection)
         await client_connection.close()
 
 async def handle_clients(client_reader, client_writer, game_server_manager):

@@ -45,6 +45,7 @@ class GameServerManager:
         self.client_connections = {}
         # Initialize a Commands object for sending commands to game servers
         self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.send_svr_command)
+        #asyncio.create_task(self.commands.initialise_commands())
         # Create an event and task for handling input commands
         stop_event = asyncio.Event()
         # Create game server instances
@@ -220,7 +221,6 @@ class GameServerManager:
         id = game_server_port - self.global_config['hon_data']['svr_starting_gamePort']
         game_server = GameServer(id, game_server_port, self.global_config, self.remove_game_server)
         self.game_servers[game_server_port] = game_server
-        asyncio.create_task(self.commands.create_commands())
         return game_server
 
     def find_next_available_ports(self):
@@ -297,7 +297,7 @@ class GameServerManager:
         """
         return self.game_servers.get(game_server_port, None)
 
-    def add_client_connection(self,client_connection, port):
+    async def add_client_connection(self,client_connection, port):
         """
         Adds a client connection to the client connection dictionary with the specified port as the key
 
@@ -310,13 +310,16 @@ class GameServerManager:
         """
         if port not in self.client_connections:
             self.client_connections[port] = client_connection
+            # indicate that the sub commands should be regenerated since the list of connected servers has changed.
+            await self.commands.initialise_commands()
+            self.commands.subcommands_changed.set()
             return True
         else:
             #TODO: RAISE ERROR
             return False
 
     
-    def remove_client_connection(self,client_connection):
+    async def remove_client_connection(self,client_connection):
         """
         Removes a client connection from the client connection dictionary with the specified port as the key
 
@@ -330,6 +333,9 @@ class GameServerManager:
         for key, value in self.client_connections.items():
             if value == client_connection:
                 del self.client_connections[key]
+                # indicate that the sub commands should be regenerated since the list of connected servers has changed.
+                await self.commands.initialise_commands()
+                self.commands.subcommands_changed.set()
                 return True
         return False
         

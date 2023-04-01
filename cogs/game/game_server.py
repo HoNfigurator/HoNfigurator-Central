@@ -220,7 +220,7 @@ class GameServer:
     async def schedule_shutdown_server(self, client_connection, packet_data):
         while True:
             num_clients = self.game_state["num_clients"]
-            if num_clients > 0:
+            if num_clients is not None and num_clients > 0:
                 await asyncio.sleep(10)
             else:
                 await self.stop_server(client_connection, packet_data)

@@ -22,7 +22,7 @@ def show_exception_and_exit(exc_type, exc_value, tb):
     traceback.print_exception(exc_type, exc_value, tb)
     raw_input = input(f"Due to the above error, HoNfigurator has failed to launch.")
     sys.exit()
-# sys.excepthook = show_exception_and_exit
+sys.excepthook = show_exception_and_exit
 
 async def main():
 
@@ -42,7 +42,8 @@ async def main():
 
     host = "127.0.0.1"
     game_server_to_mgr_port = 1135
-    udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
+    # TODO: Put this back to -1 when done
+    udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 2
 
     # launch game servers
     game_server_manager = GameServerManager(global_config)
