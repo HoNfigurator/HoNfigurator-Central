@@ -46,17 +46,26 @@ class ChatServerHandler:
 
         # Handle packets until the connection is closed
         while not self.reader.at_eof():
-            msg_len_data = await self.reader.readexactly(2)
-            msg_len = int.from_bytes(msg_len_data, byteorder='little') # Adjust 'big' to 'little' if necessary
+            try:
+                msg_len_data = await self.reader.read(2)
+                if len(msg_len_data) < 2:
+                    LOGGER.warn("Connection closed by the server.")
+                    break
+                msg_len = int.from_bytes(msg_len_data, byteorder='little')
 
-            data = await self.reader.readexactly(msg_len)
-            if len(data) == 0:
-                LOGGER.warn("Connection closed by the server.")
-                break
-            msg_type = int.from_bytes(data[:2],byteorder='little')
+                data = bytearray()
+                while len(data) < msg_len:
+                    chunk = await self.reader.read(msg_len - len(data))
+                    if len(chunk) == 0:
+                        LOGGER.warn("Connection closed by the server.")
+                        break
+                    data.extend(chunk)
+                else:
+                    msg_type = int.from_bytes(data[:2], byteorder='little')
+                    await self.handle_received_packet(msg_len, msg_type, data)
+            except asyncio.IncompleteReadError as e:
+                LOGGER.error(f"IncompleteReadError: {e}")
 
-            #msg_type, packet_data = self.get_headers(data)
-            await self.handle_received_packet(msg_len, msg_type, data)
 
 
     def create_handshake_packet(self, session_id, server_id):
