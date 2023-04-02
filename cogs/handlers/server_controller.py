@@ -1,4 +1,4 @@
-import cogs.TCP.listeners.auto_ping as udp_lsnr
+import cogs.TCP.auto_ping_lsnr as udp_lsnr
 import cogs.data_handler as data_handler
 import subprocess
 import traceback

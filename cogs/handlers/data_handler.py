@@ -38,6 +38,12 @@ def get_global_configuration():
             gbl['hon_data']['hon_logs_directory'] = pathlib.path(gbl['hon_data']['hon_home_directory'] / 'logs')
         return gbl
 
+def operational_data():
+    # get total logical server
+    # 
+    print()
+
+
 #global_config = get_global_configuration()
 
 class ConfigManagement():
