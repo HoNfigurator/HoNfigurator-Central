@@ -147,25 +147,17 @@ class Commands:
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands
 
-
     def generate_config_subcommands(self, config_dict, command_coro):
         sub_commands = {}
-        allowed_parent_keys = ['discord_data', 'application_data', 'hon_data']
-
         for key, value in config_dict.items():
-            if key not in allowed_parent_keys:
-                continue
-
             if isinstance(value, dict):
                 sub_commands[key] = self.generate_config_subcommands(value, command_coro)
             else:
-                command_function = lambda *cmd_args: asyncio.ensure_future(command_coro(*cmd_args))
-                command_function.current_value = value
-                sub_commands[key] = command_function
+                sub_commands[key] = lambda *cmd_args: asyncio.ensure_future(command_coro(*cmd_args))
+                sub_commands[key].current_value = lambda : self.generate_args_for_set_config(key,value)
 
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands_with_help
-
 
     async def generate_args_for_set_config(self, key, value, current_path=None):
         if current_path is None:
