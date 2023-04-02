@@ -102,6 +102,7 @@ class GameServerManager:
         Returns:
             None
         """
+
         # Start the listener for incoming client connections
         self.game_server_lsnr = await asyncio.start_server(
             lambda *args, **kwargs: handle_clients(*args, **kwargs, game_server_manager=self),

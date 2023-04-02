@@ -35,7 +35,7 @@ class honCMD:
             os.environ["APPDATA"] = self.gbl_config['hon_data']['hon_home_directory']
 
             DETACHED_PROCESS = 0x00000008
-            params = ';'.join(' '.join((f"set {key}",str(val))) for (key,val) in self.local_config['params'].items())
+            params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.local_config['params'].items())
             if sys.platform == "win32":
                 cmdline_args = [self.local_config['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.gbl_config['hon_data']['master_server'],"-register","127.0.0.1:1135"]
                 exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)

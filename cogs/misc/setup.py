@@ -10,7 +10,6 @@ ALLOWED_REGIONS = ["AU", "BR", "EU", "RU", "SEA", "TH", "USE", "USW" ]
 LOGGER = get_logger()
 HOME_PATH = get_home()
 pip_requirements = pathlib.Path.cwd() / 'requirements.txt'
-print(pip_requirements)
 
 class SetupEnvironment:
     def __init__(self,config_file):
@@ -19,7 +18,7 @@ class SetupEnvironment:
 
     def get_default_configuration(self):
         if sys.platform == "win32":
-            return self.get_default_configuration_windows
+            return self.get_default_configuration_windows()
         else:
             return self.get_default_configuration_linux()
 

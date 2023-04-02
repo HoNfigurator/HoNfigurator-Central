@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #   This must be first, to initialise logging which all other classes rely on.
 from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text
 HOME_PATH = get_script_dir(__file__)
@@ -58,6 +59,7 @@ async def main():
     #   Start listeners
     game_server_listener_task = asyncio.create_task(game_server_manager.start_game_server_listener(host,game_server_to_mgr_port))
     auto_ping_listener_task = asyncio.create_task(game_server_manager.start_autoping_listener(udp_ping_responder_port))
+
 
     #   Print config overview
     print_formatted_text("\nConfiguration Overview")

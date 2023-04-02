@@ -58,10 +58,17 @@ class ConfigManagement():
             except: pass
         return None
     def get_local_configuration(self):
+        if sys.platform == "win32":
+            executable = "KONGOR_ARENA"
+            suffix = ".exe"
+        else:
+            executable = "hon-x86_64-server"
+            suffix = ""
+        
         self.local = ({
             'config' : {
-                'file_name':f'KONGOR_ARENA_{self.id}.exe',
-                'file_path' :f'{self.get_global_by_key("hon_install_directory")}KONGOR_ARENA_{self.id}.exe'
+                'file_name':f'{executable}_{self.id}{suffix}',
+                'file_path' :f'{self.get_global_by_key("hon_install_directory")}{executable}_{self.id}{suffix}'
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
@@ -103,6 +110,5 @@ class ConfigManagement():
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
-        if sys.platform == "linux":
-            self.local['config']['file_path'] = self.get_global_by_key("hon_install_directory") + "hon-x86_64-server"
+        print(self.local["config"])
         return self.local
