@@ -3,6 +3,7 @@ import asyncio
 import inspect
 import struct
 from cogs.misc.logging import get_logger
+from cogs.TCP.packet_parser import ManagerChatParser
 
 LOGGER = get_logger()
 
@@ -17,27 +18,26 @@ class ChatServerHandler:
         self.reader = None
         self.writer = None
         self.keepalive_task = None
+        self.manager_chat_parser = ManagerChatParser(LOGGER)
 
     async def connect(self):
-            try:
-                self.reader, self.writer = await asyncio.open_connection(self.chat_address, self.chat_port)
+        try:
+            self.reader, self.writer = await asyncio.open_connection(self.chat_address, self.chat_port)
 
-                # Send handshake packet with session ID
-                handshake_packet = self.create_handshake_packet(self.session_id, self.server_id)
-                self.writer.write(handshake_packet)
-                await self.writer.drain()
+            # Send handshake packet with session ID
+            handshake_packet = self.create_handshake_packet(self.session_id, self.server_id)
+            self.writer.write(handshake_packet)
+            await self.writer.drain()
 
-                # Receive response
-                auth_response = await self.reader.read(1024)
-                msg_len, msg_type, packet_data = self.parse_packet(auth_response)
-                auth_result = await self.handle_received_packet(msg_len, msg_type, auth_response)
-                return auth_result
+            # The authentication response will now be handled by the handle_packets function
+            return True
 
-            except ConnectionRefusedError:
-                LOGGER.warn("Connection refused by the chat server. Retrying in 10 seconds...")
-                await asyncio.sleep(10)
-            except OSError as e:
-                LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+        except ConnectionRefusedError:
+            LOGGER.warn("Connection refused by the chat server. Retrying in 10 seconds...")
+            await asyncio.sleep(10)
+        except OSError as e:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
 
     async def handle_packets(self):
         # Wait until we are connected to the chat server before starting to handle packets
@@ -46,13 +46,18 @@ class ChatServerHandler:
 
         # Handle packets until the connection is closed
         while not self.reader.at_eof():
-            data = await self.reader.read(4096)
+            msg_len_data = await self.reader.readexactly(2)
+            msg_len = int.from_bytes(msg_len_data, byteorder='little') # Adjust 'big' to 'little' if necessary
+
+            data = await self.reader.readexactly(msg_len)
             if len(data) == 0:
                 LOGGER.warn("Connection closed by the server.")
                 break
+            msg_type = int.from_bytes(data[:2],byteorder='little')
 
-            msg_len, msg_type, packet_data = self.parse_packet(data)
-            await self.handle_received_packet(msg_len, msg_type, packet_data)
+            #msg_type, packet_data = self.get_headers(data)
+            await self.handle_received_packet(msg_len, msg_type, data)
+
 
     def create_handshake_packet(self, session_id, server_id):
         msg_type = 0x1600
@@ -60,7 +65,7 @@ class ChatServerHandler:
         msg_len = len(packet)
         packet = struct.pack('<H', msg_len) + packet
 
-        LOGGER.debug(f">>> Sending Handshake packet to ChatServer\n\tSession ID: {session_id}\n\tServer ID: {server_id}")
+        LOGGER.debug(f"{self} [MGR|CHAT] [{msg_type}] Sending Handshake packet to ChatServer\n\tSession ID: {session_id}\n\tServer ID: {server_id}")
         return packet
 
     def create_server_info_packet(self, server_id, username, region, server_name, version, ip_addr, udp_ping_responder_port):
@@ -76,14 +81,12 @@ class ChatServerHandler:
         packet_data += b'\x00' #    0 = running, 1 = shutting down
         packet_len = len(packet_data)
         len_packet = struct.pack('<H', packet_len)
-        LOGGER.debug(f">>> Sending manager information to chat server\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Address: {ip_addr}\n\tAuto-Ping Port: {udp_ping_responder_port}")
+        LOGGER.debug(f">>> [MGR|CHAT] [{msg_type}] Sending manager information to chat server\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Address: {ip_addr}\n\tAuto-Ping Port: {udp_ping_responder_port}")
         return len_packet, packet_data
 
-    def parse_packet(self, data):
+    def get_headers(self, data):
         msg_len = int.from_bytes(data[0:2], byteorder='little')
         msg_type = int.from_bytes(data[2:4], byteorder='little')
-        if len(data) > 4:
-            data = data[4:]
         return msg_len, msg_type, data
 
     async def close_connection(self):
@@ -98,28 +101,12 @@ class ChatServerHandler:
                 self.writer.close()
                 await self.writer.wait_closed()
 
-
-    async def receive_packets(self):
-        while True:
-            try:
-                data = await self.reader.read(4096)
-                if len(data) == 0:
-                    LOGGER.error("Connection closed by the server.")
-                    break
-
-                msg_len, msg_type, packet_data = self.parse_packet(data)
-                await self.handle_received_packet(msg_len, msg_type, packet_data)
-
-            except asyncio.CancelledError:
-                LOGGER.error("Packet receiving task cancelled.")
-                break
-            except Exception:
-                LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-                break
-
     async def handle_received_packet(self, msg_len, msg_type, data):
+        await self.manager_chat_parser.handle_packet(msg_type,msg_len,data,"receiving")
+
+        print_prefix = f"<<< [CHAT|MGR] - [{hex(msg_type)}] "
         if msg_type == 0x1700:
-            LOGGER.debug(f"<<< Handshake accepted by the chat server.")
+            LOGGER.debug(f"{print_prefix}Handshake accepted by the chat server.")
             len, server_info_packet = self.create_server_info_packet(self.server_id, "AUSFRANKHOST:", "NEWERTH", "T4NK 0", "4.10.6.0", "103.193.80.121", self.udp_ping_responder_port)
             self.writer.write(len)
             await self.writer.drain()
@@ -140,11 +127,10 @@ class ChatServerHandler:
 
             asyncio.create_task(send_keepalive())
             return True
-        elif msg_type == 0x2a01:
-            pass
         elif msg_type == 0x0400:
-            LOGGER.debug("<<< Received chat server shutdown notice.")
             asyncio.create_task(self.close_connection())
+        elif msg_type == 0x1504:
+            pass
 
 
     def close(self):

@@ -1,19 +1,20 @@
 #   This must be first, to initialise logging which all other classes rely on.
 from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text
-HOME_PATH = get_script_dir(__file__)
+import traceback, sys
+from pathlib import Path
+HOME_PATH = Path(get_script_dir(__file__))
 set_home(HOME_PATH)
 set_logger()
 
 
 import cogs.handlers.data_handler as data_handler
-import traceback, sys, os.path
 import asyncio
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
 
 LOGGER = get_logger()
-CONFIG_FILE = f"{HOME_PATH}\\config\\config.json"
+CONFIG_FILE = HOME_PATH / "config" / "config.json"
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """
@@ -41,7 +42,7 @@ async def main():
     #global_config = data_handler.get_global_configuration(CONFIG_FILE)
 
     host = "127.0.0.1"
-    game_server_to_mgr_port = 1135
+    game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
     # TODO: Put this back to -1 when done
     udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 2
 
@@ -66,7 +67,7 @@ async def main():
         else: print_formatted_text(f"\t{key}: {value}")
 
     #   Start GameServers
-    start_task = asyncio.create_task(game_server_manager.start_game_servers())
+    start_task = asyncio.create_task(game_server_manager.start_game_servers("all"))
 
     await asyncio.gather(auth_task, game_server_listener_task, auto_ping_listener_task, start_task)
 

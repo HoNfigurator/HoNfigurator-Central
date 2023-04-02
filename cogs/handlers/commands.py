@@ -4,14 +4,18 @@ import traceback
 import asyncio
 import inspect
 import re
-from cogs.misc.logging import get_logger, get_script_dir, flatten_dict, print_formatted_text
+from cogs.misc.logging import get_logger, get_script_dir, flatten_dict, print_formatted_text, get_home
+from cogs.misc.setup import SetupEnvironment
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.shortcuts import PromptSession
 from prompt_toolkit.history import FileHistory
+from columnar import columnar
 
 script_dir = get_script_dir(__file__)
 LOGGER = get_logger()
+HOME_PATH = get_home()
+CONFIG_FILE = HOME_PATH / "config" / "config.json"
 
 COMMAND_LEN_BYTES = b'\x01\x00'
 SHUTDOWN_BYTES = b'"'
@@ -105,6 +109,9 @@ class Commands:
 
     async def disconnect_subcommands(self):
         return self.generate_subcommands(self.disconnect)
+    
+    async def startup_servers_subcommands(self):
+        return self.generate_subcommands(self.startup_servers)
 
     async def config_commands(self):
         return self.generate_config_subcommands(self.global_config, self.set_config)
@@ -113,8 +120,11 @@ class Commands:
         self.game_servers = game_servers
         self.client_connections = client_connections
         self.send_svr_command_callback = send_svr_command_callback
+        # self.create_all_servers_callback = create_all_servers_callback
+        # self.start_servers_callback = start_servers_callback
         self.global_config = global_config
         self.commands = {}
+        self.setup = SetupEnvironment(CONFIG_FILE)
 
     async def initialise_commands(self):
         self.commands = {
@@ -122,6 +132,7 @@ class Commands:
             "wake": Command("wake", description="Wake up a GameServer", usage="wake <GameServer#>", function=None, sub_commands=await self.wake_subcommands()),
             "sleep": Command("sleep", description="Put a GameServer to sleep", usage="sleep <GameServer#>", function=None, sub_commands=await self.sleep_subcommands()),
             "message": Command("message", description="Send a message to a GameServer", usage="message <GameServer# / ALL> <message>", function=None, sub_commands=await self.message_subcommands(),args=["<type your message>"]),
+            "startup": Command("startup", description="Start 1 or more game servers", usage="startup <GameServer# / ALL>", function=None, sub_commands=await self.startup_servers_subcommands()),
             "status": Command("status", description="Show status of connected GameServers", usage="status", function=self.status, sub_commands={}),
             "reconnect": Command("reconnect", description="Close all GameServer connections, forcing them to reconnect", usage="reconnect", function=self.reconnect, sub_commands={}),
             "disconnect": Command("disconnect", description="Disconnect the specified GameServer. This only closes the network communication between the manager and game server, not shutdown.", usage="disconnect <GameServer# / ALL>", function=None, sub_commands=await self.disconnect_subcommands()),
@@ -130,20 +141,27 @@ class Commands:
         }
     def generate_subcommands(self, command_coro):
         sub_commands = {"all": lambda *cmd_args: asyncio.ensure_future(command_coro("all", *cmd_args))}
-        for game_server in self.game_servers.values():
-            if game_server.port in self.client_connections:
-                sub_commands[str(game_server.id)] = lambda *cmd_args: asyncio.ensure_future(command_coro(game_server, *cmd_args) if game_server else asyncio.ensure_future(command_coro(*cmd_args)))
+        for game_server in list(self.game_servers.values()):
+            if game_server.port in list(self.client_connections):
+                sub_commands[str(game_server.id)] = (lambda gs: lambda *cmd_args: asyncio.ensure_future(command_coro(gs, *cmd_args)))(game_server)
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands
 
+
     def generate_config_subcommands(self, config_dict, command_coro):
         sub_commands = {}
+        allowed_parent_keys = ['discord_data', 'application_data', 'hon_data']
+
         for key, value in config_dict.items():
+            if key not in allowed_parent_keys:
+                continue
+
             if isinstance(value, dict):
                 sub_commands[key] = self.generate_config_subcommands(value, command_coro)
             else:
-                sub_commands[key] = lambda *cmd_args: asyncio.ensure_future(command_coro(*cmd_args))
-                sub_commands[key].current_value = lambda : self.generate_args_for_set_config(key,value)
+                command_function = lambda *cmd_args: asyncio.ensure_future(command_coro(*cmd_args))
+                command_function.current_value = value
+                sub_commands[key] = command_function
 
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands_with_help
@@ -188,9 +206,12 @@ class Commands:
         sub_command.current_value = value
 
         print(f"Value for key '{last_key}' changed from {old_value} to {value}")
-
-
-
+        if self.setup.validate_hon_data(self.global_config['hon_data']):
+            print_formatted_text("Saved local configuration")
+            print_formatted_text("Scheduling restart of servers to apply new configuration")
+            await self.cmd_shutdown_server("all")
+            #self.create_all_servers_callback()
+            #await self.start_servers_callback()
 
     async def handle_input(self, stop_event):
         self.subcommands_changed = asyncio.Event()
@@ -200,91 +221,96 @@ class Commands:
         self.command_completer = CustomCommandCompleter(command_handlers=self.commands)
         self.history = FileHistory('.command_history')
 
-        # TODO: Sometimes the command does not get sent. Kind of annoying but minor
-        async def read_user_input():
-            session = PromptSession("> ", completer=self.command_completer, complete_while_typing=True, history=self.history)
-            return await asyncio.get_event_loop().run_in_executor(None, session.prompt)
+        async def read_user_input(prompt, completer):
+            session = PromptSession(completer=completer, complete_while_typing=True, history=self.history)
+            return await session.prompt_async(prompt)
+
 
         while not stop_event.is_set():
-            self.cmd_name = None
-            command = None
-            self.subcommands_changed.clear()
+            try:
+                self.cmd_name = None
+                command = None
+                self.subcommands_changed.clear()
 
-            # Create a future for user input
-            input_future = asyncio.ensure_future(read_user_input())
+                prompt = '> '
+                completer = self.command_completer
 
-            done, pending = await asyncio.wait([input_future, self.subcommands_changed.wait()], return_when=asyncio.FIRST_COMPLETED)
+                input_future = asyncio.ensure_future(read_user_input(prompt, completer))
 
-            # If input_future completed, handle the command
-            if input_future in done:
-                command = input_future.result()
-                print_formatted_text(f"Command received: {command}")
-                command_parts = command.strip().split()
+                done, pending = await asyncio.wait([input_future, self.subcommands_changed.wait()], return_when=asyncio.FIRST_COMPLETED)
 
-                if command_parts:
-                    self.cmd_name = command_parts[0].lower()
-                    cmd_args = command_parts[1:]
+                if input_future in done:
+                    command = input_future.result()
+                    print_formatted_text(f"Command received: {command}")
+                    command_parts = command.strip().split()
 
-                    if self.cmd_name == "quit":
-                        stop_event.set()
-                        break
-                    elif self.cmd_name in self.commands:
-                        command_obj = self.commands[self.cmd_name]
+                    if command_parts:
+                        self.cmd_name = command_parts[0].lower()
+                        cmd_args = command_parts[1:]
 
-                        if cmd_args and cmd_args[0] in command_obj.sub_commands:
-                            if self.cmd_name in ["message","setconfig"]:
-                                handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:-1])
-                            else:
-                                handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args)
-                        else:
-                            handler = command_obj.function
+                        if self.cmd_name == "quit":
+                            stop_event.set()
+                            break
+                        elif self.cmd_name in self.commands:
+                            command_obj = self.commands[self.cmd_name]
 
-                        try:
-                            if handler:
-                                if self.cmd_name == "message" :
-                                    # Pass the entire command_parts list as arguments to the handler
-                                    future = handler(command_parts[1:])
-                                elif self.cmd_name == "setconfig":
-                                    future = handler(command_parts[1:])
+                            if cmd_args and cmd_args[0] in command_obj.sub_commands:
+                                if self.cmd_name in ["message","setconfig"]:
+                                    handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:-1])
                                 else:
-                                    future = handler()
-                                await future
-                            elif command_obj.function is None:
-                                print_formatted_text("You must provide a subcommand for:", self.cmd_name)
+                                    handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args)
                             else:
-                                print_formatted_text("Unknown subcommand:", cmd_args[0] if cmd_args else "")
-                            await asyncio.sleep(0.2)
-                            print_formatted_text()
-                        except Exception as e:
-                            error_message = f"Error: {traceback.format_exc()}"
-                            print_formatted_text(error_message)
-                            print_formatted_text("Command so far: " + command)
+                                handler = command_obj.function
 
-            # If subcommands_changed event is set, update the command completer with the new command handlers
-            if self.subcommands_changed.is_set():
-                await self.initialise_commands()
-                self.command_completer.update_command_handlers(self.commands)
+                            try:
+                                if handler:
+                                    if self.cmd_name == "message" :
+                                        # Pass the entire command_parts list as arguments to the handler
+                                        future = handler(command_parts[1:])
+                                    elif self.cmd_name == "setconfig":
+                                        future = handler(command_parts[1:])
+                                    else:
+                                        future = handler()
+                                    await future
+                                elif command_obj.function is None:
+                                    print_formatted_text("You must provide a subcommand for:", self.cmd_name)
+                                else:
+                                    print_formatted_text("Unknown subcommand:", cmd_args[0] if cmd_args else "")
+                                await asyncio.sleep(0.2)
+                                print_formatted_text()
+                            except Exception as e:
+                                error_message = f"Error: {traceback.format_exc()}"
+                                print_formatted_text(error_message)
+                                print_formatted_text("Command so far: " + command)
 
-        # Cancel the input_future and wait for it to finish
+                # If subcommands_changed event is set, update the command completer with the new command handlers
+                if self.subcommands_changed.is_set():
+                    await self.initialise_commands()
+                    self.command_completer.update_command_handlers(self.commands)
+            except Exception:
+                print_formatted_text(traceback.format_exc())
+
         input_future.cancel()
         try:
             await input_future
         except asyncio.CancelledError:
             pass
 
-
     async def cmd_shutdown_server(self, game_server=None, force=False):
         try:
             if game_server is None: return
 
             elif game_server == "all":
-                for game_server in self.game_servers.values():
-                    if game_server.port in self.client_connections.keys():
-                        await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))         
-                        LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
+                for game_server in list(self.game_servers.values()):
+                    await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))         
+                    if force:
+                        LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
+                    else: LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
             else:
-                await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))
-                LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
+                await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))      
+                if force:
+                    LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
+                else: LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
 
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -294,8 +320,8 @@ class Commands:
             if game_server is None: return
 
             elif game_server == "all":
-                for game_server in self.game_servers.values():
-                    if game_server.port in self.client_connections.keys():
+                for game_server in list(self.game_servers.values()):
+                    if game_server.port in list(self.client_connections.keys()):
                         await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, WAKE_BYTES))    
                         LOGGER.info(f"Command - Wake packet sent to GameServer #{game_server.id}.")
             else:
@@ -308,8 +334,8 @@ class Commands:
         try:
             if game_server is None: return
             elif game_server == "all":
-                for game_server in self.game_servers.values():
-                    if game_server.port in self.client_connections.keys():
+                for game_server in list(self.game_servers.values()):
+                    if game_server.port in list(self.client_connections.keys()):
                         await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SLEEP_BYTES))         
                         LOGGER.info(f"Command - Sleep packet sent to GameServer #{game_server.id}.")
             else:
@@ -331,8 +357,8 @@ class Commands:
             length_bytes = length.to_bytes(2, byteorder='little')
 
             if game_server == "all":
-                for game_server in self.game_servers.values():
-                    if game_server.port in self.client_connections:
+                for game_server in list(self.game_servers.values()):
+                    if game_server.port in list(self.client_connections):
                         await self.send_svr_command_callback(self.cmd_name, game_server.port, (length_bytes, message_bytes))
                         LOGGER.info(f"Command - Message packet sent to GameServer #{game_server.id}.")
             else:
@@ -346,7 +372,7 @@ class Commands:
             if len(cmd_args) < 2:
                 print_formatted_text("Usage: cmd <GameServer#> <data>")
                 return
-            game_server = next((gs for gs in self.game_servers.values() if gs.id == int(cmd_args[0])), None)
+            game_server = next((gs for gs in list(self.game_servers.values()) if gs.id == int(cmd_args[0])), None)
             data = b''
             for part in cmd_args[1:]:
                 if re.fullmatch(r'[0-9a-fA-F]+', part):
@@ -362,11 +388,25 @@ class Commands:
             if len(cmd_args) < 1:
                 print_formatted_text("Usage: disconnect <GameServer#>")
                 return
-            game_server =next((gs for gs in self.game_servers.values() if gs.id == int(cmd_args[0])), None)
+            game_server =next((gs for gs in list(self.game_servers.values()) if gs.id == int(cmd_args[0])), None)
             client_connection = self.client_connections[game_server.port]
             await client_connection.close()
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def startup_servers(self,game_server):
+        if game_server == "all":
+            for game_server in list(self.game_servers.values()):
+                await game_server.enable_server()
+        else:
+            await game_server.enable_server()
+    
+    async def shutdown_servers(self,game_server):
+        if game_server == "all":
+            for game_server in list(self.game_servers.values()):
+                await game_server.disable_server()
+        else:
+            await game_server.disable_server()
 
     async def status(self):
         try:
@@ -376,7 +416,7 @@ class Commands:
                 return
             headers = []
             rows = []
-            for game_server in self.game_servers.values():
+            for game_server in list(self.game_servers.values()):
                 status = game_server.get_pretty_status()
                 flattened_status = flatten_dict(status)
                 data = []

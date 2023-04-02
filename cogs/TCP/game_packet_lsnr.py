@@ -2,7 +2,7 @@ import traceback
 import asyncio
 import inspect
 import socket
-from cogs.TCP.parsers.packet_parser import PacketParser
+from cogs.TCP.packet_parser import PacketParser
 from cogs.misc.logging import get_logger
 
 LOGGER = get_logger()
@@ -104,7 +104,7 @@ class ClientConnection:
             try:
                 if self.game_server is not None:
                     self.game_server.save()
-                    self.game_server_manager.remove_game_server(self.game_server)
+                    #self.game_server_manager.remove_game_server(self.game_server)
                     await self.game_server_manager.remove_client_connection(self)
             except Exception:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")

@@ -7,7 +7,7 @@ import json
 import math
 import os
 from cogs.misc.logging import flatten_dict, get_logger, get_home
-from cogs.TCP.parsers.packet_parser import PacketParser
+from cogs.TCP.packet_parser import PacketParser
 from cogs.misc.utilities import Misc
 
 LOGGER = get_logger()
@@ -27,7 +27,9 @@ class GameServer:
         self._proc = None
         self._proc_owner = None
         self._proc_hook = None
-        self.packet_parser = PacketParser(self.id)
+        self.enabled = True # used to determine if the server should run
+        self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
+        self.packet_parser = PacketParser(self.id,LOGGER)
         """
         Game State specific variables
         """
@@ -167,7 +169,7 @@ class GameServer:
             'Connections': 0,
             'Players': 'Unknown',
             'Uptime': 'Unknown',
-            'Performance': f"{self.get_dict_value('grandtotal_skipped_frames')/1000} sec (grand total)\n{self.get_dict_value('total_ingame_skipped_frames')/1000} sec (total while in game)\n{self.get_dict_value('now_ingame_skipped_frames')/1000} sec (current game)"
+            'Performance (lag)': f"{self.get_dict_value('grandtotal_skipped_frames')/1000} sec (grand total)\n{self.get_dict_value('total_ingame_skipped_frames')/1000} sec (total while in game)\n{self.get_dict_value('now_ingame_skipped_frames')/1000} sec (current game)"
         }
         if self.get_dict_value('status') == 0:
             temp['Status'] = 'Sleeping'
@@ -194,6 +196,7 @@ class GameServer:
 
     async def start_server(self):
         if await self.get_running_server():
+            self.scheduled_shutdown = False
             return True
 
         free_mem = psutil.virtual_memory().free
@@ -207,7 +210,7 @@ class GameServer:
 
         DETACHED_PROCESS = 0x00000008
         params = ';'.join(' '.join((f"set {key}",str(val))) for (key,val) in self.config.local['params'].items())
-        cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register","127.0.0.1:1135"]
+        cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
         exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
         self._pid = exe.pid
@@ -215,25 +218,37 @@ class GameServer:
         self._proc_hook = psutil.Process(pid=exe.pid)
         self._proc_owner =self._proc_hook.username()
 
+        self.scheduled_shutdown = False
+
         return True
 
     async def schedule_shutdown_server(self, client_connection, packet_data):
+        self.scheduled_shutdown = True
         while True:
             num_clients = self.game_state["num_clients"]
             if num_clients is not None and num_clients > 0:
                 await asyncio.sleep(10)
             else:
-                await self.stop_server(client_connection, packet_data)
+                await self.stop_server_nice(client_connection, packet_data)
                 break
 
-    async def stop_server(self, client_connection, packet_data):
+    async def stop_server_nice(self, client_connection, packet_data):
         if self.game_state["num_clients"] == 0:
             LOGGER.info(f"GameServer #{self.id} - Stopping")
             length_bytes, message_bytes = packet_data
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(message_bytes)
             await client_connection.writer.drain()
-            self.remove_self_callback(self)
+            #self.remove_self_callback(self)
+            await self.disable_server()
+            await self.unschedule_shutdown()
+    
+    async def stop_server_exe(self):
+        if self._proc:
+            self._proc.terminate()
+            #self.remove_self_callback(self)
+            await self.disable_server()
+            await self.unschedule_shutdown()
 
     async def get_running_server(self):
         """
@@ -279,15 +294,30 @@ class GameServer:
     async def monitor_process(self):
         while True:
             if self._proc is not None and self._proc_hook is not None:
-                if not self._proc_hook.is_running():
-                    LOGGER.warning(f"GameServer #{self.id} - process terminated. Restarting...")
+                if not self._proc_hook.is_running() and self.enabled:
+                    LOGGER.warning(f"GameServer #{self.id} - Starting...")
                     self._proc = None  # Reset the process reference
                     self._proc_hook = None  # Reset the process hook reference
                     self._pid = None
                     self._proc_owner = None
                     self.started = False
                     await self.start_server()  # Restart the server
+                elif self._proc_hook.is_running() and not self.enabled and not self.scheduled_shutdown:
+                    #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
+                    self.schedule_shutdown_server()
             await asyncio.sleep(5)  # Check every 5 seconds
+    
+    async def enable_server(self):
+        self.enabled = True
+    
+    async def disable_server(self):
+        self.enabled = False
+    
+    async def schedule_shutdown(self):
+        self.scheduled_shutdown = True
+    
+    async def unschedule_shutdown(self):
+        self.scheduled_shutdown = False
 
 class GameState:
     def __init__(self):
