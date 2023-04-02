@@ -68,10 +68,12 @@ class SetupEnvironment:
                 "svr_location": "",
                 "svr_priority": "HIGH",
                 "svr_total": 0,
+                "svr_total_per_core": 1,
                 "svr_enableProxy": False,
                 "svr_max_start_at_once": 5,
                 "svr_starting_gamePort": 10000,
-                "svr_starting_voicePort": 10060
+                "svr_starting_voicePort": 10060,
+                "svr_managerPort": 1135,
             }
         }
 
@@ -117,7 +119,7 @@ class SetupEnvironment:
                 "svr_max_start_at_once": 5,
                 "svr_starting_gamePort": 10000,
                 "svr_starting_voicePort": 10060,
-                "svr_managerPort": 1135
+                "svr_managerPort": 1135,
             }
         }
 
@@ -321,7 +323,6 @@ class PrepareDependencies:
             missing = set(required) - set(installed_packages_list)
             python_path = sys.executable
             if missing:
-                python_path = sp.getoutput('where python').split("\n")[0]
                 result = sp.run([python_path, '-m', 'pip', 'install', *missing])
                 if result.returncode == 0:
                     LOGGER.info(f"SUCCESS, upgraded the following packages: {', '.join(missing)}")
