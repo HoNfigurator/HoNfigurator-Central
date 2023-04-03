@@ -8,7 +8,7 @@ import math
 import sys
 import os
 from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc
-from cogs.TCP.packet_parser import PacketParser
+from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 
 LOGGER = get_logger()
@@ -31,7 +31,7 @@ class GameServer:
         self._proc_hook = None
         self.enabled = True # used to determine if the server should run
         self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
-        self.packet_parser = PacketParser(self.id,LOGGER)
+        self.game_manager_parser = GameManagerParser(self.id,LOGGER)
         """
         Game State specific variables
         """

@@ -2,7 +2,7 @@ import traceback
 import asyncio
 import inspect
 import socket
-from cogs.TCP.packet_parser import PacketParser
+from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.logging import get_logger
 
 LOGGER = get_logger()
@@ -83,7 +83,7 @@ class ClientConnection:
                 LOGGER.info(f"An unexpected error occurred: {e}")
                 break
 
-            await self.game_server.packet_parser.handle_packet(packet,self.game_server)
+            await self.game_server.game_manager_parser.handle_packet(packet,self.game_server)
 
             # Add a small delay to allow other clients to send packets
             await asyncio.sleep(0.01)
@@ -109,10 +109,6 @@ class ClientConnection:
             except Exception:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
-    async def handle_packet(self, packets):
-        # Use the PacketParser instance to handle the packet
-        await self.packet_parser.handle_packet(packets)
-
 async def handle_client_connection(client_reader, client_writer, game_server_manager):
     # Get the client address
     client_addr = client_writer.get_extra_info("peername")
@@ -136,7 +132,7 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
             return
 
         # Process the server hello packet
-        game_server_port = await PacketParser.server_announce(None,packets[1])
+        game_server_port = await GameManagerParser.server_announce(None,packets[1])
 
         # Assign the correct game server by port
         game_server = game_server_manager.get_game_server_by_port(game_server_port)
