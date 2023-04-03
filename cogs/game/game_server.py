@@ -5,6 +5,7 @@ import asyncio
 import psutil
 import json
 import math
+import sys
 import os
 from cogs.misc.logging import flatten_dict, get_logger, get_home
 from cogs.TCP.packet_parser import PacketParser
@@ -199,7 +200,7 @@ class GameServer:
             self.scheduled_shutdown = False
             return True
 
-        free_mem = psutil.virtual_memory().free
+        free_mem = psutil.virtual_memory().available
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
         if free_mem < 1000000000:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
@@ -209,15 +210,19 @@ class GameServer:
         os.environ["APPDATA"] = self.global_config['hon_data']['hon_home_directory']
 
         DETACHED_PROCESS = 0x00000008
-        params = ';'.join(' '.join((f"set {key}",str(val))) for (key,val) in self.config.local['params'].items())
-        cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
-        exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.local['params'].items())
+
+        if sys.platform == "win32":
+            cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register","127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
+            exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+        else:
+            cmdline_args = f'''{self.config.local['config']['file_path']} -dedicated -noconfig -execute '"{params}"' -masterserver {self.global_config['hon_data']['svr_masterServer']} -register 127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}'''
+            exe = subprocess.Popen(cmdline_args,close_fds=True, shell = True, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         self._pid = exe.pid
         self._proc = exe
         self._proc_hook = psutil.Process(pid=exe.pid)
         self._proc_owner =self._proc_hook.username()
-
         self.scheduled_shutdown = False
 
         return True
@@ -271,7 +276,6 @@ class GameServer:
                         last_good_proc = proc
             if last_good_proc is not None:
                 break
-
         if last_good_proc:
             #   update the process information with the healthy instance PID. Healthy playercount is either -3 (off) or >= 0 (alive)
             self._pid = proc.pid

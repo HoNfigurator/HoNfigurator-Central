@@ -1,3 +1,4 @@
+#!/usr/bin/env python3
 #   This must be first, to initialise logging which all other classes rely on.
 from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text
 import traceback, sys
@@ -8,13 +9,15 @@ set_logger()
 
 
 import cogs.handlers.data_handler as data_handler
+import traceback, sys, os.path
+import pathlib
 import asyncio
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
 
 LOGGER = get_logger()
-CONFIG_FILE = HOME_PATH / "config" / "config.json"
+CONFIG_FILE = pathlib.Path.cwd() / 'config' / 'config.json'
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """
@@ -59,6 +62,7 @@ async def main():
     #   Start listeners
     game_server_listener_task = asyncio.create_task(game_server_manager.start_game_server_listener(host,game_server_to_mgr_port))
     auto_ping_listener_task = asyncio.create_task(game_server_manager.start_autoping_listener(udp_ping_responder_port))
+
 
     #   Print config overview
     print_formatted_text("\nConfiguration Overview")

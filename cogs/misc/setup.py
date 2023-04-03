@@ -4,6 +4,7 @@ from pathlib import Path
 import subprocess as sp
 import psutil
 import traceback
+import pathlib
 import json
 from cogs.misc.logging import get_logger, get_home
 from cogs.misc.utilities import Misc
@@ -12,7 +13,8 @@ import copy
 
 ALLOWED_REGIONS = ["AU", "BR", "EU", "RU", "SEA", "TH", "USE", "USW" ]
 LOGGER = get_logger()
-HOME_PATH = Path(get_home())
+HOME_PATH = get_home()
+pip_requirements = pathlib.Path.cwd() / 'requirements.txt'
 
 class SetupEnvironment:
     def __init__(self,config_file):
@@ -24,7 +26,60 @@ class SetupEnvironment:
         self.hon_data = self.default_configuration['hon_data']
         self.current_data = None
 
+
     def get_default_configuration(self):
+        if sys.platform == "win32":
+            return self.get_default_configuration_windows()
+        else:
+            return self.get_default_configuration_linux()
+
+    def get_default_configuration_linux(self):
+        return {
+            "discord_data": {
+                "token": "asdfasd",
+                "admin_username": "frank"
+            },
+            "application_data": {
+                "timers": {
+                    "game_server": {
+                        "health_checks": {
+                            "lag_healthcheck": 300,
+                            "general_healthcheck": 120
+                        },
+                        "heartbeat_frequency": 5,
+                        "ingame_check": 5,
+                        "lobby_check": 5,
+                        "leftover_game": 180,
+                        "replay_wait": 330
+                    },
+                    "manager": {
+                        "health_checks": {
+                            "public_ip_healthcheck": 1800
+                        },
+                        "heartbeat_frequency": 10
+                    }
+                }
+            },
+            "hon_data": {
+                "hon_install_directory": "/opt/hon/app/",
+                "hon_home_directory": "/opt/hon/config/game/",
+                "svr_masterServer": "api.kongor.online",
+                "svr_login": "",
+                "svr_password": "",
+                "svr_name": "",
+                "svr_location": "",
+                "svr_priority": "HIGH",
+                "svr_total": 0,
+                "svr_total_per_core": 1,
+                "svr_enableProxy": False,
+                "svr_max_start_at_once": 5,
+                "svr_starting_gamePort": 10000,
+                "svr_starting_voicePort": 10060,
+                "svr_managerPort": 1135,
+            }
+        }
+
+    def get_default_configuration_windows(self):
         return {
             "discord_data": {
                 "token": "asdfasd",
@@ -66,7 +121,7 @@ class SetupEnvironment:
                 "svr_max_start_at_once": 5,
                 "svr_starting_gamePort": 10000,
                 "svr_starting_voicePort": 10060,
-                "svr_managerPort": 1135
+                "svr_managerPort": 1135,
             }
         }
 
@@ -160,10 +215,9 @@ class SetupEnvironment:
         return True
 
     def check_configuration(self):
-        config_path = HOME_PATH / 'config'
-        if not config_path.exists():
-            config_path.mkdir(parents=True)
-        if not Path(self.config_file).exists():
+        if not os.path.exists(pathlib.PurePath(self.config_file).parent):
+            os.makedirs(pathlib.PurePath(self.config_file).parent)
+        if not os.path.exists(self.config_file):
             return self.create_configuration_file()
         else:
             self.hon_data = self.get_existing_configuration()
@@ -276,7 +330,7 @@ class PrepareDependencies:
         pass
     def get_required_packages(self):
         try:
-            with open(f"{HOME_PATH}\\requirements.txt") as f:
+            with open(pip_requirements) as f:
                 required_packages = f.read().splitlines()
             return required_packages
         except Exception:
@@ -292,12 +346,11 @@ class PrepareDependencies:
             installed_packages = sp.run(['pip', 'freeze'], stdout=sp.PIPE, text=True)
             installed_packages_list = installed_packages.stdout.split('\n')
             missing = set(required) - set(installed_packages_list)
+            python_path = sys.executable
             if missing:
-                python_path = sp.getoutput('where python').split("\n")[0]
                 result = sp.run([python_path, '-m', 'pip', 'install', *missing])
                 if result.returncode == 0:
                     LOGGER.info(f"SUCCESS, upgraded the following packages: {', '.join(missing)}")
-                    python_path = sys.executable
                     return result
                 else:
                     LOGGER.error(f"Error updating packages: {missing}\n error {result.stderr}")

@@ -1,7 +1,9 @@
 import urllib.request
 import traceback
 import platform
+import pathlib
 import json
+import sys
 from cogs.misc.logging import get_logger,get_home
 
 LOGGER = get_logger()
@@ -25,12 +27,15 @@ class Enrichment:
         return f"cpu: {self.get_cpu()}"
 
 def get_global_configuration():
-    with open(f"{HOME_PATH}\\config\\config.json", "r") as jsonfile:
+    with open(pathlib.Path.cwd() / 'config' / 'config.json') as jsonfile:
         gbl = json.load(jsonfile)
         if 'svr_ip' not in gbl['hon_data']:
             public_ip = Enrichment().get_public_ip()
             gbl['hon_data']['svr_ip'] = public_ip
-        gbl['hon_data']['hon_logs_directory'] = f"{gbl['hon_data']['hon_home_directory']}\\Documents\\Heroes of Newerth x64\\game\\logs"
+        if sys.platform == "win32":
+            gbl['hon_data']['hon_logs_directory'] = f"{gbl['hon_data']['hon_home_directory']}\\Documents\\Heroes of Newerth x64\\game\\logs"
+        else:
+            gbl['hon_data']['hon_logs_directory'] = pathlib.path(gbl['hon_data']['hon_home_directory'] / 'logs')
         return gbl
 
 def operational_data():
@@ -59,10 +64,17 @@ class ConfigManagement():
             except: pass
         return None
     def get_local_configuration(self):
+        if sys.platform == "win32":
+            executable = "KONGOR_ARENA"
+            suffix = ".exe"
+        else:
+            executable = "hon-x86_64-server"
+            suffix = ""
+        
         self.local = ({
             'config' : {
-                'file_name':f'KONGOR_ARENA_{self.id}.exe',
-                'file_path' :f'{self.get_global_by_key("hon_install_directory")}KONGOR_ARENA_{self.id}.exe'
+                'file_name':f'{executable}_{self.id}{suffix}',
+                'file_path' :f'{self.get_global_by_key("hon_install_directory")}{executable}_{self.id}{suffix}'
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
@@ -104,4 +116,5 @@ class ConfigManagement():
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
+        print(self.local["config"])
         return self.local

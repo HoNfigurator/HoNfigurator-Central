@@ -97,7 +97,7 @@ class GameServerManager:
             port,
             server_name=self.global_config['hon_data']['svr_name'],
             #   TODO: Get the real version number
-            game_version="4.6.0.1")
+            game_version="4.10.6.0")
         asyncio.create_task(autoping_responder.start_listener())
 
     async def start_game_server_listener(self,host,game_server_to_mgr_port):
@@ -111,6 +111,7 @@ class GameServerManager:
         Returns:
             None
         """
+
         # Start the listener for incoming client connections
         self.game_server_lsnr = await asyncio.start_server(
             lambda *args, **kwargs: handle_clients(*args, **kwargs, game_server_manager=self),
