@@ -65,7 +65,7 @@ class ConfigManagement():
             except: pass
         return None
     def get_local_configuration(self):
-        if MISC.get_os_platform():
+        if MISC.get_os_platform() == "win32":
             executable = "KONGOR_ARENA"
             suffix = ".exe"
         else:
