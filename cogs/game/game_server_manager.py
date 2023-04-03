@@ -45,12 +45,13 @@ class GameServerManager:
         self.client_connections = {}
         # Initialize a Commands object for sending commands to game servers
         self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.send_svr_command)
-        #asyncio.create_task(self.commands.initialise_commands())
         # Create an event and task for handling input commands
         stop_event = asyncio.Event()
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         self.create_all_game_servers()
+        # initialise some directory locations
+        #self.replays_location = 
         
         asyncio.create_task(self.commands.handle_input(stop_event))
         # Start running health checks
@@ -209,9 +210,6 @@ class GameServerManager:
         LOGGER.info("Authenticated to ChatServer.")
         # Start handling packets from the chat server
         await chat_server_handler.handle_packets()
-
-    def load_global_configuration():
-        pass
 
     def create_all_game_servers(self):
         for id in range (1,self.global_config['hon_data']['svr_total']+1):
@@ -380,6 +378,7 @@ class GameServerManager:
                 started = await game_server.start_server()
                 if started:
                     LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} started successfully.")
+                    # TODO: there is an infinite loop here, if server doesn't start
                     while game_server.game_state._state['status'] is None:
                         await asyncio.sleep(1)
                 else:

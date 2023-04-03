@@ -16,6 +16,8 @@ HOME_PATH = Path(get_home())
 
 class SetupEnvironment:
     def __init__(self,config_file):
+        self.KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory']
+
         self.config_file = config_file
         self.misc = Misc()
         self.default_configuration = self.get_default_configuration()
@@ -73,13 +75,16 @@ class SetupEnvironment:
             hon_data = json.load(config_file)
         return hon_data
 
-    def validate_hon_data(self, hon_data=dict):
+    def validate_hon_data(self, hon_data=None):
         
         def add_separator_if_missing(path):
             separator = os.path.sep
             if not str(path).endswith(separator):
                 path = path + separator
             return path
+        
+        if hon_data:
+            self.hon_data = hon_data
    
         major_issues = []
         minor_issues = []
@@ -87,15 +92,16 @@ class SetupEnvironment:
         default_configuration = self.get_default_configuration()
         default_hon_data = default_configuration['hon_data']
 
-        for key, value in hon_data.items():
+        for key, value in self.hon_data.items():
             default_value = default_hon_data.get(key)
             default_value_type = type(default_value)
 
             if default_value_type == int:
                 if not isinstance(value, int):
                     try:
-                        hon_data[key] = int(value)
-                        minor_issues.append("Resolved: Converted string integer to real integer for {}: {}".format(key, value))
+                        self.hon_data[key] = int(value)
+                        value = int(value)
+                        minor_issues.append(f"Resolved: Converted string integer to real integer for {key}: {value}")
                     except ValueError:
                         major_issues.append("Invalid integer value for {}: {}".format(key, value))
 
@@ -103,45 +109,45 @@ class SetupEnvironment:
                 if not isinstance(value, bool):
                     if value.lower() in ['true', 'false']:
                         try:
-                            hon_data[key] = value.lower() == 'true'
-                            minor_issues.append("Resolved: Invalid boolean value for {}: {}".format(key, value))
+                            self.hon_data[key] = value.lower() == 'true'
+                            minor_issues.append(f"Resolved: Invalid boolean value for {key}: {value}")
                         except Exception:
-                            major_issues.append("Invalid boolean value for {}: {}".format(key, value))
+                            major_issues.append(f"Invalid boolean value for {key}: {value}")
                     else:
-                        major_issues.append("Invalid boolean value for {}: {}".format(key, value))
+                        major_issues.append(f"Invalid boolean value for {key}: {value}")
 
             elif default_value_type == str:
                 if not isinstance(value, str) or value == '':
-                    major_issues.append("Invalid string value for {}: {}".format(key, value))
+                    major_issues.append(f"Invalid string value for {key}: {value}")
                 elif key == "svr_region" and value not in ALLOWED_REGIONS:
-                    major_issues.append("Incorrect region. Can only be one of {}".format((',').join(ALLOWED_REGIONS)))
+                    major_issues.append(f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
             else:
-                major_issues.append("Unexpected key and value type for {}: {}".format(key, value))
+                if key in self.KEYS_NOT_IN_CONFIG_FILE:
+                    pass
+                else:
+                    major_issues.append(f"Unexpected key and value type for {key}: {value}")
 
-            if key in ["hon_install_directory", "hon_home_directory"]:
+            if key in ["hon_install_directory", "hon_home_directory", "hon_artefacts_directory"]:
                 # Ensure the path ends with the appropriate separator
-                fixed_path = add_separator_if_missing(value)
+                #fixed_path = add_separator_if_missing(value)
+                path = Path(value)
 
-                if not Path(fixed_path).is_dir():
+                if not path.is_dir():
                     try:
-                        Path(fixed_path).mkdir(parents=True, exist_ok=True)
+                        path.mkdir(parents=True, exist_ok=True)
                         minor_issues.append(f"Resolved: Path did not exist for {key}.")
                     except Exception:
-                        major_issues.append("Invalid path for {}: {}".format(key, fixed_path))
-                hon_data[key] = str(fixed_path)
+                        major_issues.append(f"Invalid path for {key}: {path}")
+                self.hon_data[key] = str(path)
             elif key == "svr_total":
-                #if 'svr_total_per_core' not in hon_data:
-                    #hon_data.update({'svr_total_per_core':1})
+                #if 'svr_total_per_core' not in self.hon_data:
+                    #self.hon_data.update({'svr_total_per_core':1})
 
-                total_allowed = self.misc.get_total_allowed_servers(hon_data['svr_total_per_core'])
+                total_allowed = self.misc.get_total_allowed_servers(self.hon_data['svr_total_per_core'])
                 if value > total_allowed:
-                    hon_data[key] = int(total_allowed)
+                    self.hon_data[key] = int(total_allowed)
                     minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
-
-            
-            
                     
-
         if major_issues:
             error_message = "Configuration file validation issues:\n" + "\n".join(major_issues)
             raise ValueError(error_message)
@@ -149,10 +155,9 @@ class SetupEnvironment:
         if minor_issues:
             print("\n".join(minor_issues))
 
-        self.save_configuration_file(hon_data)
+        self.save_configuration_file()
 
         return True
-
 
     def check_configuration(self):
         config_path = HOME_PATH / 'config'
@@ -161,9 +166,9 @@ class SetupEnvironment:
         if not Path(self.config_file).exists():
             return self.create_configuration_file()
         else:
-            hon_data = self.get_existing_configuration()
-            full_config = self.merge_config(hon_data)
-            if self.validate_hon_data(full_config['hon_data']):
+            self.hon_data = self.get_existing_configuration()
+            self.full_config = self.merge_config()
+            if self.validate_hon_data():
                 return True
             else: return False
 
@@ -174,7 +179,7 @@ class SetupEnvironment:
         for key, value in self.hon_data.items():
             while True:
                 if key == "svr_password":
-                    user_input = getpass("\tEnter the value for '{}': ".format(key))
+                    user_input = getpass(f"\tEnter the value for '{key}': ")
                 else:
                     user_input = input("\tEnter the value for '{}'{}: ".format(key, " (default: {})".format(value) if value else ""))
                 if user_input:
@@ -185,14 +190,14 @@ class SetupEnvironment:
                             self.hon_data[key] = int(user_input)
                             break
                         except ValueError:
-                            print("\tInvalid integer value entered for {}. Using the default value: {}".format(key, value))
+                            print(f"\tInvalid integer value entered for {key}. Using the default value: {value}")
                     elif default_value_type == bool:
                         self.hon_data[key] = user_input.lower() == 'true'
                         break
                     elif default_value_type == str:
                         if key == "svr_region":
                             if user_input not in ALLOWED_REGIONS:
-                                print("\tIncorrect region. Can only be one of {}".format((',').join(ALLOWED_REGIONS)))
+                                print(f"\tIncorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
                                 continue
                             else:
                                 self.hon_data[key] = user_input
@@ -201,14 +206,14 @@ class SetupEnvironment:
                             self.hon_data[key] = user_input
                             break
                     else:
-                        print("\tUnexpected value type for {}. Skipping this key.".format(key))
+                        print("\tUnexpected value type for {key}. Skipping this key.")
                 else:
                     break
-        if self.validate_hon_data(self.hon_data):
+        if self.validate_hon_data():
             return True
         return False
 
-    def save_configuration_file(self,hon_data):
+    def save_configuration_file(self):
         def are_dicts_equal_with_types(d1, d2):
             if d1.keys() != d2.keys():
                 return False
@@ -218,18 +223,33 @@ class SetupEnvironment:
                     return False
 
             return True
+
+        keys_to_remove = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory']
+        hon_data_to_save = {key: value for key, value in self.hon_data.items() if key not in keys_to_remove}
+
         if Path(self.config_file).exists():
-            if are_dicts_equal_with_types(self.get_existing_configuration(),hon_data):
+            if are_dicts_equal_with_types(self.get_existing_configuration(), hon_data_to_save):
                 return False
+
         with open(self.config_file, 'w') as config_file:
-            json.dump(hon_data, config_file, indent=4)
+            json.dump(hon_data_to_save, config_file, indent=4)
+
         return True
 
-    def merge_config(self,hon_data):
+
+    def merge_config(self):
         config = self.get_default_configuration()
         config['system_data'] = self.add_miscellaneous_data()
-        config['hon_data'].update(hon_data)
+        config['hon_data'].update(self.hon_data)
         return config
+
+    def add_runtime_data(self):
+        hon_artefacts_directory = Path(self.hon_data['hon_home_directory']) / "Documents" / "Heroes of Newerth x64"
+        hon_replays_directory = hon_artefacts_directory / "game" / "replays"
+        hon_logs_directory = hon_artefacts_directory / "game" / "logs"
+        self.hon_data['hon_artefacts_directory'] = str(hon_artefacts_directory)
+        self.hon_data['hon_replays_directory'] = str(hon_replays_directory)
+        self.hon_data['hon_logs_directory'] = str(hon_logs_directory)
 
     def add_miscellaneous_data(self):
         return (
@@ -239,11 +259,16 @@ class SetupEnvironment:
                     "cpu_name": self.misc.get_cpu_name(),
                     "total_ram": self.misc.get_total_ram()
                 }
-            }        
+            }
         )
 
     def get_final_configuration(self):
-        return self.merge_config(self.get_existing_configuration())
+        self.add_runtime_data()
+        if self.validate_hon_data():
+            return self.merge_config()
+        else:
+            return False
+            
 
 
 class PrepareDependencies:

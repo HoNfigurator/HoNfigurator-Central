@@ -38,9 +38,7 @@ class CustomHTTPRequestHandler(BaseHTTPRequestHandler):
                 post_data_dict = parse_qs(post_data.decode("utf-8"))
                 my_print(f"POST request to {self.path} with data:")
                 for key, values in post_data_dict.items():
-                    my_print(f"POST request to {self.path} with data:")
-                    for key, values in post_data_dict.items():
-                        print(f"  {key}: {values}")
+                    print(f"  {key}: {values}")
             else:
                 my_print(f"POST request to {self.path} with unsupported content type: {content_type}")
 
@@ -50,15 +48,22 @@ def parse_http_request(request_data):
 
 async def forward_data(src_reader, dst_writer, parser=None):
     while True:
-        data = await src_reader.read(4096)
-        if len(data) == 0:
+        try:
+            data = await asyncio.wait_for(src_reader.read(4096), timeout=5)
+            if len(data) == 0:
+                break
+
+            if parser:
+                parser(data)
+
+            dst_writer.write(data)
+            await dst_writer.drain()
+        except asyncio.TimeoutError:
+            continue
+        except ConnectionResetError:
+            my_print("Connection reset")
             break
 
-        if parser:
-            parser(data)
-
-        dst_writer.write(data)
-        await dst_writer.drain()
 
 async def handle_client(reader, writer):
     remote_reader, remote_writer = await asyncio.open_connection(REMOTE_ADDR, REMOTE_PORT)
@@ -66,14 +71,39 @@ async def handle_client(reader, writer):
     asyncio.create_task(forward_data(reader, remote_writer, parse_http_request))
     asyncio.create_task(forward_data(remote_reader, writer))
 
+async def shutdown(server):
+    print("\n[*] Shutting down the server...")
+    server.close()
+    await server.wait_closed()
+
+    tasks = asyncio.all_tasks()
+    for task in tasks:
+        if task.done():
+            continue
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            pass
+
+    print("[*] All tasks cancelled and server closed")
+
 async def main():
     server = await asyncio.start_server(handle_client, LOCAL_ADDR, LOCAL_PORT)
 
     addr = server.sockets[0].getsockname()
     print(f"[*] Listening on {addr[0]}:{addr[1]}...")
 
-    async with server:
-        await server.serve_forever()
+    try:
+        async with server:
+            await server.serve_forever()
+    except KeyboardInterrupt:
+        print("\n[*] Shutting down due to keyboard interrupt...")
+    finally:
+        await shutdown(server)
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n[*] Shutting down...")

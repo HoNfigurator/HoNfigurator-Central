@@ -43,7 +43,7 @@ class PacketParser:
         try:
             await handler(packet_data,game_server)
         except Exception as e:
-            self.log("exception",f"An error occurred while handling the %s function: %s with this packet type: {packet_type}", inspect.currentframe().f_code.co_name, traceback.format_exc())
+            self.log("exception",f"An error occurred while handling the %s function: %s with this packet type: {hex(packet_type)}", inspect.currentframe().f_code.co_name, traceback.format_exc())
 
     async def server_announce_preflight(packet):
         """ 0x40  Server announce
@@ -278,6 +278,7 @@ class ManagerChatParser:
         self.mgr_to_chat_handlers = {
             0x1600: self.mgr_handshake_request,
             0x1602: self.mgr_server_info_update,
+            0x1603: self.mgr_replay_response,
             0x2a00: self.mgr_sending_heartbeat
         }
     def log(self,level,message):
@@ -302,17 +303,20 @@ class ManagerChatParser:
 
     async def chat_replay_request(self,packet_data):
         #   Replay request
-        account_id, match_id, ext_len, filehost_len, dir_len, upload_to_ftb, upload_to_s3 = struct.unpack('!I I I I I B B', packet_data[:22])
-        offset = 22
-        extension = packet_data[offset:offset + ext_len].decode('utf-8')
-        offset += ext_len
-        filehost = packet_data[offset:offset + filehost_len].decode('utf-8')
-        offset += filehost_len
-        directory = packet_data[offset:offset + dir_len].decode('utf-8')
-        offset += dir_len
-        download_link = packet_data[offset:].decode('utf-8')
+        account_id = int.from_bytes(packet_data[2:6],'little')
+        match_id = int.from_bytes(packet_data[6:10],'little')
+        extension,_,remaining_data = packet_data[10:].partition(b'\x00')
+        filehost,_,remaining_data = remaining_data.partition(b'\x00')
+        directory,_,remaining_data = remaining_data.partition(b'\x00')
+        upload_to_ftb = remaining_data[0]
+        upload_to_s3 = remaining_data[1]
+        download_link = remaining_data[2:].split(b'\x00', 1)[0].decode('utf-8')
+
+        extension = extension.decode('utf-8')
+        filehost = filehost.decode('utf-8')
+        directory = directory.decode('utf-8')
         self.log("debug",f"{self.print_prefix}Upload replay\n Account ID: {account_id}\n Match ID: {match_id}\n Extension: {extension}\n Filehost: {filehost}\n Directory: {directory}\n Upload to ftb: {upload_to_ftb}\n Upload to S3: {upload_to_s3}\n Download Link: {download_link}")
-        self.log("debug",f"{self.print_prefix}{packet_data}")
+        #self.log("debug",f"{self.print_prefix}{packet_data}")
     async def chat_shutdown_notice(self,packet_data):
         self.log("debug",f"{self.print_prefix}Received chat server shutdown notice.")
 
@@ -344,11 +348,21 @@ class ManagerChatParser:
         server_name = server_name.decode('utf8')
         version = version.decode('utf8')
         ip_addr = ip_addr.decode('utf8')
+
     async def mgr_sending_heartbeat(self,packet_data):
         self.log("debug",f"{self.print_prefix}Sending heartbeat..")
     
     async def mgr_receiving_heartbeat(self,packet_data):
         self.log("debug",f"{self.print_prefix}Received heartbeat")
+    
+    async def mgr_replay_response(self,packet_data):
+        # Example, replay not found: b'\x03\x16\x00\x80\x19\x00\x80\x03\x00\x00\x01'
+        # Example, replay not found: b'\x03\x16ob\x1c\x00\x80\x03\x00\x00\x01'
+        # Replay found, send in parts:
+        #   b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x05'
+        #   b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x06'
+        #   b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x07\x00'
+        self.log("debug",f"{self.print_prefix}Responding to replay request..\n{packet_data}")
 
     async def unhandled_packet(self, packet_data):
         self.log("warn",f"{self.print_prefix} Unhandled packet: {packet_data}")

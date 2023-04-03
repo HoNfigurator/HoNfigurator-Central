@@ -62,7 +62,7 @@ class ChatServerHandler:
                     data.extend(chunk)
                 else:
                     msg_type = int.from_bytes(data[:2], byteorder='little')
-                    await self.handle_received_packet(msg_len, msg_type, data)
+                    await self.handle_received_packet(msg_len, msg_type, bytes(data))
             except asyncio.IncompleteReadError as e:
                 LOGGER.error(f"IncompleteReadError: {e}")
 
@@ -90,7 +90,7 @@ class ChatServerHandler:
         packet_data += b'\x00' #    0 = running, 1 = shutting down
         packet_len = len(packet_data)
         len_packet = struct.pack('<H', packet_len)
-        LOGGER.debug(f">>> [MGR|CHAT] [{msg_type}] Sending manager information to chat server\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Address: {ip_addr}\n\tAuto-Ping Port: {udp_ping_responder_port}")
+        LOGGER.debug(f">>> [MGR|CHAT] [{hex(msg_type)}] Sending manager information to chat server\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Address: {ip_addr}\n\tAuto-Ping Port: {udp_ping_responder_port}")
         return len_packet, packet_data
 
     def get_headers(self, data):

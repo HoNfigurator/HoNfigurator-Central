@@ -154,7 +154,7 @@ class Commands:
                 sub_commands[key] = self.generate_config_subcommands(value, command_coro)
             else:
                 sub_commands[key] = lambda *cmd_args: asyncio.ensure_future(command_coro(*cmd_args))
-                sub_commands[key].current_value = lambda : self.generate_args_for_set_config(key,value)
+                sub_commands[key].current_value = value
 
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands_with_help
