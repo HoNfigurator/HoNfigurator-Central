@@ -214,7 +214,7 @@ class GameServer:
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.local['params'].items())
 
         if MISC.get_os_platform() == "win32":
-            cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register","127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
+            cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
         else:
             cmdline_args = f'''{self.config.local['config']['file_path']} -dedicated -noconfig -execute '"{params}"' -masterserver {self.global_config['hon_data']['svr_masterServer']} -register 127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}'''
