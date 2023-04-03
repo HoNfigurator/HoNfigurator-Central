@@ -52,7 +52,7 @@ class GameServer:
         })
         self.game_state.add_listener(self.on_game_state_change)
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
-        self.load(match_only=False)
+        self.load_gamestate_from_file(match_only=False)
         # Start the monitor_process method as a background task
         self.schedule_task(self.monitor_process())
 
@@ -94,7 +94,7 @@ class GameServer:
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
-    def load(self,match_only):
+    def load_gamestate_from_file(self,match_only):
         if os.path.exists(self.data_file):
             with open(self.data_file, "r") as f:
                 performance_data = json.load(f)
@@ -103,7 +103,7 @@ class GameServer:
                 self.game_state._state['performance']['total_ingame_skipped_frames'] = performance_data['total_ingame_skipped_frames']
             if self.game_state._state['current_match_id'] in performance_data:
                 self.game_state._state.update({'now_ingame_skipped_frames':self.game_state._state['now_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
-    def save(self):
+    def save_gamestate_to_file(self):
         current_match_id = str(self.game_state._state['current_match_id'])
 
         if os.path.exists(self.data_file):

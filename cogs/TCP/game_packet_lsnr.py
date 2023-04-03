@@ -103,7 +103,7 @@ class ClientConnection:
             await self.writer.wait_closed()
             try:
                 if self.game_server is not None:
-                    self.game_server.save()
+                    self.game_server.save_gamestate_to_file()
                     #self.game_server_manager.remove_game_server(self.game_server)
                     await self.game_server_manager.remove_client_connection(self)
             except Exception:
