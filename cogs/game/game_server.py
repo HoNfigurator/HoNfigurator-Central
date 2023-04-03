@@ -7,12 +7,13 @@ import json
 import math
 import sys
 import os
-from cogs.misc.logging import flatten_dict, get_logger, get_home
+from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc
 from cogs.TCP.packet_parser import PacketParser
 from cogs.misc.utilities import Misc
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
+MISC = get_misc()
 
 class GameServer:
     def __init__(self, id, port, global_config, remove_self_callback):
@@ -212,7 +213,7 @@ class GameServer:
         DETACHED_PROCESS = 0x00000008
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.local['params'].items())
 
-        if sys.platform == "win32":
+        if MISC.get_os_platform() == "win32":
             cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register","127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
         else:

@@ -10,10 +10,11 @@ from cogs.TCP.game_packet_lsnr import handle_clients
 from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
-from cogs.misc.logging import get_logger
+from cogs.misc.logging import get_logger, get_misc
 from enum import Enum
 
 LOGGER = get_logger()
+MISC = get_misc()
 
 # Define an Enum class for health checks
 class HealthChecks(Enum):

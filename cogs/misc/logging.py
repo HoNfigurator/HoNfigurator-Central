@@ -50,6 +50,14 @@ def get_logger():
     global logger
     return logger
 
+def set_misc(misc_object):
+    global MISC
+    MISC = misc_object
+
+def get_misc():
+    global MISC
+    return MISC
+
 def set_home(script_home):
     global HOME_PATH
     HOME_PATH = script_home

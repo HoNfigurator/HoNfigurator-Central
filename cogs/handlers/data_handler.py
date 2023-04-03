@@ -4,10 +4,11 @@ import platform
 import pathlib
 import json
 import sys
-from cogs.misc.logging import get_logger,get_home
+from cogs.misc.logging import get_logger,get_home,get_misc
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
+MISC = get_misc()
 
 class Enrichment:
     def __init__(self):
@@ -27,12 +28,12 @@ class Enrichment:
         return f"cpu: {self.get_cpu()}"
 
 def get_global_configuration():
-    with open(pathlib.Path.cwd() / 'config' / 'config.json') as jsonfile:
+    with open(HOME_PATH / 'config' / 'config.json') as jsonfile:
         gbl = json.load(jsonfile)
         if 'svr_ip' not in gbl['hon_data']:
             public_ip = Enrichment().get_public_ip()
             gbl['hon_data']['svr_ip'] = public_ip
-        if sys.platform == "win32":
+        if MISC.get_os_platform() == "win32":
             gbl['hon_data']['hon_logs_directory'] = f"{gbl['hon_data']['hon_home_directory']}\\Documents\\Heroes of Newerth x64\\game\\logs"
         else:
             gbl['hon_data']['hon_logs_directory'] = pathlib.path(gbl['hon_data']['hon_home_directory'] / 'logs')
@@ -64,7 +65,7 @@ class ConfigManagement():
             except: pass
         return None
     def get_local_configuration(self):
-        if sys.platform == "win32":
+        if MISC.get_os_platform():
             executable = "KONGOR_ARENA"
             suffix = ".exe"
         else:

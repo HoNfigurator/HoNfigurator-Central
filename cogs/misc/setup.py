@@ -6,7 +6,7 @@ import psutil
 import traceback
 import pathlib
 import json
-from cogs.misc.logging import get_logger, get_home
+from cogs.misc.logging import get_logger, get_home, get_misc
 from cogs.misc.utilities import Misc
 from cogs.misc.hide_pass import getpass
 import copy
@@ -14,21 +14,21 @@ import copy
 ALLOWED_REGIONS = ["AU", "BR", "EU", "RU", "SEA", "TH", "USE", "USW" ]
 LOGGER = get_logger()
 HOME_PATH = get_home()
-pip_requirements = pathlib.Path.cwd() / 'requirements.txt'
+MISC = get_misc()
+pip_requirements = HOME_PATH / 'requirements.txt'
 
 class SetupEnvironment:
     def __init__(self,config_file):
         self.KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory']
 
         self.config_file = config_file
-        self.misc = Misc()
         self.default_configuration = self.get_default_configuration()
         self.hon_data = self.default_configuration['hon_data']
         self.current_data = None
 
 
     def get_default_configuration(self):
-        if sys.platform == "win32":
+        if MISC.get_os_platform()== "win32":
             return self.get_default_configuration_windows()
         else:
             return self.get_default_configuration_linux()
@@ -107,15 +107,15 @@ class SetupEnvironment:
                 }
             },
             "hon_data": {
-                "hon_install_directory": "C:\\Program Files\\Heroes of Newerth x64 - Kongor\\" if self.misc.os_platform.lower().startswith("win") else "/opt/hon/",
-                "hon_home_directory": "C:\\ProgramData\\HoN Server Data\\" if self.misc.os_platform.lower().startswith("win") else "/opt/hon_server_data/",
+                "hon_install_directory": "C:\\Program Files\\Heroes of Newerth x64 - Kongor\\" if MISC.get_os_platform().lower().startswith("win") else "/opt/hon/",
+                "hon_home_directory": "C:\\ProgramData\\HoN Server Data\\" if MISC.get_os_platform().lower().startswith("win") else "/opt/hon_server_data/",
                 "svr_masterServer": "api.kongor.online",
                 "svr_login": "",
                 "svr_password": "",
                 "svr_name": "",
                 "svr_location": "",
                 "svr_priority": "HIGH",
-                "svr_total": int(self.misc.get_cpu_count() / 2),     # total logical cores in half.
+                "svr_total": int(MISC.get_cpu_count() / 2),     # total logical cores in half.
                 "svr_total_per_core": 1,
                 "svr_enableProxy": True,
                 "svr_max_start_at_once": 5,
@@ -198,7 +198,7 @@ class SetupEnvironment:
                 #if 'svr_total_per_core' not in self.hon_data:
                     #self.hon_data.update({'svr_total_per_core':1})
 
-                total_allowed = self.misc.get_total_allowed_servers(self.hon_data['svr_total_per_core'])
+                total_allowed = MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core'])
                 if value > total_allowed:
                     self.hon_data[key] = int(total_allowed)
                     minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
@@ -309,9 +309,9 @@ class SetupEnvironment:
         return (
             {
                 "system_data" : {
-                    "cpu_count": self.misc.get_cpu_count(),
-                    "cpu_name": self.misc.get_cpu_name(),
-                    "total_ram": self.misc.get_total_ram()
+                    "cpu_count": MISC.get_cpu_count(),
+                    "cpu_name": MISC.get_cpu_name(),
+                    "total_ram": MISC.get_total_ram()
                 }
             }
         )

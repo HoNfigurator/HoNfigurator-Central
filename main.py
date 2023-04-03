@@ -1,23 +1,25 @@
 #!/usr/bin/env python3
-#   This must be first, to initialise logging which all other classes rely on.
-from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text
 import traceback, sys
 from pathlib import Path
+import pathlib
+import asyncio
+
+#   This must be first, to initialise logging which all other classes rely on.
+from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc
 HOME_PATH = Path(get_script_dir(__file__))
 set_home(HOME_PATH)
 set_logger()
 
+from cogs.misc.utilities import Misc
+MISC = Misc()
+set_misc(MISC)
 
-import cogs.handlers.data_handler as data_handler
-import traceback, sys, os.path
-import pathlib
-import asyncio
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
 
 LOGGER = get_logger()
-CONFIG_FILE = pathlib.Path.cwd() / 'config' / 'config.json'
+CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """

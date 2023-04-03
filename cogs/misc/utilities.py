@@ -1,6 +1,7 @@
 import subprocess, psutil
 from cogs.misc.logging import get_logger
 import platform
+import os,sys
 
 LOGGER = get_logger()
 
@@ -9,7 +10,7 @@ class Misc:
         self.cpu_count = psutil.cpu_count(logical=True)
         self.cpu_name = platform.processor()
         self.total_ram = psutil.virtual_memory().total
-        self.os_platform = platform.system()
+        self.os_platform = sys.platform
         self.total_allowed_servers = None
     def get_proc(proc_name):
         procs = []
@@ -48,7 +49,7 @@ class Misc:
         return self.total_ram
     def get_cpu_load():
         return psutil.getloadavg()
-    def get_platform(self):
+    def get_os_platform(self):
         return self.os_platform
     def get_total_allowed_servers(self,svr_total_per_core):
         total = svr_total_per_core * self.cpu_count
