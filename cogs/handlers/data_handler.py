@@ -75,7 +75,7 @@ class ConfigManagement():
         self.local = ({
             'config' : {
                 'file_name':f'{executable}_{self.id}{suffix}',
-                'file_path' :f'{self.get_global_by_key("hon_install_directory")}{executable}_{self.id}{suffix}'
+                'file_path' :f'{self.get_global_by_key("hon_install_directory")}/{executable}_{self.id}{suffix}'
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
