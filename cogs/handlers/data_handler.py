@@ -3,7 +3,7 @@ import traceback
 import platform
 import pathlib
 import json
-import sys
+from pathlib import Path
 from cogs.misc.logging import get_logger,get_home,get_misc
 
 LOGGER = get_logger()
@@ -75,7 +75,7 @@ class ConfigManagement():
         self.local = ({
             'config' : {
                 'file_name':f'{executable}_{self.id}{suffix}',
-                'file_path' :f'{self.get_global_by_key("hon_install_directory")}/{executable}_{self.id}{suffix}'
+                'file_path' : str(Path(self.get_global_by_key("hon_install_directory")) / f'{executable}_{self.id}{suffix}')
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
