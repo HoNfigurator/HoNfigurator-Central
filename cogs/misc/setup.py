@@ -298,9 +298,14 @@ class SetupEnvironment:
         return config
 
     def add_runtime_data(self):
-        hon_artefacts_directory = Path(self.hon_data['hon_home_directory']) / "Documents" / "Heroes of Newerth x64"
-        hon_replays_directory = hon_artefacts_directory / "game" / "replays"
-        hon_logs_directory = hon_artefacts_directory / "game" / "logs"
+        if MISC.get_os_platform() == "win32":
+            hon_artefacts_directory = Path(self.hon_data['hon_home_directory']) / "Documents" / "Heroes of Newerth x64"
+            hon_replays_directory = hon_artefacts_directory / "game" / "replays"
+            hon_logs_directory = hon_artefacts_directory / "game" / "logs"
+        else:
+            hon_artefacts_directory = Path(self.hon_data["hon_home_directory"])
+            hon_replays_directory = hon_artefacts_directory / "replays"
+            hon_logs_directory = hon_artefacts_directory / "logs"
         self.hon_data['hon_artefacts_directory'] = str(hon_artefacts_directory)
         self.hon_data['hon_replays_directory'] = str(hon_replays_directory)
         self.hon_data['hon_logs_directory'] = str(hon_logs_directory)
