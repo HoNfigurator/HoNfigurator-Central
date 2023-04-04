@@ -42,7 +42,7 @@ def get_global_configuration():
 def operational_data():
     # get total logical server
     # 
-    print()
+    pass
 
 
 #global_config = get_global_configuration()
@@ -75,7 +75,7 @@ class ConfigManagement():
         self.local = ({
             'config' : {
                 'file_name':f'{executable}_{self.id}{suffix}',
-                'file_path' : str(Path(self.get_global_by_key("hon_install_directory")) / f'{executable}_{self.id}{suffix}')
+                'file_path' : Path(self.get_global_by_key("hon_install_directory")) / f'{executable}_{self.id}{suffix}'
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
@@ -113,9 +113,9 @@ class ConfigManagement():
                 'sv_logcollection_highping_value':100,
                 'sv_logcollection_highping_reportclientnum':1,
                 'sv_logcollection_highping_interval':120000,
-                'host_affinity':self.id - 1
+                #'host_affinity':self.id - 1
+                'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core']))
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
-        print(self.local["config"])
         return self.local

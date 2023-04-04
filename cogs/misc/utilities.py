@@ -54,9 +54,27 @@ class Misc:
     def get_total_allowed_servers(self,svr_total_per_core):
         total = svr_total_per_core * self.cpu_count
         if self.cpu_count <=4:
-            total - 1
+            total -= 1
         elif self.cpu_count >4 and self.cpu_count <= 12:
-            total - 2
+            total -= 2
         elif self.cpu_count >12:
-            total - 4
+            total -= 4
         return total
+    def get_server_affinity(self,server_id,svr_total_per_core):
+        server_id = int(server_id)
+        affinity = []
+
+        if svr_total_per_core > 2:
+            raise Exception("You cannot specify more than 2 servers per core.")
+        elif svr_total_per_core < 0:
+            raise Exception("You cannot specify a number less than 1. Must be either 1 or 2.")
+        if svr_total_per_core == 1:
+            affinity.append(str(self.cpu_count - server_id))
+        else:
+            t = 0
+            for num in range(0, server_id):
+                if num % svr_total_per_core == 0:
+                    t += 1
+            affinity.append(str(self.cpu_count - t))
+
+        return affinity

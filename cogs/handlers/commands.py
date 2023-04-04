@@ -181,12 +181,12 @@ class Commands:
         current_dict = self.global_config
         for key in keys[:-1]:
             if key not in current_dict:
-                print(f"Key '{key}' not found in the current dictionary")
+                print_formatted_text(f"Key '{key}' not found in the current dictionary")
             current_dict = current_dict.setdefault(key, {})
 
         last_key = keys[-1]
         if last_key not in current_dict:
-            print(f"Key '{last_key}' not found in the current dictionary")
+            print_formatted_text(f"Key '{last_key}' not found in the current dictionary")
 
         old_value = current_dict.get(last_key)
         current_dict[last_key] = value
@@ -197,10 +197,10 @@ class Commands:
             sub_command = sub_command[key]
         sub_command.current_value = value
 
-        print(f"Value for key '{last_key}' changed from {old_value} to {value}")
+        print_formatted_text(f"Value for key '{last_key}' changed from {old_value} to {value}")
         if self.setup.validate_hon_data(self.global_config['hon_data']):
-            print_formatted_text("Saved local configuration")
-            print_formatted_text("Scheduling restart of servers to apply new configuration")
+            LOGGER.info("Saved local configuration")
+            LOGGER.info("Scheduling restart of servers to apply new configuration")
             await self.cmd_shutdown_server("all")
             #self.create_all_servers_callback()
             #await self.start_servers_callback()
@@ -526,4 +526,4 @@ class CustomCommandCompleter(Completer):
             else:
                 self.last_sub_commands = []
         except Exception:
-            print(traceback.format_exc())
+            LOGGER.exception(traceback.format_exc())

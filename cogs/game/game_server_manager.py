@@ -3,6 +3,7 @@ import phpserialize
 import traceback
 import asyncio
 import hashlib
+import os.path
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
@@ -12,6 +13,7 @@ from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.misc.logging import get_logger, get_misc
 from enum import Enum
+from os.path import exists
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -21,6 +23,17 @@ class HealthChecks(Enum):
     public_ip_healthcheck = 1
     general_healthcheck = 2
     lag_healthcheck = 3
+
+class ReplayStatus(Enum):
+    NONE = -1
+    GENERAL_FAILURE = 0
+    DOES_NOT_EXIST = 1
+    INVALID_HOST = 2
+    ALREADY_UPLOADED = 3
+    ALREADY_QUEUED = 4
+    QUEUED = 5
+    UPLOADING = 6
+    UPLOAD_COMPLETE = 7
 
 # Define a function to choose a health check based on its type
 def choose_health_check(type):
@@ -38,6 +51,8 @@ class GameServerManager:
         Args:
         global_config (dict): A dictionary containing the global configuration for the game server.
         """
+        self.event_bus = EventBus()
+        self.event_bus.subscribe('handle_replay_request', self.handle_replay_request)
         # Store the global configuration
         self.global_config = global_config
         # Initialize dictionaries to store game servers and client connections
@@ -59,7 +74,7 @@ class GameServerManager:
         asyncio.create_task(self.run_health_checks())
     
     async def preflight_checks(self):
-        print()
+        pass
 
     async def send_svr_command(self, command, game_server_port, command_data):
         """
@@ -76,7 +91,7 @@ class GameServerManager:
         if command == "shutdown":
             game_server = self.game_servers.get(game_server_port)
             if game_server:
-                # TODO: handle open exe but no client connection
+                # This server is connected to the manager
                 if game_server.port in self.client_connections:
                     await game_server.schedule_shutdown_server(client_connection,command_data)
                 else:
@@ -182,8 +197,8 @@ class GameServerManager:
             AuthenticationError: If the authentication fails.
         """
         # Initialize MasterServerHandler and send requests
-        master_server_handler = MasterServerHandler(master_server="api.kongor.online", version="4.10.6.0")
-        mserver_auth_response = await master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
+        self.master_server_handler = MasterServerHandler(master_server="api.kongor.online", version="4.10.6.0", was="was-crIac6LASwoafrl8FrOa", event_bus=self.event_bus)
+        mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
             LOGGER.error("Authentication to MasterServer failed.")
             raise AuthenticationError(f"[{mserver_auth_response[1]}] Authentication error")
@@ -200,7 +215,8 @@ class GameServerManager:
             parsed_mserver_auth_response["chat_port"],
             parsed_mserver_auth_response["session"],
             parsed_mserver_auth_response["server_id"],
-            udp_ping_responder_port=udp_ping_responder_port
+            udp_ping_responder_port=udp_ping_responder_port,
+            event_bus=self.event_bus
         )
 
         # connect and authenticate to chatserver
@@ -326,10 +342,43 @@ class GameServerManager:
             self.commands.subcommands_changed.set()
             return True
         else:
-            #TODO: RAISE ERROR
+            #TODO: raise error or happy with logger?
+            LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
             return False
+ 
+    async def handle_replay_request(self, match_id, extension, account_id):
+        replay_file_name = f"M{match_id}.{extension}"
+        replay_file_path = (self.global_config['hon_data']['hon_replays_directory'] / replay_file_name)
+        # Check if the replay exists
+        file_exists = exists(replay_file_path)
 
-    
+        if not file_exists:
+            # Send the "does not exist" packet
+            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
+            return
+
+        # Send the "exists" packet
+        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.QUEUED)
+
+        # Upload the file and send status updates as required
+        file_size = os.path.getsize(replay_file_path)
+        
+        upload_details = await self.master_server_handler.get_replay_upload_info(match_id, extension, self.global_config['hon_data']['svr_login'], file_size)
+
+        if upload_details is None or upload_details[1] != 200:
+            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            return
+        
+        upload_details_parsed = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in upload_details[0].items()}
+
+        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
+        upload_result = await self.master_server_handler.upload_replay_file(replay_file_path, replay_file_name, upload_details_parsed['TargetURL'])
+        if upload_result[1] not in [204,200]:
+            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            return
+        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
+
+        
     async def remove_client_connection(self,client_connection):
         """
         Removes a client connection from the client connection dictionary with the specified port as the key
@@ -375,7 +424,8 @@ class GameServerManager:
 
         This function does not return anything, but can log errors or other information.
         """
-        async def start_game_server_with_semaphore(game_server):
+        async def start_game_server_with_semaphore(game_server,timeout=60):
+            timer = 0
             async with self.server_start_semaphore:
                 started = await game_server.start_server()
                 if started:
@@ -383,8 +433,12 @@ class GameServerManager:
                     # TODO: there is an infinite loop here, if server doesn't start
                     while game_server.game_state._state['status'] is None:
                         await asyncio.sleep(1)
+                        timer+=1
+                        if timer >= timeout:
+                            LOGGER.error(f"GameServer #{game_server.id} either did not start correctly, or took too long to start.")
+                            break
                 else:
-                    LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} failed to start.")
+                    LOGGER.error(f"GameServer #{game_server.id} with port {game_server.port} failed to start.")
         
         if game_server == "all":
             # Start all game servers using the semaphore
@@ -392,3 +446,28 @@ class GameServerManager:
             await asyncio.gather(*start_tasks)
         else:
             await start_game_server_with_semaphore(game_server)
+    
+    def start_hon_proxy():
+        pass
+
+    def check_hon_proxy_running():
+        pass
+
+    def create_hon_proxy_config():
+        pass
+
+class EventBus:
+    def __init__(self):
+        self._subscribers = {}
+
+    def subscribe(self, event_type, callback):
+        if event_type not in self._subscribers:
+            self._subscribers[event_type] = []
+        self._subscribers[event_type].append(callback)
+    async def emit(self, event_type, *args, **kwargs):
+        if event_type in self._subscribers:
+            for callback in self._subscribers[event_type]:
+                if asyncio.iscoroutinefunction(callback):
+                    await callback(*args, **kwargs)
+                else:
+                    callback(*args, **kwargs)
