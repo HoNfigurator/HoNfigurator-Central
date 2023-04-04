@@ -207,8 +207,8 @@ class GameServer:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
 
         #   Server instances write files to location dependent on USERPROFILE and APPDATA variables
-        os.environ["USERPROFILE"] = self.global_config['hon_data']['hon_home_directory']
-        os.environ["APPDATA"] = self.global_config['hon_data']['hon_home_directory']
+        os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
+        os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
 
         DETACHED_PROCESS = 0x00000008
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.local['params'].items())
@@ -230,6 +230,7 @@ class GameServer:
 
     async def schedule_shutdown_server(self, client_connection, packet_data):
         self.scheduled_shutdown = True
+        # TODO: Schedule doesn't work while servers are still booting up. Example, setconfig hon_data svr_total <new val>
         while True:
             num_clients = self.game_state["num_clients"]
             if num_clients is not None and num_clients > 0:

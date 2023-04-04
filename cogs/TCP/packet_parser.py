@@ -296,7 +296,7 @@ class ManagerChatParser:
             handler = self.chat_to_mgr_handlers.get(packet_type, self.unhandled_packet)
         if packet_len != len(packet_data):
             self.log("warn",f"{self.print_prefix}LEN DOESNT MATCH PACKET: {packet_len} and {len(packet_data)}")
-        await handler(packet_data)
+        return await handler(packet_data)
 
     async def chat_handshake_accepted(self,packet_data):
         self.log("debug",f"{self.print_prefix}Handshake accepted")
@@ -315,7 +315,10 @@ class ManagerChatParser:
         extension = extension.decode('utf-8')
         filehost = filehost.decode('utf-8')
         directory = directory.decode('utf-8')
+
+        parsed = {"account_id":account_id,"match_id":match_id,"extension":extension,"filehost":filehost,"directory":directory,"upload_to_ftb":upload_to_ftb,"upload_to_s3":upload_to_s3,"download_link":download_link}
         self.log("debug",f"{self.print_prefix}Upload replay\n Account ID: {account_id}\n Match ID: {match_id}\n Extension: {extension}\n Filehost: {filehost}\n Directory: {directory}\n Upload to ftb: {upload_to_ftb}\n Upload to S3: {upload_to_s3}\n Download Link: {download_link}")
+        return parsed
         #self.log("debug",f"{self.print_prefix}{packet_data}")
     async def chat_shutdown_notice(self,packet_data):
         self.log("debug",f"{self.print_prefix}Received chat server shutdown notice.")

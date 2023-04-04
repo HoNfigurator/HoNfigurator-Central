@@ -20,20 +20,13 @@ pip_requirements = HOME_PATH / 'requirements.txt'
 class SetupEnvironment:
     def __init__(self,config_file):
         self.KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory']
-
+        self.ALL_PATH_TYPES = ["hon_install_directory","hon_home_directory"] + self.KEYS_NOT_IN_CONFIG_FILE
         self.config_file = config_file
         self.default_configuration = self.get_default_configuration()
         self.hon_data = self.default_configuration['hon_data']
         self.current_data = None
 
-
     def get_default_configuration(self):
-        if MISC.get_os_platform()== "win32":
-            return self.get_default_configuration_windows()
-        else:
-            return self.get_default_configuration_linux()
-
-    def get_default_configuration_linux(self):
         return {
             "discord_data": {
                 "token": "asdfasd",
@@ -61,63 +54,17 @@ class SetupEnvironment:
                 }
             },
             "hon_data": {
-                "hon_install_directory": "/opt/hon/app/",
-                "hon_home_directory": "/opt/hon/config/game/",
+                "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - Kongor\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
+                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/game/"),
                 "svr_masterServer": "api.kongor.online",
                 "svr_login": "",
                 "svr_password": "",
                 "svr_name": "",
                 "svr_location": "",
                 "svr_priority": "HIGH",
-                "svr_total": 0,
+                "svr_total": int(MISC.get_cpu_count() / 2),
                 "svr_total_per_core": 1,
                 "svr_enableProxy": False,
-                "svr_max_start_at_once": 5,
-                "svr_starting_gamePort": 10000,
-                "svr_starting_voicePort": 10060,
-                "svr_managerPort": 1135,
-            }
-        }
-
-    def get_default_configuration_windows(self):
-        return {
-            "discord_data": {
-                "token": "asdfasd",
-                "admin_username": "frank"
-            },
-            "application_data": {
-                "timers": {
-                    "game_server": {
-                        "health_checks": {
-                            "lag_healthcheck": 300,
-                            "general_healthcheck": 120
-                        },
-                        "heartbeat_frequency": 5,
-                        "ingame_check": 5,
-                        "lobby_check": 5,
-                        "leftover_game": 180,
-                        "replay_wait": 330
-                    },
-                    "manager": {
-                        "health_checks": {
-                            "public_ip_healthcheck": 1800
-                        },
-                        "heartbeat_frequency": 10
-                    }
-                }
-            },
-            "hon_data": {
-                "hon_install_directory": "C:\\Program Files\\Heroes of Newerth x64 - Kongor\\" if MISC.get_os_platform().lower().startswith("win") else "/opt/hon/",
-                "hon_home_directory": "C:\\ProgramData\\HoN Server Data\\" if MISC.get_os_platform().lower().startswith("win") else "/opt/hon_server_data/",
-                "svr_masterServer": "api.kongor.online",
-                "svr_login": "",
-                "svr_password": "",
-                "svr_name": "",
-                "svr_location": "",
-                "svr_priority": "HIGH",
-                "svr_total": int(MISC.get_cpu_count() / 2),     # total logical cores in half.
-                "svr_total_per_core": 1,
-                "svr_enableProxy": True,
                 "svr_max_start_at_once": 5,
                 "svr_starting_gamePort": 10000,
                 "svr_starting_voicePort": 10060,
@@ -130,14 +77,7 @@ class SetupEnvironment:
             hon_data = json.load(config_file)
         return hon_data
 
-    def validate_hon_data(self, hon_data=None):
-
-        def add_separator_if_missing(path):
-            separator = os.path.sep
-            if not str(path).endswith(separator):
-                path = path + separator
-            return path
-
+    def validate_hon_data(self, hon_data=None):        
         if hon_data:
             self.hon_data = hon_data
 
@@ -150,6 +90,20 @@ class SetupEnvironment:
         for key, value in self.hon_data.items():
             default_value = default_hon_data.get(key)
             default_value_type = type(default_value)
+
+            if key in self.ALL_PATH_TYPES:
+                # Ensure the path ends with the appropriate separator
+                #fixed_path = add_separator_if_missing(value)
+                path = Path(value)
+                value = path
+
+                if not path.is_dir():
+                    try:
+                        path.mkdir(parents=True, exist_ok=True)
+                        minor_issues.append(f"Resolved: Path did not exist for {key}.")
+                    except Exception:
+                        major_issues.append(f"Invalid path for {key}: {path}")
+                self.hon_data[key] = path
 
             if default_value_type == int:
                 if not isinstance(value, int):
@@ -173,28 +127,22 @@ class SetupEnvironment:
 
             elif default_value_type == str:
                 if not isinstance(value, str) or value == '':
-                    major_issues.append(f"Invalid string value for {key}: {value}")
+                        major_issues.append(f"Invalid string value for {key}: {value}")
                 elif key == "svr_region" and value not in ALLOWED_REGIONS:
                     major_issues.append(f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
+            elif default_value_type == pathlib.WindowsPath:
+                if not isinstance(value,pathlib.WindowsPath):
+                    major_issues.append(f"Invalid path value for {key}: {value}")
+            elif default_value_type == pathlib.PosixPath:
+                if not isinstance(value,pathlib.WindowsPath):
+                    major_issues.append(f"Invalid path value for {key}: {value}")
             else:
                 if key in self.KEYS_NOT_IN_CONFIG_FILE:
                     pass
                 else:
                     major_issues.append(f"Unexpected key and value type for {key}: {value}")
 
-            if key in ["hon_install_directory", "hon_home_directory", "hon_artefacts_directory"]:
-                # Ensure the path ends with the appropriate separator
-                #fixed_path = add_separator_if_missing(value)
-                path = Path(value)
-
-                if not path.is_dir():
-                    try:
-                        path.mkdir(parents=True, exist_ok=True)
-                        minor_issues.append(f"Resolved: Path did not exist for {key}.")
-                    except Exception:
-                        major_issues.append(f"Invalid path for {key}: {path}")
-                self.hon_data[key] = str(path)
-            elif key == "svr_total":
+            if key == "svr_total":
                 #if 'svr_total_per_core' not in self.hon_data:
                     #self.hon_data.update({'svr_total_per_core':1})
 
@@ -278,18 +226,19 @@ class SetupEnvironment:
 
             return True
 
-        keys_to_remove = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory']
-        hon_data_to_save = {key: value for key, value in self.hon_data.items() if key not in keys_to_remove}
+        hon_data_to_save = {key: value for key, value in self.hon_data.items() if key not in self.KEYS_NOT_IN_CONFIG_FILE}
 
         if Path(self.config_file).exists():
             if are_dicts_equal_with_types(self.get_existing_configuration(), hon_data_to_save):
                 return False
+        
+        hon_data_to_save['hon_home_directory'] = str(hon_data_to_save['hon_home_directory'])
+        hon_data_to_save['hon_install_directory'] = str(hon_data_to_save['hon_install_directory'])
 
         with open(self.config_file, 'w') as config_file:
             json.dump(hon_data_to_save, config_file, indent=4)
 
         return True
-
 
     def merge_config(self):
         config = self.get_default_configuration()
@@ -316,7 +265,8 @@ class SetupEnvironment:
                 "system_data" : {
                     "cpu_count": MISC.get_cpu_count(),
                     "cpu_name": MISC.get_cpu_name(),
-                    "total_ram": MISC.get_total_ram()
+                    "total_ram": MISC.get_total_ram(),
+                    'server_total_allowed': MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core'])
                 }
             }
         )
@@ -327,7 +277,6 @@ class SetupEnvironment:
             return self.merge_config()
         else:
             return False
-
 
 
 class PrepareDependencies:

@@ -2,13 +2,16 @@ import traceback
 import asyncio
 import inspect
 import struct
+from enum import Enum
 from cogs.misc.logging import get_logger
 from cogs.TCP.packet_parser import ManagerChatParser
 
 LOGGER = get_logger()
 
 class ChatServerHandler:
-    def __init__(self, chat_address, chat_port, session_id, server_id, udp_ping_responder_port):
+    def __init__(self, chat_address, chat_port, session_id, server_id, udp_ping_responder_port, event_bus):
+        self.manager_event_bus = event_bus
+        self.manager_event_bus.subscribe('replay_status_update', self.create_replay_status_update_packet)
         self.chat_address = chat_address
         self.chat_port = chat_port
         self.session_id = session_id
@@ -66,15 +69,13 @@ class ChatServerHandler:
             except asyncio.IncompleteReadError as e:
                 LOGGER.error(f"IncompleteReadError: {e}")
 
-
-
     def create_handshake_packet(self, session_id, server_id):
         msg_type = 0x1600
         packet = struct.pack('<H', msg_type) + struct.pack('<I', self.server_id) + self.session_id.encode('utf-8') + b'\x00' + struct.pack('<I', 70)
         msg_len = len(packet)
         packet = struct.pack('<H', msg_len) + packet
 
-        LOGGER.debug(f"{self} [MGR|CHAT] [{msg_type}] Sending Handshake packet to ChatServer\n\tSession ID: {session_id}\n\tServer ID: {server_id}")
+        LOGGER.debug(f">>> [MGR|CHAT] [{hex(msg_type)}] Sending Handshake packet to ChatServer\n\tSession ID: {session_id}\n\tServer ID: {server_id}")
         return packet
 
     def create_server_info_packet(self, server_id, username, region, server_name, version, ip_addr, udp_ping_responder_port):
@@ -92,6 +93,39 @@ class ChatServerHandler:
         len_packet = struct.pack('<H', packet_len)
         LOGGER.debug(f">>> [MGR|CHAT] [{hex(msg_type)}] Sending manager information to chat server\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Address: {ip_addr}\n\tAuto-Ping Port: {udp_ping_responder_port}")
         return len_packet, packet_data
+
+    async def create_replay_status_update_packet(self,match_id,account_id,status):
+        """
+        int matchId = ReadInt(data, offset, out offset);
+        int accountId = ReadInt(data, offset, out offset);
+        UploadStatus status = (UploadStatus)ReadByte(data, offset, out offset);
+        string? downloadLink = status switch
+        {
+            UploadStatus.AlreadyUploaded => ReadString(data, offset, out offset),
+            UploadStatus.UploadComplete => ReadString(data, offset, out offset),
+            _ => null
+        };
+        	b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x05'	- OK I have the replay
+            b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x06'	- Uploading..
+            b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x07\x00' - finished uploading
+            
+
+            b'\x0b\x00\x03\x16ac\x1c\x00\x80\x03\x00\x00\x01' - mine (for not found)
+            b'\x0b\x00\x03\x16/\x9a\x1a\x00\x80\x03\x00\x00\x01' - working (for not found)
+        """
+        msg_type = 0x1603
+        packet_data = struct.pack('<H', msg_type)
+        packet_data += int.to_bytes(match_id,4,byteorder='little')
+        packet_data += int.to_bytes(account_id,4,byteorder='little')
+        packet_data += int.to_bytes(status.value,1,byteorder='little')
+        if status.name == "UPLOAD_COMPLETE":
+            packet_data = packet_data + b'\x00'
+        msg_len = len(packet_data)
+        packet_data = struct.pack('<H', msg_len) + packet_data
+        # Send the packet to the chat server
+        self.writer.write(packet_data)
+        await self.writer.drain()
+        
 
     def get_headers(self, data):
         msg_len = int.from_bytes(data[0:2], byteorder='little')
@@ -111,7 +145,7 @@ class ChatServerHandler:
                 await self.writer.wait_closed()
 
     async def handle_received_packet(self, msg_len, msg_type, data):
-        await self.manager_chat_parser.handle_packet(msg_type,msg_len,data,"receiving")
+        parsed = await self.manager_chat_parser.handle_packet(msg_type,msg_len,data,"receiving")
 
         print_prefix = f"<<< [CHAT|MGR] - [{hex(msg_type)}] "
         if msg_type == 0x1700:
@@ -137,9 +171,13 @@ class ChatServerHandler:
             asyncio.create_task(send_keepalive())
             return True
         elif msg_type == 0x0400:
+            # shutdown notice
             asyncio.create_task(self.close_connection())
         elif msg_type == 0x1504:
             pass
+        elif msg_type == 0x1704:
+            # replay request
+            await self.manager_event_bus.emit('handle_replay_request', parsed['match_id'], parsed['extension'], parsed['account_id'])
 
 
     def close(self):
