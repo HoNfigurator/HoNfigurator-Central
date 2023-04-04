@@ -248,7 +248,7 @@ class GameServer:
             #self.remove_self_callback(self)
             await self.disable_server()
             await self.unschedule_shutdown()
-    
+
     async def stop_server_exe(self):
         if self._proc:
             self._proc.terminate()
@@ -260,7 +260,7 @@ class GameServer:
         """
             Check if existing hon server is running.
         """
-        running_procs = Misc.get_proc(self.config.local['config']['file_name'])
+        running_procs = Misc.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
         last_good_proc = None
 
         while len(running_procs) > 0:
@@ -291,10 +291,16 @@ class GameServer:
         else:
             return False
     def set_server_priority_reduce(self):
-        self._proc_hook.nice(psutil.IDLE_PRIORITY_CLASS)
+        if sys.platform == "win32":
+            self._proc_hook.nice(psutil.IDLE_PRIORITY_CLASS)
+        else:
+            self._proc_hook.nice(0)
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
     def set_server_priority_increase(self):
-        self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
+        if sys.platform == "win32":
+            self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
+        else:
+            self._proc_hook.nice(19)
         LOGGER.info(f"GameServer #{self.id} - Priority set to High.")
     async def monitor_process(self):
         while True:
@@ -311,16 +317,16 @@ class GameServer:
                     #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                     self.schedule_shutdown_server()
             await asyncio.sleep(5)  # Check every 5 seconds
-    
+
     async def enable_server(self):
         self.enabled = True
-    
+
     async def disable_server(self):
         self.enabled = False
-    
+
     async def schedule_shutdown(self):
         self.scheduled_shutdown = True
-    
+
     async def unschedule_shutdown(self):
         self.scheduled_shutdown = False
 

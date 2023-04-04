@@ -41,7 +41,7 @@ def get_global_configuration():
 
 def operational_data():
     # get total logical server
-    # 
+    #
     print()
 
 
@@ -68,14 +68,15 @@ class ConfigManagement():
         if MISC.get_os_platform() == "win32":
             executable = "KONGOR_ARENA"
             suffix = ".exe"
+            file_name = f'{executable}_{self.id}{suffix}'
         else:
             executable = "hon-x86_64-server"
-            suffix = ""
-        
+            file_name = executable
+
         self.local = ({
             'config' : {
-                'file_name':f'{executable}_{self.id}{suffix}',
-                'file_path' : str(Path(self.get_global_by_key("hon_install_directory")) / f'{executable}_{self.id}{suffix}')
+                'file_name':file_name,
+                'file_path' : str(Path(self.get_global_by_key("hon_install_directory")) / f'{executable}')
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",

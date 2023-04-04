@@ -12,7 +12,22 @@ class Misc:
         self.total_ram = psutil.virtual_memory().total
         self.os_platform = sys.platform
         self.total_allowed_servers = None
-    def get_proc(proc_name):
+
+    def parse_linux_procs(proc_name, slave_id):
+        for proc in psutil.process_iter():
+            if proc_name == proc.name():
+                cmd_line = proc.cmdline()
+                if len(cmd_line) < 5:
+                    continue
+                for item in cmd_line[4].split(";"):
+                    if "svr_slave" in item:
+                        if int(item.split(" ")[-1]) == slave_id:
+                            return [proc]
+        return []
+
+    def get_proc(proc_name, slave_id = ''):
+        if sys.platform == "linux":
+            return Misc.parse_linux_procs(proc_name, slave_id)
         procs = []
         for proc in psutil.process_iter():
             if proc.name() == proc_name:
