@@ -131,16 +131,16 @@ class SetupEnvironment:
         return hon_data
 
     def validate_hon_data(self, hon_data=None):
-        
+
         def add_separator_if_missing(path):
             separator = os.path.sep
             if not str(path).endswith(separator):
                 path = path + separator
             return path
-        
+
         if hon_data:
             self.hon_data = hon_data
-   
+
         major_issues = []
         minor_issues = []
 
@@ -202,7 +202,7 @@ class SetupEnvironment:
                 if value > total_allowed:
                     self.hon_data[key] = int(total_allowed)
                     minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
-                    
+
         if major_issues:
             error_message = "Configuration file validation issues:\n" + "\n".join(major_issues)
             raise ValueError(error_message)
@@ -327,7 +327,7 @@ class SetupEnvironment:
             return self.merge_config()
         else:
             return False
-            
+
 
 
 class PrepareDependencies:
