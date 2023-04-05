@@ -2,6 +2,7 @@ import subprocess, psutil
 import platform
 import os
 from os.path import exists
+from pathlib import Path
 import sys
 import urllib
 from cogs.misc.logging import get_logger
@@ -120,16 +121,20 @@ class Misc:
         if not exists(hon_exe):
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
 
-        version_offset = 88544
-        with open(hon_exe, 'rb') as hon_x64:
-            hon_x64.seek(version_offset, 1)
-            version = hon_x64.read(18)
-            # Split the byte array on b'\x00' bytes
-            split_bytes = version.split(b'\x00')
-            # Decode the byte sequences and join them together
-            version = ''.join(part.decode('utf-8') for part in split_bytes if part)
-        
-        if not validate_version_format(version):
-            raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
-        else:
-            return version
+        if self.get_os_platform() == "win32":
+            version_offset = 88544
+            with open(hon_exe, 'rb') as hon_x64:
+                hon_x64.seek(version_offset, 1)
+                version = hon_x64.read(18)
+                # Split the byte array on b'\x00' bytes
+                split_bytes = version.split(b'\x00')
+                # Decode the byte sequences and join them together
+                version = ''.join(part.decode('utf-8') for part in split_bytes if part)
+            
+            if not validate_version_format(version):
+                raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
+            else:
+                return version
+        if self.get_os_platform() == "linux":
+            with open(os.path.join(os.path.abspath(hon_exe), "version.txt"), 'r') as f:
+                version = f.readline()
