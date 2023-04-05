@@ -43,9 +43,6 @@ async def main():
         LOGGER.exception(f"{traceback.format_exc()}")
         raise ConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
 
-
-    #global_config = data_handler.get_global_configuration(CONFIG_FILE)
-
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
     # TODO: Put this back to -1 when done
@@ -61,7 +58,7 @@ async def main():
     except ServerConnectionError as e:
         LOGGER.exception(f"{traceback.format_exc()}")
 
-    #   Start listeners
+    #   Create listener tasks
     game_server_listener_task = asyncio.create_task(game_server_manager.start_game_server_listener(host,game_server_to_mgr_port))
     auto_ping_listener_task = asyncio.create_task(game_server_manager.start_autoping_listener(udp_ping_responder_port))
 
@@ -73,7 +70,7 @@ async def main():
         else: print_formatted_text(f"\t{key}: {value}")
 
     #   Start GameServers
-    start_task = asyncio.create_task(game_server_manager.start_game_servers("all"))
+    start_task = asyncio.create_task(game_server_manager.start_game_servers("all", global_config['hon_data']['svr_startup_timeout']))
 
     await asyncio.gather(auth_task, game_server_listener_task, auto_ping_listener_task, start_task)
 

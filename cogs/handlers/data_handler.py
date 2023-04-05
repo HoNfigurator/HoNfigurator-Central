@@ -10,43 +10,6 @@ LOGGER = get_logger()
 HOME_PATH = get_home()
 MISC = get_misc()
 
-class Enrichment:
-    def __init__(self):
-        return
-    def get_cpu(self):
-        try:
-            return platform.processor()
-        except:
-            return "couldn't obtain"
-    def get_public_ip(self):
-        try:
-            external_ip = urllib.request.urlopen('https://4.ident.me').read().decode('utf8')
-        except Exception:
-            external_ip = urllib.request.urlopen('http://api.ipify.org').read().decode('utf8')
-        return external_ip
-    def get_svr_description(self):
-        return f"cpu: {self.get_cpu()}"
-
-def get_global_configuration():
-    with open(HOME_PATH / 'config' / 'config.json') as jsonfile:
-        gbl = json.load(jsonfile)
-        if 'svr_ip' not in gbl['hon_data']:
-            public_ip = Enrichment().get_public_ip()
-            gbl['hon_data']['svr_ip'] = public_ip
-        if MISC.get_os_platform() == "win32":
-            gbl['hon_data']['hon_logs_directory'] = f"{gbl['hon_data']['hon_home_directory']}\\Documents\\Heroes of Newerth x64\\game\\logs"
-        else:
-            gbl['hon_data']['hon_logs_directory'] = pathlib.path(gbl['hon_data']['hon_home_directory'] / 'logs')
-        return gbl
-
-def operational_data():
-    # get total logical server
-    # 
-    pass
-
-
-#global_config = get_global_configuration()
-
 class ConfigManagement():
     def __init__(self,id,gbl):
         self.id = id
@@ -81,12 +44,12 @@ class ConfigManagement():
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
                 'svr_password':self.get_global_by_key('svr_password'),
-                'svr_description':Enrichment().get_svr_description(),
+                'svr_description':MISC.get_svr_description(),
                 'sv_masterName':f"{self.get_global_by_key('svr_login')}:",
                 'svr_slave':self.id,
                 'svr_adminPassword':"",
                 'svr_name':f"{self.get_global_by_key('svr_name')} {self.id} 0",
-                'svr_ip':self.get_global_by_key('svr_ip') if 'svr_ip' in self.gbl['hon_data'] else Enrichment().get_public_ip(),
+                'svr_ip':self.get_global_by_key('svr_ip') if 'svr_ip' in self.gbl['hon_data'] else MISC.get_public_ip(),
                 'svr_port':self.get_global_by_key('svr_starting_gamePort')+self.id,
                 'svr_proxyPort':self.get_global_by_key('svr_starting_gamePort')+self.id+10000,
                 'svr_proxyLocalVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id,

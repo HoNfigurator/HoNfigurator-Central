@@ -11,7 +11,7 @@ from cogs.misc.utilities import Misc
 from cogs.misc.hide_pass import getpass
 import copy
 
-ALLOWED_REGIONS = ["AU", "BR", "EU", "RU", "SEA", "TH", "USE", "USW" ]
+ALLOWED_REGIONS = ["AU", "BR", "EU", "RU", "SEA", "TH", "USE", "USW", "NEWERTH"]
 LOGGER = get_logger()
 HOME_PATH = get_home()
 MISC = get_misc()
@@ -19,8 +19,10 @@ pip_requirements = HOME_PATH / 'requirements.txt'
 
 class SetupEnvironment:
     def __init__(self,config_file):
-        self.KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory']
-        self.ALL_PATH_TYPES = ["hon_install_directory","hon_home_directory"] + self.KEYS_NOT_IN_CONFIG_FILE
+        self.PATH_KEYS_IN_CONFIG_FILE = ["hon_install_directory","hon_home_directory"]
+        self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path']
+        self.ALL_PATH_TYPES = self.PATH_KEYS_IN_CONFIG_FILE + self.PATH_KEYS_NOT_IN_CONFIG_FILE
+        self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip","svr_version","hon_executable"]
         self.config_file = config_file
         self.default_configuration = self.get_default_configuration()
         self.hon_data = self.default_configuration['hon_data']
@@ -69,6 +71,7 @@ class SetupEnvironment:
                 "svr_starting_gamePort": 10000,
                 "svr_starting_voicePort": 10060,
                 "svr_managerPort": 1135,
+                "svr_startup_timeout": 180
             }
         }
 
@@ -97,7 +100,7 @@ class SetupEnvironment:
                 path = Path(value)
                 value = path
 
-                if not path.is_dir():
+                if not path.is_dir() and not path.is_file():
                     try:
                         path.mkdir(parents=True, exist_ok=True)
                         minor_issues.append(f"Resolved: Path did not exist for {key}.")
@@ -128,7 +131,7 @@ class SetupEnvironment:
             elif default_value_type == str:
                 if not isinstance(value, str) or value == '':
                         major_issues.append(f"Invalid string value for {key}: {value}")
-                elif key == "svr_region" and value not in ALLOWED_REGIONS:
+                elif key == "svr_location" and value not in ALLOWED_REGIONS:
                     major_issues.append(f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
             elif default_value_type == pathlib.WindowsPath:
                 if not isinstance(value,pathlib.WindowsPath):
@@ -137,7 +140,7 @@ class SetupEnvironment:
                 if not isinstance(value,pathlib.WindowsPath):
                     major_issues.append(f"Invalid path value for {key}: {value}")
             else:
-                if key in self.KEYS_NOT_IN_CONFIG_FILE:
+                if key in self.PATH_KEYS_NOT_IN_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
                     pass
                 else:
                     major_issues.append(f"Unexpected key and value type for {key}: {value}")
@@ -170,7 +173,7 @@ class SetupEnvironment:
         else:
             self.hon_data = self.get_existing_configuration()
             self.full_config = self.merge_config()
-            if self.validate_hon_data():
+            if self.validate_hon_data(self.full_config['hon_data']):
                 return True
             else: return False
 
@@ -197,7 +200,7 @@ class SetupEnvironment:
                         self.hon_data[key] = user_input.lower() == 'true'
                         break
                     elif default_value_type == str:
-                        if key == "svr_region":
+                        if key == "svr_location":
                             if user_input not in ALLOWED_REGIONS:
                                 print(f"\tIncorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
                                 continue
@@ -226,15 +229,15 @@ class SetupEnvironment:
 
             return True
 
-        hon_data_to_save = {key: value for key, value in self.hon_data.items() if key not in self.KEYS_NOT_IN_CONFIG_FILE}
+        hon_data_to_save = {key: value for key, value in self.hon_data.items() if key not in self.PATH_KEYS_NOT_IN_CONFIG_FILE}
+        # ensure path objects are
+        for path in self.PATH_KEYS_IN_CONFIG_FILE:
+            hon_data_to_save[path] = str(hon_data_to_save[path])
 
         if Path(self.config_file).exists():
             if are_dicts_equal_with_types(self.get_existing_configuration(), hon_data_to_save):
                 return False
-        
-        hon_data_to_save['hon_home_directory'] = str(hon_data_to_save['hon_home_directory'])
-        hon_data_to_save['hon_install_directory'] = str(hon_data_to_save['hon_install_directory'])
-
+    
         with open(self.config_file, 'w') as config_file:
             json.dump(hon_data_to_save, config_file, indent=4)
 
@@ -251,13 +254,22 @@ class SetupEnvironment:
             hon_artefacts_directory = Path(self.hon_data['hon_home_directory']) / "Documents" / "Heroes of Newerth x64"
             hon_replays_directory = hon_artefacts_directory / "game" / "replays"
             hon_logs_directory = hon_artefacts_directory / "game" / "logs"
+            executable = f"hon_x64"
+            suffix = ".exe"
+            file_name = f'{executable}{suffix}'
         else:
             hon_artefacts_directory = Path(self.hon_data["hon_home_directory"])
             hon_replays_directory = hon_artefacts_directory / "replays"
             hon_logs_directory = hon_artefacts_directory / "logs"
-        self.hon_data['hon_artefacts_directory'] = str(hon_artefacts_directory)
-        self.hon_data['hon_replays_directory'] = str(hon_replays_directory)
-        self.hon_data['hon_logs_directory'] = str(hon_logs_directory)
+            executable = "hon-x86_64-server"
+            file_name = executable
+
+        self.hon_data['hon_artefacts_directory'] = hon_artefacts_directory
+        self.hon_data['hon_replays_directory'] = hon_replays_directory
+        self.hon_data['hon_logs_directory'] = hon_logs_directory
+        self.hon_data['svr_ip'] = MISC.get_public_ip()
+        self.hon_data['hon_executable_path'] = self.hon_data['hon_install_directory'] / file_name
+        self.hon_data['svr_version'] = MISC.get_svr_version(self.hon_data['hon_executable_path'])
 
     def add_miscellaneous_data(self):
         return (
@@ -266,7 +278,7 @@ class SetupEnvironment:
                     "cpu_count": MISC.get_cpu_count(),
                     "cpu_name": MISC.get_cpu_name(),
                     "total_ram": MISC.get_total_ram(),
-                    'server_total_allowed': MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core'])
+                    "server_total_allowed": MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core']),
                 }
             }
         )

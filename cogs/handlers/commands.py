@@ -116,12 +116,10 @@ class Commands:
     async def config_commands(self):
         return self.generate_config_subcommands(self.global_config, self.set_config)
 
-    def __init__(self, game_servers, client_connections, global_config, send_svr_command_callback):
+    def __init__(self, game_servers, client_connections, global_config, manager_event_bus):
+        self.manager_event_bus = manager_event_bus
         self.game_servers = game_servers
         self.client_connections = client_connections
-        self.send_svr_command_callback = send_svr_command_callback
-        # self.create_all_servers_callback = create_all_servers_callback
-        # self.start_servers_callback = start_servers_callback
         self.global_config = global_config
         self.commands = {}
         self.setup = SetupEnvironment(CONFIG_FILE)
@@ -197,13 +195,11 @@ class Commands:
             sub_command = sub_command[key]
         sub_command.current_value = value
 
-        print_formatted_text(f"Value for key '{last_key}' changed from {old_value} to {value}")
         if self.setup.validate_hon_data(self.global_config['hon_data']):
+            print_formatted_text(f"Value for key '{last_key}' changed from {old_value} to {value}")
             LOGGER.info("Saved local configuration")
             LOGGER.info("Scheduling restart of servers to apply new configuration")
             await self.cmd_shutdown_server("all")
-            #self.create_all_servers_callback()
-            #await self.start_servers_callback()
 
     async def handle_input(self, stop_event):
         self.subcommands_changed = asyncio.Event()
@@ -294,12 +290,12 @@ class Commands:
 
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))         
+                    await self.manager_event_bus.emit('send_server_command', self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))
                     if force:
                         LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
                     else: LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
             else:
-                await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))      
+                await self.manager_event_bus.emit('send_server_command', self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))      
                 if force:
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
                 else: LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
@@ -314,10 +310,10 @@ class Commands:
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
                     if game_server.port in list(self.client_connections.keys()):
-                        await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, WAKE_BYTES))    
+                        await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, WAKE_BYTES))    
                         LOGGER.info(f"Command - Wake packet sent to GameServer #{game_server.id}.")
             else:
-                await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES,WAKE_BYTES))
+                await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (COMMAND_LEN_BYTES,WAKE_BYTES))
                 LOGGER.info(f"Command - Wake packet sent to GameServer #{game_server.id}")
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -328,10 +324,10 @@ class Commands:
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
                     if game_server.port in list(self.client_connections.keys()):
-                        await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SLEEP_BYTES))         
+                        await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SLEEP_BYTES))         
                         LOGGER.info(f"Command - Sleep packet sent to GameServer #{game_server.id}.")
             else:
-                await self.send_svr_command_callback(self.cmd_name, game_server.port, (COMMAND_LEN_BYTES,SLEEP_BYTES))
+                await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (COMMAND_LEN_BYTES,SLEEP_BYTES))
                 LOGGER.info(f"Command - Sleep packet sent to GameServer #{game_server.id}")
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -351,10 +347,10 @@ class Commands:
             if game_server == "all":
                 for game_server in list(self.game_servers.values()):
                     if game_server.port in list(self.client_connections):
-                        await self.send_svr_command_callback(self.cmd_name, game_server.port, (length_bytes, message_bytes))
+                        await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (length_bytes, message_bytes))
                         LOGGER.info(f"Command - Message packet sent to GameServer #{game_server.id}.")
             else:
-                await self.send_svr_command_callback(self.cmd_name, game_server.port, (length_bytes, message_bytes))
+                await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (length_bytes, message_bytes))
                 LOGGER.info(f"Command - Message packet sent to GameServer #{game_server.id}")
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -371,7 +367,7 @@ class Commands:
                     data += bytes.fromhex(part)
                 else:
                     data += part.encode('ascii')
-            await self.send_svr_command_callback(self.cmd_name, game_server.port, (data))
+            await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (data))
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 

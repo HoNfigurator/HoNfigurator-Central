@@ -113,7 +113,7 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
     # Get the client address
     client_addr = client_writer.get_extra_info("peername")
 
-    LOGGER.info(f"Client connected from {client_addr[0]}:{client_addr[1]}")
+    LOGGER.debug(f"Client connected from {client_addr[0]}:{client_addr[1]}")
 
     # Create a new ClientConnection object to handle this client
     client_connection = ClientConnection(client_reader, client_writer, client_addr, game_server_manager)

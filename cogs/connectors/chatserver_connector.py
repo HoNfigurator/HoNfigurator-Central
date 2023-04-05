@@ -9,13 +9,18 @@ from cogs.TCP.packet_parser import ManagerChatParser
 LOGGER = get_logger()
 
 class ChatServerHandler:
-    def __init__(self, chat_address, chat_port, session_id, server_id, udp_ping_responder_port, event_bus):
+    def __init__(self, chat_address, chat_port, session_id, server_id, username, version, region, server_name, ip_addr, udp_ping_responder_port, event_bus):
         self.manager_event_bus = event_bus
         self.manager_event_bus.subscribe('replay_status_update', self.create_replay_status_update_packet)
         self.chat_address = chat_address
         self.chat_port = chat_port
         self.session_id = session_id
         self.server_id = server_id
+        self.username = f"{username}:"
+        self.version = version
+        self.region = region
+        self.server_name = f"{server_name} 0"
+        self.ip_addr = ip_addr
         self.udp_ping_responder_port = udp_ping_responder_port
         self.server = None
         self.reader = None
@@ -150,7 +155,7 @@ class ChatServerHandler:
         print_prefix = f"<<< [CHAT|MGR] - [{hex(msg_type)}] "
         if msg_type == 0x1700:
             LOGGER.debug(f"{print_prefix}Handshake accepted by the chat server.")
-            len, server_info_packet = self.create_server_info_packet(self.server_id, "AUSFRANKHOST:", "NEWERTH", "T4NK 0", "4.10.6.0", "103.193.80.121", self.udp_ping_responder_port)
+            len, server_info_packet = self.create_server_info_packet(self.server_id, username=self.username, region=self.region, server_name=self.server_name, version=self.version, ip_addr=self.ip_addr, udp_ping_responder_port=self.udp_ping_responder_port)
             self.writer.write(len)
             await self.writer.drain()
             self.writer.write(server_info_packet)

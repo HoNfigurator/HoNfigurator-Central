@@ -1,7 +1,11 @@
 import subprocess, psutil
-from cogs.misc.logging import get_logger
 import platform
-import os,sys
+import os
+from os.path import exists
+import sys
+import urllib
+from cogs.misc.logging import get_logger
+from cogs.misc.exceptions import UnexpectedVersionError
 
 LOGGER = get_logger()
 
@@ -12,7 +16,6 @@ class Misc:
         self.total_ram = psutil.virtual_memory().total
         self.os_platform = sys.platform
         self.total_allowed_servers = None
-
     def parse_linux_procs(proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():
@@ -24,7 +27,6 @@ class Misc:
                         if int(item.split(" ")[-1]) == slave_id:
                             return [proc]
         return []
-
     def get_proc(proc_name, slave_id = ''):
         if sys.platform == "linux":
             return Misc.parse_linux_procs(proc_name, slave_id)
@@ -93,3 +95,41 @@ class Misc:
             affinity.append(str(self.cpu_count - t))
 
         return affinity
+    def get_public_ip(self):
+        try:
+            external_ip = urllib.request.urlopen('https://4.ident.me').read().decode('utf8')
+        except Exception:
+            external_ip = urllib.request.urlopen('http://api.ipify.org').read().decode('utf8')
+        return external_ip
+    def get_svr_description(self):
+        return f"cpu: {self.get_cpu_name()}"
+    def get_svr_version(self,hon_exe):
+        def validate_version_format(version):
+            version_parts = version.split('.')
+            if len(version_parts) != 4:
+                return False
+
+            for part in version_parts:
+                try:
+                    int(part)
+                except ValueError:
+                    return False
+
+            return True
+        
+        if not exists(hon_exe):
+            raise FileNotFoundError(f"File {hon_exe} does not exist.")
+
+        version_offset = 88544
+        with open(hon_exe, 'rb') as hon_x64:
+            hon_x64.seek(version_offset, 1)
+            version = hon_x64.read(18)
+            # Split the byte array on b'\x00' bytes
+            split_bytes = version.split(b'\x00')
+            # Decode the byte sequences and join them together
+            version = ''.join(part.decode('utf-8') for part in split_bytes if part)
+        
+        if not validate_version_format(version):
+            raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
+        else:
+            return version

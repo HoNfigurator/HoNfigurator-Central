@@ -35,6 +35,7 @@ class GameServer:
         """
         Game State specific variables
         """
+        self.status_received = asyncio.Event() 
         self.game_state = GameState()
         self.game_state.update({
             'status': None,
@@ -67,13 +68,17 @@ class GameServer:
     def link_client_connection(self,client_connection):
         self.client_connection = client_connection
     def on_game_state_change(self, key, value):
-        if key == "match_started":
-            if value == 0:
-                self.set_server_priority_reduce()
-            elif value == 1:
-                LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
-                self.set_server_priority_increase()
-            # Add more phases as needed
+        if not self.status_received.is_set():
+            self.status_received.set()
+        #   Indicates that a status update has been received (we have a live connection)
+        if self.status_received.is_set():
+            if key == "match_started":
+                if value == 0:
+                    self.set_server_priority_reduce()
+                elif value == 1:
+                    LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
+                    self.set_server_priority_increase()
+                # Add more phases as needed
     def unlink_client_connection(self):
         del self.client_connection
     def get_dict_value(self, attribute, default=None):
@@ -171,7 +176,8 @@ class GameServer:
             'Connections': 0,
             'Players': 'Unknown',
             'Uptime': 'Unknown',
-            'Performance (lag)': f"{self.get_dict_value('grandtotal_skipped_frames')/1000} sec (grand total)\n{self.get_dict_value('total_ingame_skipped_frames')/1000} sec (total while in game)\n{self.get_dict_value('now_ingame_skipped_frames')/1000} sec (current game)"
+            'Performance (lag)': f"{self.get_dict_value('grandtotal_skipped_frames')/1000} sec (grand total)\n{self.get_dict_value('total_ingame_skipped_frames')/1000} sec (total while in game)\n{self.get_dict_value('now_ingame_skipped_frames')/1000} sec (current game)",
+            'Core': self.config.get_local_by_key('host_affinity')
         }
         if self.get_dict_value('status') == 0:
             temp['Status'] = 'Sleeping'

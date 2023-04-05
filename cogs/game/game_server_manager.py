@@ -4,6 +4,7 @@ import traceback
 import asyncio
 import hashlib
 import os.path
+import time
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
@@ -23,7 +24,6 @@ class HealthChecks(Enum):
     public_ip_healthcheck = 1
     general_healthcheck = 2
     lag_healthcheck = 3
-
 class ReplayStatus(Enum):
     NONE = -1
     GENERAL_FAILURE = 0
@@ -36,11 +36,11 @@ class ReplayStatus(Enum):
     UPLOAD_COMPLETE = 7
 
 # Define a function to choose a health check based on its type
-def choose_health_check(type):
-    for health_check in HealthChecks:
-        if type.lower() == health_check.name.lower():
-            return health_check
-    return None  # Return None if no matching health check is found
+# def choose_health_check(type):
+#     for health_check in HealthChecks:
+#         if type.lower() == health_check.name.lower():
+#             return health_check
+#     return None  # Return None if no matching health check is found
 
 # Define a class for managing game servers
 class GameServerManager:
@@ -53,6 +53,8 @@ class GameServerManager:
         """
         self.event_bus = EventBus()
         self.event_bus.subscribe('handle_replay_request', self.handle_replay_request)
+        self.event_bus.subscribe('send_server_command', self.send_svr_command)
+        #self.event_bus.subscribe('reset')
         # Store the global configuration
         self.global_config = global_config
         # Initialize dictionaries to store game servers and client connections
@@ -60,19 +62,19 @@ class GameServerManager:
         self.game_servers = {}
         self.client_connections = {}
         # Initialize a Commands object for sending commands to game servers
-        self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.send_svr_command)
+        self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.event_bus)
         # Create an event and task for handling input commands
         stop_event = asyncio.Event()
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         self.create_all_game_servers()
-        # initialise some directory locations
-        #self.replays_location = 
         
         asyncio.create_task(self.commands.handle_input(stop_event))
+
         # Start running health checks
-        asyncio.create_task(self.run_health_checks())
-    
+        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus)
+        asyncio.create_task(self.health_check_manager.run_health_checks())
+        
     async def preflight_checks(self):
         pass
 
@@ -113,7 +115,7 @@ class GameServerManager:
             port,
             server_name=self.global_config['hon_data']['svr_name'],
             #   TODO: Get the real version number
-            game_version="4.10.6.0")
+            game_version=self.global_config['hon_data']['svr_version'])
         asyncio.create_task(autoping_responder.start_listener())
 
     async def start_game_server_listener(self,host,game_server_to_mgr_port):
@@ -197,7 +199,7 @@ class GameServerManager:
             AuthenticationError: If the authentication fails.
         """
         # Initialize MasterServerHandler and send requests
-        self.master_server_handler = MasterServerHandler(master_server="api.kongor.online", version="4.10.6.0", was="was-crIac6LASwoafrl8FrOa", event_bus=self.event_bus)
+        self.master_server_handler = MasterServerHandler(master_server="api.kongor.online", version=self.global_config['hon_data']['svr_version'], was="was-crIac6LASwoafrl8FrOa", event_bus=self.event_bus)
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
             LOGGER.error("Authentication to MasterServer failed.")
@@ -215,6 +217,11 @@ class GameServerManager:
             parsed_mserver_auth_response["chat_port"],
             parsed_mserver_auth_response["session"],
             parsed_mserver_auth_response["server_id"],
+            username=self.global_config['hon_data']['svr_login'],
+            version=self.global_config['hon_data']['svr_version'],
+            region=self.global_config['hon_data']['svr_location'],
+            server_name=self.global_config['hon_data']['svr_name'],
+            ip_addr=self.global_config['hon_data']['svr_ip'],
             udp_ping_responder_port=udp_ping_responder_port,
             event_bus=self.event_bus
         )
@@ -399,53 +406,59 @@ class GameServerManager:
                 return True
         return False
 
-    async def run_health_checks(self):
-        """
-        Perform health checks for the game servers.
-
-        This function should be run periodically to ensure that all game servers are running
-        properly. It can implement various health checks, such as checking the servers' public
-        IP, general health, and lag.
-
-        This function does not return anything, but can log errors or other information.
-        """
-        while True:
-            await asyncio.sleep(30)
-            for game_server in self.game_servers.values():
-                # Perform health checks for each game server here
-                pass
-
-    async def start_game_servers(self, game_server):
+    async def start_game_servers(self, game_server, timeout=120):
         """
         Start all game servers.
 
         This function starts all the game servers that were created by the GameServerManager. It
         does this by calling the start_server method of each game server object.
+        
+        Game servers are started using a "semaphore", to stagger their start to groups and not all at once.
+        The timeout value may be reached, for slow servers, it may need to be adjusted in the config file if required.
 
         This function does not return anything, but can log errors or other information.
         """
-        async def start_game_server_with_semaphore(game_server,timeout=60):
-            timer = 0
+        async def start_game_server_with_semaphore(game_server, timeout):
             async with self.server_start_semaphore:
                 started = await game_server.start_server()
                 if started:
-                    LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} started successfully.")
-                    # TODO: there is an infinite loop here, if server doesn't start
-                    while game_server.game_state._state['status'] is None:
-                        await asyncio.sleep(1)
-                        timer+=1
-                        if timer >= timeout:
-                            LOGGER.error(f"GameServer #{game_server.id} either did not start correctly, or took too long to start.")
-                            break
+                    LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} started queued for start.")
+                    try:
+                        start_time = time.perf_counter()
+                        await asyncio.wait_for(game_server.status_received.wait(), timeout)
+                        elapsed_time = time.perf_counter() - start_time
+                        LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} started successfully in {elapsed_time:.2f} seconds.")
+                    except asyncio.TimeoutError:
+                        LOGGER.error(f"GameServer #{game_server.id} with port {game_server.port} timed out ({timeout} seconds) waiting for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
+                        game_server.schedule_shutdown()
                 else:
                     LOGGER.error(f"GameServer #{game_server.id} with port {game_server.port} failed to start.")
-        
+
         if game_server == "all":
+            start_tasks = []
+            monitor_tasks = []
             # Start all game servers using the semaphore
-            start_tasks = [start_game_server_with_semaphore(gs) for gs in self.game_servers.values()]
-            await asyncio.gather(*start_tasks)
+            for game_server in self.game_servers.values():
+                already_running = await game_server.get_running_server()
+                if already_running:
+                    LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} already running.")
+                else:
+                    start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
+                    monitor_tasks.append(self.monitor_game_state_status(game_server))
+            await asyncio.gather(*start_tasks, *monitor_tasks)
         else:
-            await start_game_server_with_semaphore(game_server)
+            await start_game_server_with_semaphore(game_server, timeout)
+            await self.monitor_game_state_status(game_server)
+    
+    async def monitor_game_state_status(self,game_server, timeout=60):
+        timer = 0
+        while game_server.game_state._state['status'] is None:
+            await game_server.status_received.wait()
+            timer += 1
+            if timer >= timeout:
+                LOGGER.error(f"GameServer #{game_server.id} either did not start correctly or took too long to start.")
+                break
+
     
     def start_hon_proxy():
         pass
@@ -455,6 +468,42 @@ class GameServerManager:
 
     def create_hon_proxy_config():
         pass
+
+class HealthCheckManager:
+    def __init__(self, game_servers, event_bus):
+        self.game_servers = game_servers
+        self.event_bus = event_bus
+
+    async def public_ip_healthcheck(self):
+        while True:
+            for game_server in self.game_servers.values():
+                # Perform the public IP health check for each game server
+                # Example: self.perform_health_check(game_server, HealthChecks.public_ip_healthcheck)
+                pass
+            await asyncio.sleep(30)
+
+    async def general_healthcheck(self):
+        while True:
+            for game_server in self.game_servers.values():
+                # Perform the general health check for each game server
+                # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
+                pass
+            await asyncio.sleep(60)
+
+    async def lag_healthcheck(self):
+        while True:
+            for game_server in self.game_servers.values():
+                # Perform the lag health check for each game server
+                # Example: self.perform_health_check(game_server, HealthChecks.lag_healthcheck)
+                pass
+            await asyncio.sleep(120)
+
+    async def run_health_checks(self):
+        await asyncio.gather(
+            self.public_ip_healthcheck(),
+            self.general_healthcheck(),
+            self.lag_healthcheck(),
+        )
 
 class EventBus:
     def __init__(self):

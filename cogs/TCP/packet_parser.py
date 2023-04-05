@@ -43,7 +43,7 @@ class GameManagerParser:
         try:
             await handler(packet_data,game_server)
         except Exception as e:
-            self.log("exception",f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet type: {hex(packet_type)}")
+            self.log("exception",f"GameServer #{self.id}: An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet type: {hex(packet_type)}")
 
     async def server_announce_preflight(packet):
         """ 0x40  Server announce
@@ -185,7 +185,7 @@ class GameManagerParser:
             try:
                 string_value = packet[current_index:current_index+null_byte_index].decode('utf-8')
             except (UnicodeDecodeError, ValueError) as e:
-                self.log("exception",f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet: {packet}")
+                self.log("exception",f"GameServer #{self.id}: An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet: {packet}")
                 string_value = ""
                 return
             strings.append(string_value)
