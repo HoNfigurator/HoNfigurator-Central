@@ -135,6 +135,6 @@ class Misc:
                 raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
             else:
                 return version
-        if self.get_os_platform() == "linux":
+        elif self.get_os_platform() == "linux":
             with open(os.path.join(os.path.abspath(hon_exe), "version.txt"), 'r') as f:
                 version = f.readline()
