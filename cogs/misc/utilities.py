@@ -117,7 +117,7 @@ class Misc:
                     return False
 
             return True
-
+        
         if not exists(hon_exe):
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
 
@@ -130,11 +130,11 @@ class Misc:
                 split_bytes = version.split(b'\x00')
                 # Decode the byte sequences and join them together
                 version = ''.join(part.decode('utf-8') for part in split_bytes if part)
-
+            
             if not validate_version_format(version):
                 raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
             else:
                 return version
         elif self.get_os_platform() == "linux":
-            with open(os.path.join(os.path.abspath(hon_exe.parent), "version.txt"), "r") as f:
-                return f.readline()
+            with open(os.path.join(os.path.abspath(hon_exe), "version.txt"), 'r') as f:
+                version = f.readline()
