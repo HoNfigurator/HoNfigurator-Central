@@ -80,7 +80,7 @@ class SetupEnvironment:
             hon_data = json.load(config_file)
         return hon_data
 
-    def validate_hon_data(self, hon_data=None):        
+    def validate_hon_data(self, hon_data=None):
         if hon_data:
             self.hon_data = hon_data
 
@@ -137,7 +137,7 @@ class SetupEnvironment:
                 if not isinstance(value,pathlib.WindowsPath):
                     major_issues.append(f"Invalid path value for {key}: {value}")
             elif default_value_type == pathlib.PosixPath:
-                if not isinstance(value,pathlib.WindowsPath):
+                if not isinstance(value,pathlib.PosixPath):
                     major_issues.append(f"Invalid path value for {key}: {value}")
             else:
                 if key in self.PATH_KEYS_NOT_IN_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
@@ -237,7 +237,7 @@ class SetupEnvironment:
         if Path(self.config_file).exists():
             if are_dicts_equal_with_types(self.get_existing_configuration(), hon_data_to_save):
                 return False
-    
+
         with open(self.config_file, 'w') as config_file:
             json.dump(hon_data_to_save, config_file, indent=4)
 
