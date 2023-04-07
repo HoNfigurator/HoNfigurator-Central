@@ -6,6 +6,7 @@ import inspect
 import re
 from cogs.misc.logging import get_logger, get_script_dir, flatten_dict, print_formatted_text, get_home
 from cogs.misc.setup import SetupEnvironment
+from cogs.handlers.events import stop_event
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.shortcuts import PromptSession
@@ -135,6 +136,7 @@ class Commands:
             "reconnect": Command("reconnect", description="Close all GameServer connections, forcing them to reconnect", usage="reconnect", function=self.reconnect, sub_commands={}),
             "disconnect": Command("disconnect", description="Disconnect the specified GameServer. This only closes the network communication between the manager and game server, not shutdown.", usage="disconnect <GameServer# / ALL>", function=None, sub_commands=await self.disconnect_subcommands()),
             "setconfig": Command("setconfig", description="Set a configuration value for the server", usage="set config <config key> <config value>", function=None, sub_commands=await self.config_commands(),args=["force"]),
+            "quit": Command("quit", description="Exit this program. Servers may terminate when they are no longer in a game.", usage="quit", function=self.quit),
             "help": Command("help", description="Show this help text", usage="help", function=self.help, sub_commands={})
         }
     def generate_subcommands(self, command_coro):
@@ -201,7 +203,7 @@ class Commands:
             LOGGER.info("Scheduling restart of servers to apply new configuration")
             await self.cmd_shutdown_server("all")
 
-    async def handle_input(self, stop_event):
+    async def handle_input(self):
         self.subcommands_changed = asyncio.Event()
         await self.initialise_commands()
         await self.help()
@@ -236,10 +238,7 @@ class Commands:
                         self.cmd_name = command_parts[0].lower()
                         cmd_args = command_parts[1:]
 
-                        if self.cmd_name == "quit":
-                            stop_event.set()
-                            break
-                        elif self.cmd_name in self.commands:
+                        if self.cmd_name in self.commands:
                             command_obj = self.commands[self.cmd_name]
 
                             if cmd_args and cmd_args[0] in command_obj.sub_commands:
@@ -284,18 +283,21 @@ class Commands:
         except asyncio.CancelledError:
             pass
 
+    async def quit(self):
+        stop_event.set()
+
     async def cmd_shutdown_server(self, game_server=None, force=False):
         try:
             if game_server is None: return
 
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    await self.manager_event_bus.emit('send_server_command', self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))
+                    await self.manager_event_bus.emit('send_svr_command', self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))
                     if force:
                         LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
                     else: LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
             else:
-                await self.manager_event_bus.emit('send_server_command', self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))      
+                await self.manager_event_bus.emit('send_svr_command', self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))      
                 if force:
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
                 else: LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
@@ -385,9 +387,9 @@ class Commands:
     async def startup_servers(self,game_server):
         if game_server == "all":
             for game_server in list(self.game_servers.values()):
-                await game_server.enable_server()
+                await self.manager_event_bus.emit('enable_game_server', game_server)
         else:
-            await game_server.enable_server()
+            self.manager_event_bus.emit('enable_game_server', game_server)
     
     async def shutdown_servers(self,game_server):
         if game_server == "all":

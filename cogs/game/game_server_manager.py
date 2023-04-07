@@ -12,6 +12,7 @@ from cogs.TCP.game_packet_lsnr import handle_clients
 from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
+from cogs.handlers.events import stop_event, EventBus as ManagerEventBus
 from cogs.misc.logging import get_logger, get_misc
 from enum import Enum
 from os.path import exists
@@ -51,29 +52,39 @@ class GameServerManager:
         Args:
         global_config (dict): A dictionary containing the global configuration for the game server.
         """
-        self.event_bus = EventBus()
-        self.event_bus.subscribe('handle_replay_request', self.handle_replay_request)
-        self.event_bus.subscribe('send_server_command', self.send_svr_command)
-        #self.event_bus.subscribe('reset')
-        # Store the global configuration
         self.global_config = global_config
+        """
+        Event Subscriptions. These are used to call other parts of the code in an event-driven approach within async functions.
+        """
+        self.event_bus = ManagerEventBus()
+        self.event_bus.subscribe('handle_replay_request', self.handle_replay_request)
+        self.event_bus.subscribe('send_svr_command', self.send_svr_command)
+        self.event_bus.subscribe('authenticate_to_chat_svr', self.authenticate_and_handle_chat_server)
+        self.event_bus.subscribe('start_game_servers', self.start_game_servers)
+        self.event_bus.subscribe('monitor_game_state_status', self.monitor_game_state_status)
+        self.event_bus.subscribe('cancel_game_state_monitor', self.cancel_game_state_monitor)
+        self.event_bus.subscribe('enable_game_server', self.enable_game_server)
+        self.event_bus.subscribe('disable_game_server', self.disable_game_server)
+        self.event_bus.subscribe('update_game_state_monitor_task', self.update_game_state_monitor_task)
+        self.tasks = {}
+        #self.event_bus.subscribe('reset')
+
         # Initialize dictionaries to store game servers and client connections
         self.server_start_semaphore = asyncio.Semaphore(self.global_config['hon_data']['svr_max_start_at_once'])  # 2 max servers starting at once
         self.game_servers = {}
         self.client_connections = {}
+
         # Initialize a Commands object for sending commands to game servers
         self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.event_bus)
-        # Create an event and task for handling input commands
-        stop_event = asyncio.Event()
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         self.create_all_game_servers()
         
-        asyncio.create_task(self.commands.handle_input(stop_event))
+        self.tasks.update({'cli_handler':asyncio.create_task(self.commands.handle_input())})
 
         # Start running health checks
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus)
-        asyncio.create_task(self.health_check_manager.run_health_checks())
+        self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
         
     async def preflight_checks(self):
         pass
@@ -89,16 +100,22 @@ class GameServerManager:
         Returns:
             None
         """
-        client_connection = self.client_connections.get(game_server_port)
+        client_connection = self.client_connections.get(game_server_port, None)
         if command == "shutdown":
             game_server = self.game_servers.get(game_server_port)
             if game_server:
                 # This server is connected to the manager
                 if game_server.port in self.client_connections:
-                    await game_server.schedule_shutdown_server(client_connection,command_data)
+                    self.tasks.update({
+                        'game_servers': {
+                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, command_data))}
+                        }
+                    })
+                    await asyncio.sleep(0)  # allow the scheduled task to be executed
                 else:
                     # this server hasn't connected to the manager yet
                     await game_server.stop_server_exe()
+                    await self.cancel_game_state_monitor(game_server.port)
         else:
             # Get the client connection for the specified game server port and send the command
             if client_connection:
@@ -116,9 +133,9 @@ class GameServerManager:
             server_name=self.global_config['hon_data']['svr_name'],
             #   TODO: Get the real version number
             game_version=self.global_config['hon_data']['svr_version'])
-        asyncio.create_task(autoping_responder.start_listener())
+        self.tasks.update({'autoping_responder':asyncio.create_task(autoping_responder.start_listener())})
 
-    async def start_game_server_listener(self,host,game_server_to_mgr_port):
+    async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
         Starts a listener for incoming client connections on the specified host and port
 
@@ -136,27 +153,11 @@ class GameServerManager:
             host, game_server_to_mgr_port
         )
         LOGGER.info(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
-        # Create a stop event to signal when the server should stop
-        stop_event = asyncio.Event()
 
-        try:
-            # Wait for either the stop event to be set or for the client task to complete
-            done, pending = await asyncio.wait(
-                [stop_event.wait()],
-                # input_task,
-                return_when=asyncio.FIRST_COMPLETED
-            )
-        except KeyboardInterrupt:
-            LOGGER.warn("Keyboard Interrupt: Server shutting down...")
-            stop_event.set()
-
-        if pending is not None:
-            for task in pending:
-                # Cancel any remaining pending tasks here
-                task.cancel()
+        await stop_event.wait()
 
         # Close all client connections
-        for connection in self.client_connections.values():
+        for connection in list(self.client_connections.values()):
             await connection.close()
 
         # Close the server
@@ -165,7 +166,8 @@ class GameServerManager:
 
         LOGGER.info("Server stopped.")
 
-    async def authenticate_to_masterserver(self, udp_ping_responder_port):
+
+    async def authentication_procedure(self, udp_ping_responder_port,retry=30):
         """
         Authenticate the game server with the master server and connect to the chat server.
 
@@ -179,13 +181,19 @@ class GameServerManager:
         Returns:
             None
         """
-        # Send requests to the master server
-        parsed_mserver_auth_response = await self.send_requests_to_masterserver()
+        while not stop_event.is_set():
+            try:
+                # Send requests to the master server
+                parsed_mserver_auth_response = await self.send_auth_request_to_masterserver()
 
-        # Connect to the chat server and authenticate
-        await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
+                # Connect to the chat server and authenticate
+                await self.event_bus.emit('authenticate_to_chat_svr', parsed_mserver_auth_response, udp_ping_responder_port)
+                break  # If successful, break the loop
+            except AuthenticationError:
+                LOGGER.error(f"Authentication failed. Retrying in {retry} seconds...")
+                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
 
-    async def send_requests_to_masterserver(self):
+    async def send_auth_request_to_masterserver(self):
         """
         Send a request to the master server to authenticate the game server.
 
@@ -253,7 +261,7 @@ class GameServerManager:
             None
         """
         id = game_server_port - self.global_config['hon_data']['svr_starting_gamePort']
-        game_server = GameServer(id, game_server_port, self.global_config, self.remove_game_server)
+        game_server = GameServer(id, game_server_port, self.global_config, self.remove_game_server, self.event_bus)
         self.game_servers[game_server_port] = game_server
         return game_server
 
@@ -344,6 +352,7 @@ class GameServerManager:
         """
         if port not in self.client_connections:
             self.client_connections[port] = client_connection
+            self.game_servers[port].status_received.set()
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
             await self.commands.initialise_commands()
             self.commands.subcommands_changed.set()
@@ -356,7 +365,6 @@ class GameServerManager:
     async def handle_replay_request(self, match_id, extension, account_id):
         replay_file_name = f"M{match_id}.{extension}"
         replay_file_path = (self.global_config['hon_data']['hon_replays_directory'] / replay_file_name)
-        # Check if the replay exists
         file_exists = exists(replay_file_path)
 
         if not file_exists:
@@ -400,6 +408,7 @@ class GameServerManager:
         for key, value in self.client_connections.items():
             if value == client_connection:
                 del self.client_connections[key]
+                self.game_servers[key].status_received.clear()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
                 await self.commands.initialise_commands()
                 self.commands.subcommands_changed.set()
@@ -444,22 +453,37 @@ class GameServerManager:
                     LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} already running.")
                 else:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
-                    monitor_tasks.append(self.monitor_game_state_status(game_server))
+                    #monitor_tasks.append(self.monitor_game_state_status(game_server))
             await asyncio.gather(*start_tasks, *monitor_tasks)
         else:
             await start_game_server_with_semaphore(game_server, timeout)
-            await self.monitor_game_state_status(game_server)
+            #await self.monitor_game_state_status(game_server)
     
-    async def monitor_game_state_status(self,game_server, timeout=60):
-        timer = 0
-        while game_server.game_state._state['status'] is None:
-            await game_server.status_received.wait()
-            timer += 1
-            if timer >= timeout:
+    async def monitor_game_state_status(self, game_server, timeout=60):
+        game_server.set_start_timer(0)
+        while not game_server.status_received.is_set():
+            game_server.increment_start_timer(1)
+            await asyncio.sleep(1)
+            print(f"waiting on {game_server.id}.. {game_server.get_start_timer()}")
+            if game_server.get_start_timer() >= timeout:
                 LOGGER.error(f"GameServer #{game_server.id} either did not start correctly or took too long to start.")
+                game_server.reset_start_timer()
                 break
-
     
+    async def update_game_state_monitor_task(self, task, game_server_port):
+        self.tasks.update({'game_servers':{
+            game_server_port : {'game_start_monitor':task}
+        }})
+    
+    async def cancel_game_state_monitor(self, game_server_port):
+        if game_server_port in list(self.tasks['game_servers']):
+            self.tasks['game_servers'][game_server_port]['game_start_monitor'].cancel()
+    async def disable_game_server(self, game_server):
+        game_server.disable_server()
+    
+    async def enable_game_server(self, game_server):
+        game_server.enable_server()
+
     def start_hon_proxy():
         pass
 
@@ -475,7 +499,7 @@ class HealthCheckManager:
         self.event_bus = event_bus
 
     async def public_ip_healthcheck(self):
-        while True:
+        while not stop_event.is_set():
             for game_server in self.game_servers.values():
                 # Perform the public IP health check for each game server
                 # Example: self.perform_health_check(game_server, HealthChecks.public_ip_healthcheck)
@@ -483,7 +507,7 @@ class HealthCheckManager:
             await asyncio.sleep(30)
 
     async def general_healthcheck(self):
-        while True:
+        while not stop_event.is_set():
             for game_server in self.game_servers.values():
                 # Perform the general health check for each game server
                 # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
@@ -491,7 +515,7 @@ class HealthCheckManager:
             await asyncio.sleep(60)
 
     async def lag_healthcheck(self):
-        while True:
+        while not stop_event.is_set():
             for game_server in self.game_servers.values():
                 # Perform the lag health check for each game server
                 # Example: self.perform_health_check(game_server, HealthChecks.lag_healthcheck)
@@ -499,24 +523,10 @@ class HealthCheckManager:
             await asyncio.sleep(120)
 
     async def run_health_checks(self):
-        await asyncio.gather(
-            self.public_ip_healthcheck(),
-            self.general_healthcheck(),
-            self.lag_healthcheck(),
+        stop_task = asyncio.create_task(stop_event.wait())
+        done, pending = await asyncio.wait(
+            [self.public_ip_healthcheck(), self.general_healthcheck(), self.lag_healthcheck(), stop_task],
+            return_when=asyncio.FIRST_COMPLETED
         )
-
-class EventBus:
-    def __init__(self):
-        self._subscribers = {}
-
-    def subscribe(self, event_type, callback):
-        if event_type not in self._subscribers:
-            self._subscribers[event_type] = []
-        self._subscribers[event_type].append(callback)
-    async def emit(self, event_type, *args, **kwargs):
-        if event_type in self._subscribers:
-            for callback in self._subscribers[event_type]:
-                if asyncio.iscoroutinefunction(callback):
-                    await callback(*args, **kwargs)
-                else:
-                    callback(*args, **kwargs)
+        for task in pending:
+            task.cancel()

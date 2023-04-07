@@ -2,6 +2,7 @@ import traceback
 import aiohttp
 import inspect
 from cogs.misc.logging import get_logger
+from cogs.handlers.events import stop_event
 import phpserialize
 
 LOGGER = get_logger()

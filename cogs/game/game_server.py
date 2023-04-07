@@ -7,7 +7,8 @@ import json
 import math
 import sys
 import os
-from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc
+from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
+from cogs.handlers.events import stop_event, EventBus as GameEventBus
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 
@@ -16,8 +17,9 @@ HOME_PATH = get_home()
 MISC = get_misc()
 
 class GameServer:
-    def __init__(self, id, port, global_config, remove_self_callback):
+    def __init__(self, id, port, global_config, remove_self_callback, manager_event_bus):
         self.tasks = []
+        self.manager_event_bus = manager_event_bus
         self.port = port
         self.id = id
         self.global_config = global_config
@@ -71,14 +73,13 @@ class GameServer:
         if not self.status_received.is_set():
             self.status_received.set()
         #   Indicates that a status update has been received (we have a live connection)
-        if self.status_received.is_set():
-            if key == "match_started":
-                if value == 0:
-                    self.set_server_priority_reduce()
-                elif value == 1:
-                    LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
-                    self.set_server_priority_increase()
-                # Add more phases as needed
+        if key == "match_started":
+            if value == 0:
+                self.set_server_priority_reduce()
+            elif value == 1:
+                LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
+                self.set_server_priority_increase()
+            # Add more phases as needed
     def unlink_client_connection(self):
         del self.client_connection
     def get_dict_value(self, attribute, default=None):
@@ -206,6 +207,9 @@ class GameServer:
         if await self.get_running_server():
             self.scheduled_shutdown = False
             return True
+        # self.status_received.clear()
+        # self.game_state.clear()
+        self.reset_start_timer()
 
         free_mem = psutil.virtual_memory().available
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
@@ -232,6 +236,11 @@ class GameServer:
         self._proc_owner =self._proc_hook.username()
         self.scheduled_shutdown = False
 
+        await self.manager_event_bus.emit('cancel_game_state_monitor', self.port)
+        monitor_task = self.schedule_task(self.manager_event_bus.emit('monitor_game_state_status',self))
+        await self.manager_event_bus.emit('update_game_state_monitor_task', monitor_task, self.port)
+
+
         return True
 
     async def schedule_shutdown_server(self, client_connection, packet_data):
@@ -244,8 +253,21 @@ class GameServer:
             else:
                 await self.stop_server_nice(client_connection, packet_data)
                 break
+    
+    def get_start_timer(self):
+        return self.start_timer
+    
+    def set_start_timer(self, val):
+        self.start_timer = val
+    
+    def increment_start_timer(self, val):
+        self.start_timer += 1
+    
+    def reset_start_timer(self):
+        self.start_timer = 0
 
     async def stop_server_nice(self, client_connection, packet_data):
+
         if self.game_state["num_clients"] == 0:
             LOGGER.info(f"GameServer #{self.id} - Stopping")
             length_bytes, message_bytes = packet_data
@@ -253,15 +275,15 @@ class GameServer:
             client_connection.writer.write(message_bytes)
             await client_connection.writer.drain()
             #self.remove_self_callback(self)
-            await self.disable_server()
-            await self.unschedule_shutdown()
+            self.disable_server()
+            self.unschedule_shutdown()
 
     async def stop_server_exe(self):
         if self._proc:
             self._proc.terminate()
             #self.remove_self_callback(self)
-            await self.disable_server()
-            await self.unschedule_shutdown()
+            self.disable_server()
+            self.unschedule_shutdown()
 
     async def get_running_server(self):
         """
@@ -310,7 +332,8 @@ class GameServer:
             self._proc_hook.nice(19)
         LOGGER.info(f"GameServer #{self.id} - Priority set to High.")
     async def monitor_process(self):
-        while True:
+        while not stop_event.is_set():
+            print_formatted_text("CHECKING")
             if self._proc is not None and self._proc_hook is not None:
                 if not self._proc_hook.is_running() and self.enabled:
                     LOGGER.warning(f"GameServer #{self.id} - Starting...")
@@ -319,22 +342,23 @@ class GameServer:
                     self._pid = None
                     self._proc_owner = None
                     self.started = False
-                    await self.start_server()  # Restart the server
+                    asyncio.create_task(self.manager_event_bus.emit('start_game_servers', self))  # Restart the server
                 elif self._proc_hook.is_running() and not self.enabled and not self.scheduled_shutdown:
                     #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                     self.schedule_shutdown_server()
-            await asyncio.sleep(5)  # Check every 5 seconds
+            await asyncio.sleep(2)  # Check every 5 seconds
+        #self.cancel_tasks()
 
-    async def enable_server(self):
+    def enable_server(self):
         self.enabled = True
 
-    async def disable_server(self):
+    def disable_server(self):
         self.enabled = False
 
-    async def schedule_shutdown(self):
+    def schedule_shutdown(self):
         self.scheduled_shutdown = True
 
-    async def unschedule_shutdown(self):
+    def unschedule_shutdown(self):
         self.scheduled_shutdown = False
 
 class GameState:
@@ -364,3 +388,6 @@ class GameState:
     def _emit_event(self, key, value):
         for listener in self._listeners:
             listener(key, value)
+    
+    def clear(self):
+        self._state.clear()

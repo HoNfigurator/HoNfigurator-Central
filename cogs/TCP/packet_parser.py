@@ -74,7 +74,7 @@ class GameManagerParser:
             [Mar 13 11:54:25] Sv: [11:54:25] Shutting down server...
 
         """
-        self.log("info",f"GameServer #{self.id} - Received server closed packet: {packet}")
+        self.log("debug",f"GameServer #{self.id} - Received server closed packet: {packet}")
 
 
     async def server_status(self,packet, game_server):
@@ -155,8 +155,9 @@ class GameManagerParser:
 
 
         """
+        # TODO, event?
         skipped_frames = int.from_bytes(packet[1:3],byteorder='little')
-        self.log("info",f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
+        self.log("debug",f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
         game_server.increment_skipped_frames(skipped_frames)
 
 
@@ -169,7 +170,7 @@ class GameManagerParser:
                 string game mode
                 int 1 unknown
         """
-        self.log("info",f"GameServer #{self.id} - Received lobby created packet")
+        self.log("debug",f"GameServer #{self.id} - Received lobby created packet")
 
         # Extract the match ID from the packet bytes
         match_id_bytes = packet[1:5]
@@ -216,7 +217,7 @@ class GameManagerParser:
     async def lobby_closed(self,packet, game_server):
         """   0x45 Lobby closed
         """
-        self.log("info",f"GameServer #{self.id} - Received lobby closed packet: {packet}")
+        self.log("debug",f"GameServer #{self.id} - Received lobby closed packet: {packet}")
         empty_lobby_info = {
             'match_id': '',
             'map': '',
@@ -234,7 +235,7 @@ class GameManagerParser:
 
                 This packet arrives any time someone begins connecting to the server
         """
-        self.log("info",f"GameServer #{self.id} - Received server connection packet: {packet}")
+        self.log("debug",f"GameServer #{self.id} - Received server connection packet: {packet}")
 
 
     async def replay_update(self,packet, game_server):
@@ -243,12 +244,12 @@ class GameManagerParser:
             This is an update from the game server regarding the status of the zipped replay file.
             Most likely for the manager to upload incrementally, if that setting is on (default not on)
         """
-        self.log("info",f"GameServer #{self.id} - Received replay zip update: {packet}")
+        self.log("debug",f"GameServer #{self.id} - Received replay zip update: {packet}")
         if game_server.get_dict_value('current_match_id') == None:
             match = re.search(rb"/(\d+)/", packet)
             if match:
                 match_id = int(match.group(1))
-                self.log("debug","Match ID:", match_id)
+                self.log("debug",f"Match ID: {match_id}")
                 game_server.update_dict_value('current_match_id',match_id)
                 game_server.load(match_only=True)
             else:
@@ -263,7 +264,7 @@ class GameManagerParser:
                 b'H\x00\x00'
             """
 
-            self.log("info",f"GameServer #{self.id} - Received unknown packet: {packet}")
+            self.log("debug",f"GameServer #{self.id} - Received unknown packet: {packet}")
 
 class ManagerChatParser:
     def __init__(self,logger=None):
