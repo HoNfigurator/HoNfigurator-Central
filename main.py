@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import traceback, sys
-from pathlib import Path
+import threading
 import pathlib
 import asyncio
+from pathlib import Path
+from cogs.connectors.api_server import start_api_server
 
 #   This must be first, to initialise logging which all other classes rely on.
 from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc
@@ -43,6 +45,10 @@ async def main():
         LOGGER.exception(f"{traceback.format_exc()}")
         raise ConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
 
+    # Start API Server
+    api_server_thread = threading.Thread(target=start_api_server, args=[global_config], daemon = True)
+    api_server_thread.start()
+
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
     # TODO: Put this back to -1 when done
@@ -73,6 +79,7 @@ async def main():
     start_task = asyncio.create_task(game_server_manager.start_game_servers("all", global_config['hon_data']['svr_startup_timeout']))
 
     await asyncio.gather(auth_task, game_server_listener_task, auto_ping_listener_task, start_task)
+
 
 if __name__ == "__main__":
     try:
