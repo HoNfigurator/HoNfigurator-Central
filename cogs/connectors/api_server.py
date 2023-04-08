@@ -26,5 +26,5 @@ def start_api_server(global_config):
     # FIXME:
     # thats just a default config. we should change it later to
     # restrict access and move the port. but for now its okay i guess.
-    app.run(host="0.0.0.0", port=5000, debug=False)
+    app.run(host="127.0.0.1", port=5000, debug=False)
 
