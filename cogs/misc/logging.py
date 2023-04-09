@@ -31,7 +31,7 @@ def set_logger():
     # Set a maximum file size of 10MB for the log file
     max_file_size = 10 * 1024 * 1024  # 10MB in bytes
     file_handler = logging.handlers.RotatingFileHandler(log_path, maxBytes=max_file_size, backupCount=5)
-    file_handler.setLevel(logging.DEBUG)
+    file_handler.setLevel(logging.INFO)
     file_handler.setFormatter(logging.Formatter('%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s'))
     # set a formatted on print statements
     pt_handler = PromptToolkitLogHandler()
