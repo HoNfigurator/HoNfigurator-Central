@@ -189,8 +189,9 @@ class GameServerManager:
         self.tasks.update({'gameserver_listener':task})
         return task
 
-    async def start_api_server(self):
-        task = asyncio.create_task(start_api_server(self.global_config, daemon = True))
+    def start_api_server(self):
+        """legacy"""
+        task = asyncio.create_task(start_api_server(self.global_config))
         self.tasks.update({'api_server':task})
         return task
 

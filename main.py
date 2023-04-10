@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import traceback, sys
 from pathlib import Path
+import threading
 import asyncio
 from pathlib import Path
 from cogs.connectors.api_server import start_api_server
@@ -70,16 +71,19 @@ async def main():
         game_server_listener_task = game_server_manager.start_game_server_listener_task(host,game_server_to_mgr_port)
         auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
         # Start API Server
-        api_task = game_server_manager.start_api_server()
+        api_server_thread = threading.Thread(target=start_api_server, args=[global_config], daemon = True)
+        api_server_thread.start()
         
         start_task = game_server_manager.start_game_servers_task("all")
 
         stop_task = asyncio.create_task(stop_event.wait())
         done, pending = await asyncio.wait(
-            [auth_task, game_server_listener_task, auto_ping_listener_task, start_task, api_task, stop_task]
+            [auth_task, game_server_listener_task, auto_ping_listener_task, start_task, stop_task]
         )
         for task in pending:
             task.cancel()
+        # wait for API thread to finish
+        api_server_thread.join()
     except asyncio.CancelledError:
         LOGGER.info("Tasks cancelled due to stop_event being set.")
 
