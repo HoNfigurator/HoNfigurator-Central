@@ -1,5 +1,6 @@
 import cogs.handlers.data_handler as data_handler
 import subprocess
+import time
 import traceback
 import asyncio
 import psutil
@@ -7,7 +8,8 @@ import json
 import math
 import sys
 import os
-from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc
+from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
+from cogs.handlers.events import stop_event, EventBus as GameEventBus
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 
@@ -16,8 +18,9 @@ HOME_PATH = get_home()
 MISC = get_misc()
 
 class GameServer:
-    def __init__(self, id, port, global_config, remove_self_callback):
-        self.tasks = []
+    def __init__(self, id, port, global_config, remove_self_callback, manager_event_bus):
+        self.tasks = {}
+        self.manager_event_bus = manager_event_bus
         self.port = port
         self.id = id
         self.global_config = global_config
@@ -36,26 +39,14 @@ class GameServer:
         Game State specific variables
         """
         self.status_received = asyncio.Event()
+        self.server_closed = asyncio.Event()
         self.game_state = GameState()
-        self.game_state.update({
-            'status': None,
-            'uptime': None,
-            'num_clients': None,
-            'match_started': None,
-            'game_state_phase': None,
-            'current_match_id': None,
-            'players': [],
-            'performance': {
-                'grandtotal_skipped_frames': 0,
-                'total_ingame_skipped_frames': 0,
-                'now_ingame_skipped_frames': 0
-            }
-        })
+        self.reset_game_state()
         self.game_state.add_listener(self.on_game_state_change)
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
         self.load_gamestate_from_file(match_only=False)
         # Start the monitor_process method as a background task
-        self.schedule_task(self.monitor_process())
+        self.tasks.update({'process_monitor':asyncio.create_task(self.monitor_process())})
 
     def schedule_task(self, coro):
         task = asyncio.create_task(coro)
@@ -63,22 +54,33 @@ class GameServer:
         return task
 
     def cancel_tasks(self):
-        for task in self.tasks:
+        for task in self.tasks.values():
             task.cancel()
+    def reset_game_state(self):
+        self.status_received.clear()
+        self.game_state.clear()
+
     def link_client_connection(self,client_connection):
         self.client_connection = client_connection
-    def on_game_state_change(self, key, value):
-        if not self.status_received.is_set():
-            self.status_received.set()
+    
+    async def on_game_state_change(self, key, value):
+        # if not self.status_received.is_set():
+        #     self.status_received.set()
         #   Indicates that a status update has been received (we have a live connection)
-        if self.status_received.is_set():
-            if key == "match_started":
-                if value == 0:
-                    self.set_server_priority_reduce()
-                elif value == 1:
-                    LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
-                    self.set_server_priority_increase()
-                # Add more phases as needed
+        if key == "match_started":
+            if value == 0:
+                self.set_server_priority_reduce()
+            elif value == 1:
+                LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
+                self.set_server_priority_increase()
+            # Add more phases as needed
+        elif key == "match_info.mode":
+            if value == "botmatch":
+                self.tasks.update({'botmatch_shutdown':asyncio.create_task(self.manager_event_bus.emit('cmd_shutdown_server', self, force=True, delay=30))})
+                while self.status_received.is_set() and not self.server_closed.set():
+                    await self.manager_event_bus.emit('cmd_message_server', self, f"Bot matches are disallowed on {self.global_config['hon_data']['svr_name']}. Server closing.")
+                    await asyncio.sleep(5)
+
     def unlink_client_connection(self):
         del self.client_connection
     def get_dict_value(self, attribute, default=None):
@@ -202,9 +204,20 @@ class GameServer:
 
         return flatten_dict(temp)
 
-    async def start_server(self):
+    def cancel_task(self, task_name):
+        task = self.tasks.get(task_name)
+        if task is not None:
+            task.cancel()
+
+    async def start_server(self, timeout=180):
+        # clear any existing startup monitor tasks, and reset the startup timer
+        self.reset_game_state()
+        self.server_closed.clear()
+        self.reset_start_timer()
+
         if await self.get_running_server():
             self.scheduled_shutdown = False
+            self.tasks['monitor']
             return True
 
         free_mem = psutil.virtual_memory().available
@@ -232,7 +245,25 @@ class GameServer:
         self._proc_owner =self._proc_hook.username()
         self.scheduled_shutdown = False
 
-        return True
+        #self.tasks.update({'startup_monitor':asyncio.create_task(self.monitor_game_state_status())})
+
+        try:
+            start_time = time.perf_counter()
+            done, pending = await asyncio.wait([self.status_received.wait(), self.server_closed.wait()], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
+            for task in pending:
+                task.cancel()
+
+            if self.status_received.is_set():
+                elapsed_time = time.perf_counter() - start_time
+                LOGGER.info(f"GameServer #{self.id} with port {self.port} started successfully in {elapsed_time:.2f} seconds.")
+                return True
+            elif self.server_closed.is_set():
+                LOGGER.warning(f"GameServer #{self.id} with port {self.port} closed prematurely. Stopped waiting for it.")
+                return False
+        except asyncio.TimeoutError:
+            LOGGER.error(f"GameServer #{self.id} with port {self.port} timed out ({timeout} seconds) waiting for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
+            self.schedule_shutdown()
+            return False
 
     async def schedule_shutdown_server(self, client_connection, packet_data):
         self.scheduled_shutdown = True
@@ -242,26 +273,56 @@ class GameServer:
             if num_clients is not None and num_clients > 0:
                 await asyncio.sleep(10)
             else:
-                await self.stop_server_nice(client_connection, packet_data)
+                await self.stop_server_network(client_connection, packet_data)
+                break
+                
+    async def monitor_game_state_status(self, timeout=60):
+        self.set_start_timer(0)
+        while not self.status_received.is_set():
+            try:
+                await asyncio.sleep(1)
+            except asyncio.CancelledError:
+                print(f"Task {asyncio.current_task().get_name()} is cancelled. Stopping the coroutine.")
                 break
 
-    async def stop_server_nice(self, client_connection, packet_data):
-        if self.game_state["num_clients"] == 0:
-            LOGGER.info(f"GameServer #{self.id} - Stopping")
-            length_bytes, message_bytes = packet_data
-            client_connection.writer.write(length_bytes)
-            client_connection.writer.write(message_bytes)
-            await client_connection.writer.drain()
-            #self.remove_self_callback(self)
-            await self.disable_server()
-            await self.unschedule_shutdown()
+            self.increment_start_timer(1)
+            if self.get_start_timer() >= timeout:
+                LOGGER.error(f"GameServer #{self.id} either did not start correctly or took too long to start.")
+                self.reset_start_timer()
+                break
+        
+    def get_start_timer(self):
+        return self.start_timer
+    
+    def set_start_timer(self, val):
+        self.start_timer = val
+    
+    def increment_start_timer(self, val):
+        self.start_timer += 1
+    
+    def reset_start_timer(self):
+        self.start_timer = 0
+
+    async def stop_server_network(self, client_connection, packet_data, nice=True):
+        if nice:
+            if self.game_state["num_clients"] != 0:
+                return
+        self.status_received.clear()
+            
+        LOGGER.info(f"GameServer #{self.id} - Stopping")
+        length_bytes, message_bytes = packet_data
+        client_connection.writer.write(length_bytes)
+        client_connection.writer.write(message_bytes)
+        await client_connection.writer.drain()
+        self.disable_server()
+        self.unschedule_shutdown()
 
     async def stop_server_exe(self):
         if self._proc:
             self._proc.terminate()
-            #self.remove_self_callback(self)
-            await self.disable_server()
-            await self.unschedule_shutdown()
+            self.status_received.clear()
+            self.disable_server()
+            self.unschedule_shutdown()
 
     async def get_running_server(self):
         """
@@ -319,8 +380,9 @@ class GameServer:
             for child in self._proc_hook.children(recursive=True):
                 child.nice(-19)
         LOGGER.info(f"GameServer #{self.id} - Priority set to High.")
+
     async def monitor_process(self):
-        while True:
+        while not stop_event.is_set():
             if self._proc is not None and self._proc_hook is not None:
                 if not self._proc_hook.is_running() and self.enabled:
                     LOGGER.warning(f"GameServer #{self.id} - Starting...")
@@ -329,22 +391,25 @@ class GameServer:
                     self._pid = None
                     self._proc_owner = None
                     self.started = False
-                    await self.start_server()  # Restart the server
+                    self.server_closed.set()  # Set the server_closed event
+                    self.reset_game_state()
+                    asyncio.create_task(self.manager_event_bus.emit('start_game_servers', self))  # Restart the server
                 elif self._proc_hook.is_running() and not self.enabled and not self.scheduled_shutdown:
                     #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
-                    self.schedule_shutdown_server()
-            await asyncio.sleep(5)  # Check every 5 seconds
+                    self.schedule_shutdown()
 
-    async def enable_server(self):
+            await asyncio.sleep(5)  # Monitor process every 5 seconds
+
+    def enable_server(self):
         self.enabled = True
 
-    async def disable_server(self):
+    def disable_server(self):
         self.enabled = False
 
-    async def schedule_shutdown(self):
+    def schedule_shutdown(self):
         self.scheduled_shutdown = True
 
-    async def unschedule_shutdown(self):
+    def unschedule_shutdown(self):
         self.scheduled_shutdown = False
 
 class GameState:
@@ -358,19 +423,75 @@ class GameState:
     def __setitem__(self, key, value):
         self._state[key] = value
         self._emit_event(key, value)
+    
+    def get_full_key(self, key, current_level, level=None, path=None):
+        if level is None:
+            level = self._state
 
-    def update(self, data):
-        monitored_keys = ["match_started"]  # Put the list of items you want to monitor here
+        if path is None:
+            path = []
+
+        if level is current_level:
+            path.append(key)
+            return ".".join(path)
+
+        for k, v in level.items():
+            if isinstance(v, dict):
+                new_path = path.copy()
+                new_path.append(k)
+                result = self.get_full_key(key, current_level, v, new_path)
+                if result:
+                    return result
+
+        return None
+
+
+    def update(self, data, current_level=None):
+        monitored_keys = ["match_started", "match_info.mode"]  # Put the list of items you want to monitor here
+
+        # If we are at the root level, set the current level to the main dictionary
+        if current_level is None:
+            current_level = self._state
 
         for key, value in data.items():
-            if key in monitored_keys and (key not in self._state or self[key] != value):
-                self.__setitem__(key, value)
+            if isinstance(value, dict):
+                # If the key does not exist in the current level, create an empty dictionary
+                if key not in current_level:
+                    current_level[key] = {}
+                self.update(value, current_level[key])
             else:
-                self._state[key] = value
+                # Check if the full key is in the monitored_keys list
+                full_key = self.get_full_key(key, current_level)
+                if full_key in monitored_keys and (full_key not in self._state or self[full_key] != value):
+                    self.__setitem__(full_key, value)
+                else:
+                    current_level[key] = value
 
     def add_listener(self, callback):
         self._listeners.append(callback)
 
     def _emit_event(self, key, value):
         for listener in self._listeners:
-            listener(key, value)
+            asyncio.create_task(listener(key, value))
+
+    def clear(self):
+        self.update({
+            'status': None,
+            'uptime': None,
+            'num_clients': None,
+            'match_started': None,
+            'game_state_phase': None,
+            'current_match_id': None,
+            'players': [],
+            'performance': {
+                'grandtotal_skipped_frames': 0,
+                'total_ingame_skipped_frames': 0,
+                'now_ingame_skipped_frames': 0
+            },
+            'match_info':{
+                'map':None,
+                'mode':None,
+                'name':None,
+                'match_id':None
+            }
+        })

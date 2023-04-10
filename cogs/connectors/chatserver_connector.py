@@ -4,6 +4,7 @@ import inspect
 import struct
 from enum import Enum
 from cogs.misc.logging import get_logger
+from cogs.handlers.events import stop_event
 from cogs.TCP.packet_parser import ManagerChatParser
 
 LOGGER = get_logger()
@@ -53,7 +54,7 @@ class ChatServerHandler:
             await asyncio.sleep(0.1)
 
         # Handle packets until the connection is closed
-        while not self.reader.at_eof():
+        while stop_event.is_set() or not self.reader.at_eof():
             try:
                 msg_len_data = await self.reader.read(2)
                 if len(msg_len_data) < 2:
@@ -71,8 +72,10 @@ class ChatServerHandler:
                 else:
                     msg_type = int.from_bytes(data[:2], byteorder='little')
                     await self.handle_received_packet(msg_len, msg_type, bytes(data))
-            except (asyncio.IncompleteReadError, ConnectionResetError) as e:
-                LOGGER.error(f"Error occurred during packet handling: {e}")
+            except asyncio.IncompleteReadError:
+                LOGGER.error(f"IncompleteReadError: {traceback.format_exc()}")
+            except ConnectionResetError:
+                LOGGER.error("Connection reset by the server.")
                 break
 
     def create_handshake_packet(self, session_id, server_id):
@@ -128,10 +131,20 @@ class ChatServerHandler:
             packet_data = packet_data + b'\x00'
         msg_len = len(packet_data)
         packet_data = struct.pack('<H', msg_len) + packet_data
+<<<<<<< HEAD
         # Send the packet to the chat server
         self.writer.write(packet_data)
         await self.writer.drain()
 
+=======
+        try:
+            # Send the packet to the chat server
+            self.writer.write(packet_data)
+            await self.writer.drain()
+        except ConnectionResetError:
+            LOGGER.error("Connection reset by the server.")
+
+>>>>>>> 2ae606859f89f6dddfb73a7173ce84d5eeb87326
 
     def get_headers(self, data):
         msg_len = int.from_bytes(data[0:2], byteorder='little')
@@ -164,7 +177,7 @@ class ChatServerHandler:
 
             # start a timer to send two packets every 15 seconds
             async def send_keepalive():
-                while True:
+                while not stop_event.is_set():
                     try:
                         await asyncio.sleep(15)
                         self.writer.write(b'\x02\x00')

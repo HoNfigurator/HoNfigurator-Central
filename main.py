@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import traceback, sys
 from pathlib import Path
-import pathlib
+import threading
 import asyncio
+from pathlib import Path
+from cogs.connectors.api_server import start_api_server
 
 #   This must be first, to initialise logging which all other classes rely on.
 from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc
@@ -14,6 +16,7 @@ from cogs.misc.utilities import Misc
 MISC = Misc()
 set_misc(MISC)
 
+from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
@@ -48,31 +51,42 @@ async def main():
     # TODO: Put this back to -1 when done
     udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 2
 
-    # launch game servers
+    # instantiate the manager
     game_server_manager = GameServerManager(global_config)
-
-    try:
-        auth_task = asyncio.create_task(game_server_manager.authenticate_to_masterserver(udp_ping_responder_port))
-    except AuthenticationError as e:
-        LOGGER.exception(f"{traceback.format_exc()}")
-    except ServerConnectionError as e:
-        LOGGER.exception(f"{traceback.format_exc()}")
-
-    #   Create listener tasks
-    game_server_listener_task = asyncio.create_task(game_server_manager.start_game_server_listener(host,game_server_to_mgr_port))
-    auto_ping_listener_task = asyncio.create_task(game_server_manager.start_autoping_listener(udp_ping_responder_port))
-
-
-    #   Print config overview
+    # Print configuration overview
     print_formatted_text("\nConfiguration Overview")
     for key,value in global_config['hon_data'].items():
         if key == "svr_password": print_formatted_text(f"\t{key}: ***********")
         else: print_formatted_text(f"\t{key}: {value}")
 
-    #   Start GameServers
-    start_task = asyncio.create_task(game_server_manager.start_game_servers("all", global_config['hon_data']['svr_startup_timeout']))
+    # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
+    try:
+        try:
+            #auth_task = asyncio.create_task(game_server_manager.authentication_procedure(udp_ping_responder_port))
+            auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
+        except AuthenticationError as e:
+            LOGGER.exception(f"{traceback.format_exc()}")
+        except ServerConnectionError as e:
+            LOGGER.exception(f"{traceback.format_exc()}")
+        game_server_listener_task = game_server_manager.start_game_server_listener_task(host,game_server_to_mgr_port)
+        auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
+        # Start API Server
+        api_server_thread = threading.Thread(target=start_api_server, args=[global_config], daemon = True)
+        api_server_thread.start()
+        
+        start_task = game_server_manager.start_game_servers_task("all")
 
-    await asyncio.gather(auth_task, game_server_listener_task, auto_ping_listener_task, start_task)
+        stop_task = asyncio.create_task(stop_event.wait())
+        done, pending = await asyncio.wait(
+            [auth_task, game_server_listener_task, auto_ping_listener_task, start_task, stop_task]
+        )
+        for task in pending:
+            task.cancel()
+        # wait for API thread to finish
+        api_server_thread.join()
+    except asyncio.CancelledError:
+        LOGGER.info("Tasks cancelled due to stop_event being set.")
+
 
 if __name__ == "__main__":
     try:

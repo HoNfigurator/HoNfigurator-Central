@@ -6,6 +6,7 @@ import inspect
 import re
 from cogs.misc.logging import get_logger, get_script_dir, flatten_dict, print_formatted_text, get_home
 from cogs.misc.setup import SetupEnvironment
+from cogs.handlers.events import stop_event
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.shortcuts import PromptSession
@@ -16,11 +17,6 @@ script_dir = get_script_dir(__file__)
 LOGGER = get_logger()
 HOME_PATH = get_home()
 CONFIG_FILE = HOME_PATH / "config" / "config.json"
-
-COMMAND_LEN_BYTES = b'\x01\x00'
-SHUTDOWN_BYTES = b'"'
-SLEEP_BYTES = b' '
-WAKE_BYTES = b'!'
 
 def compute_sub_command_path(sub_commands, target_sub_command):
     if not target_sub_command:
@@ -105,7 +101,7 @@ class Commands:
         return self.generate_subcommands(self.cmd_sleep_server)
 
     async def message_subcommands(self):
-        return self.generate_subcommands(self.cmd_server_message)
+        return self.generate_subcommands(self.cmd_message_server)
 
     async def disconnect_subcommands(self):
         return self.generate_subcommands(self.disconnect)
@@ -135,13 +131,14 @@ class Commands:
             "reconnect": Command("reconnect", description="Close all GameServer connections, forcing them to reconnect", usage="reconnect", function=self.reconnect, sub_commands={}),
             "disconnect": Command("disconnect", description="Disconnect the specified GameServer. This only closes the network communication between the manager and game server, not shutdown.", usage="disconnect <GameServer# / ALL>", function=None, sub_commands=await self.disconnect_subcommands()),
             "setconfig": Command("setconfig", description="Set a configuration value for the server", usage="set config <config key> <config value>", function=None, sub_commands=await self.config_commands(),args=["force"]),
+            "quit": Command("quit", description="Exit this program. Servers may terminate when they are no longer in a game.", usage="quit", function=self.quit),
             "help": Command("help", description="Show this help text", usage="help", function=self.help, sub_commands={})
         }
     def generate_subcommands(self, command_coro):
-        sub_commands = {"all": lambda *cmd_args: asyncio.ensure_future(command_coro("all", *cmd_args))}
+        sub_commands = {"all": (lambda *cmd_args: asyncio.create_task(command_coro("all", *cmd_args)))}
         for game_server in list(self.game_servers.values()):
             if game_server.port in list(self.client_connections):
-                sub_commands[str(game_server.id)] = (lambda gs: lambda *cmd_args: asyncio.ensure_future(command_coro(gs, *cmd_args)))(game_server)
+                sub_commands[str(game_server.id)] = (lambda gs: (lambda *cmd_args: asyncio.create_task(command_coro(gs, *cmd_args))))(game_server)
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands
 
@@ -169,8 +166,6 @@ class Commands:
             args_list.append(new_path + [value])
 
         return args_list
-
-
     
     async def set_config(self, args):
         keys = args[:-1]
@@ -201,7 +196,7 @@ class Commands:
             LOGGER.info("Scheduling restart of servers to apply new configuration")
             await self.cmd_shutdown_server("all")
 
-    async def handle_input(self, stop_event):
+    async def handle_input(self):
         self.subcommands_changed = asyncio.Event()
         await self.initialise_commands()
         await self.help()
@@ -236,10 +231,7 @@ class Commands:
                         self.cmd_name = command_parts[0].lower()
                         cmd_args = command_parts[1:]
 
-                        if self.cmd_name == "quit":
-                            stop_event.set()
-                            break
-                        elif self.cmd_name in self.commands:
+                        if self.cmd_name in self.commands:
                             command_obj = self.commands[self.cmd_name]
 
                             if cmd_args and cmd_args[0] in command_obj.sub_commands:
@@ -254,7 +246,7 @@ class Commands:
                                 if handler:
                                     if self.cmd_name == "message" :
                                         # Pass the entire command_parts list as arguments to the handler
-                                        future = handler(command_parts[1:])
+                                        future = handler(command_parts[2:])
                                     elif self.cmd_name == "setconfig":
                                         future = handler(command_parts[1:])
                                     else:
@@ -264,7 +256,7 @@ class Commands:
                                     print_formatted_text("You must provide a subcommand for:", self.cmd_name)
                                 else:
                                     print_formatted_text("Unknown subcommand:", cmd_args[0] if cmd_args else "")
-                                await asyncio.sleep(0.2)
+                                await asyncio.sleep(0.05)
                                 print_formatted_text()
                             except Exception as e:
                                 error_message = f"Error: {traceback.format_exc()}"
@@ -284,22 +276,17 @@ class Commands:
         except asyncio.CancelledError:
             pass
 
+    async def quit(self):
+        stop_event.set()
+
     async def cmd_shutdown_server(self, game_server=None, force=False):
         try:
             if game_server is None: return
-
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    await self.manager_event_bus.emit('send_server_command', self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))
-                    if force:
-                        LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
-                    else: LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
+                    await self.manager_event_bus.emit('cmd_shutdown_server', game_server)
             else:
-                await self.manager_event_bus.emit('send_server_command', self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES))      
-                if force:
-                    LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
-                else: LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
-
+                await self.manager_event_bus.emit('cmd_shutdown_server', game_server)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -309,49 +296,35 @@ class Commands:
 
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    if game_server.port in list(self.client_connections.keys()):
-                        await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, WAKE_BYTES))    
-                        LOGGER.info(f"Command - Wake packet sent to GameServer #{game_server.id}.")
+                    await self.manager_event_bus.emit('cmd_wake_server', game_server)    
             else:
-                await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (COMMAND_LEN_BYTES,WAKE_BYTES))
-                LOGGER.info(f"Command - Wake packet sent to GameServer #{game_server.id}")
+                await self.manager_event_bus.emit('cmd_wake_server', game_server)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
     async def cmd_sleep_server(self, game_server=None, force=False):
         try:
             if game_server is None: return
+
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    if game_server.port in list(self.client_connections.keys()):
-                        await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (COMMAND_LEN_BYTES, SLEEP_BYTES))         
-                        LOGGER.info(f"Command - Sleep packet sent to GameServer #{game_server.id}.")
+                    await self.manager_event_bus.emit('cmd_sleep_server', game_server)    
             else:
-                await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (COMMAND_LEN_BYTES,SLEEP_BYTES))
-                LOGGER.info(f"Command - Sleep packet sent to GameServer #{game_server.id}")
+                await self.manager_event_bus.emit('cmd_sleep_server', game_server)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-
-    async def cmd_server_message(self, game_server=None, message=None):
+    
+    async def cmd_message_server(self, game_server=None, message=None):
         try:
             if game_server is None or message is None:
                 print_formatted_text("Usage: message <GameServer#> <message>")
                 return
             
-            message = (' ').join(message)
-
-            message_bytes = b'$' + message.encode('ascii') + b'\x00'
-            length = len(message_bytes)
-            length_bytes = length.to_bytes(2, byteorder='little')
-
             if game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    if game_server.port in list(self.client_connections):
-                        await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (length_bytes, message_bytes))
-                        LOGGER.info(f"Command - Message packet sent to GameServer #{game_server.id}.")
+                    await self.manager_event_bus.emit('cmd_message_server', game_server, message)
             else:
-                await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (length_bytes, message_bytes))
-                LOGGER.info(f"Command - Message packet sent to GameServer #{game_server.id}")
+                await self.manager_event_bus.emit('cmd_message_server', game_server, message)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -385,9 +358,9 @@ class Commands:
     async def startup_servers(self,game_server):
         if game_server == "all":
             for game_server in list(self.game_servers.values()):
-                await game_server.enable_server()
+                await self.manager_event_bus.emit('enable_game_server', game_server)
         else:
-            await game_server.enable_server()
+            self.manager_event_bus.emit('enable_game_server', game_server)
     
     async def shutdown_servers(self,game_server):
         if game_server == "all":

@@ -6,6 +6,7 @@ utilities/install-beats.ps1
 GameServer*state*.json
 config.json
 .command_history
+logs/*
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

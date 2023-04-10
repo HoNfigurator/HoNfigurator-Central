@@ -3,6 +3,7 @@ import asyncio
 import inspect
 import socket
 from cogs.TCP.packet_parser import GameManagerParser
+from cogs.handlers.events import stop_event
 from cogs.misc.logging import get_logger
 
 LOGGER = get_logger()
@@ -64,7 +65,7 @@ class ClientConnection:
 
     async def run(self, game_server):
         self.game_server = game_server
-        while True:
+        while not stop_event.is_set():
             try:
                 packet = await self.receive_packet()
 
@@ -158,6 +159,7 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
 
     finally:
         # Don't forget to unregister the client connection in the `finally` block
+        # if a server doesn't send a server hello, then the connection will also be removed.
         await game_server_manager.remove_client_connection(client_connection)
         await client_connection.close()
 
