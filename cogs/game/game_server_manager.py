@@ -5,6 +5,7 @@ import asyncio
 import hashlib
 import os.path
 import time
+import inspect
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
@@ -19,6 +20,12 @@ from os.path import exists
 
 LOGGER = get_logger()
 MISC = get_misc()
+
+# TCP Command definitions
+COMMAND_LEN_BYTES = b'\x01\x00'
+SHUTDOWN_BYTES = b'"'
+SLEEP_BYTES = b' '
+WAKE_BYTES = b'!'
 
 # Define an Enum class for health checks
 class HealthChecks(Enum):
@@ -58,15 +65,23 @@ class GameServerManager:
         """
         self.event_bus = ManagerEventBus()
         self.event_bus.subscribe('handle_replay_request', self.handle_replay_request)
-        self.event_bus.subscribe('send_svr_command', self.send_svr_command)
         self.event_bus.subscribe('authenticate_to_chat_svr', self.authenticate_and_handle_chat_server)
         self.event_bus.subscribe('start_game_servers', self.start_game_servers)
-        self.event_bus.subscribe('monitor_game_state_status', self.monitor_game_state_status)
-        self.event_bus.subscribe('cancel_game_state_monitor', self.cancel_game_state_monitor)
         self.event_bus.subscribe('enable_game_server', self.enable_game_server)
         self.event_bus.subscribe('disable_game_server', self.disable_game_server)
-        self.event_bus.subscribe('update_game_state_monitor_task', self.update_game_state_monitor_task)
-        self.tasks = {}
+        self.event_bus.subscribe('cmd_message_server', self.cmd_message_server)
+        self.event_bus.subscribe('cmd_shutdown_server', self.cmd_shutdown_server)
+        self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
+        self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
+        self.tasks = {
+            'game_servers':'',
+            'cli_handler':'',
+            'health_checks':'',
+            'autoping_listener':'',
+            'gameserver_listener':'',
+            'authentication_handler':'',
+            'gameserver_startup':''
+        }
         #self.event_bus.subscribe('reset')
 
         # Initialize dictionaries to store game servers and client connections
@@ -85,55 +100,93 @@ class GameServerManager:
         # Start running health checks
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus)
         self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
-        
-    async def preflight_checks(self):
-        pass
-
-    async def send_svr_command(self, command, game_server_port, command_data):
-        """
-        Sends a server command to the game server with the specified port
-
-        Args:
-            game_server_port (int): the port of the game server to send the command to
-            command_data (bytes): the command to send, as bytes
-
-        Returns:
-            None
-        """
-        client_connection = self.client_connections.get(game_server_port, None)
-        if command == "shutdown":
-            game_server = self.game_servers.get(game_server_port)
-            if game_server:
-                # This server is connected to the manager
-                if game_server.port in self.client_connections:
+    
+    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0):
+        try:
+            if game_server is None: return
+            client_connection = self.client_connections.get(game_server.port, None)
+            await asyncio.sleep(delay)
+            if client_connection:
+                if force:
+                    #await game_server.stop_server_network(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), nice=False)
+                    client_connection.writer.write(COMMAND_LEN_BYTES)
+                    client_connection.writer.write(SHUTDOWN_BYTES)
+                    await client_connection.writer.drain()
+                    LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
+                else:
                     self.tasks.update({
                         'game_servers': {
-                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, command_data))}
+                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES)))}
                         }
                     })
                     await asyncio.sleep(0)  # allow the scheduled task to be executed
-                else:
-                    # this server hasn't connected to the manager yet
-                    await game_server.stop_server_exe()
-                    await self.cancel_game_state_monitor(game_server.port)
-        else:
-            # Get the client connection for the specified game server port and send the command
-            if client_connection:
-                length_bytes, message_bytes = command_data
-                client_connection.writer.write(length_bytes)
-                client_connection.writer.write(message_bytes)
-                await client_connection.writer.drain()
+                    LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
             else:
-                LOGGER.warn(f"No client connection found for port {game_server_port}")
+                # this server hasn't connected to the manager yet
+                await game_server.stop_server_exe()
+                game_server.reset_game_state()
+        except Exception as e:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
-    async def start_autoping_listener(self, port):
+    async def cmd_wake_server(self, game_server):
+        try:
+            client_connection = self.client_connections.get(game_server.port, None)
+            if not client_connection: return
+            
+            client_connection.writer.write(COMMAND_LEN_BYTES)
+            client_connection.writer.write(WAKE_BYTES)
+            await client_connection.writer.drain()
+            
+            LOGGER.info(f"Command - Wake command sent to GameServer #{game_server.id}.")
+        except Exception as e:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def cmd_sleep_server(self, game_server):
+        try:
+            client_connection = self.client_connections.get(game_server.port, None)
+            if not client_connection: return
+            
+            client_connection.writer.write(COMMAND_LEN_BYTES)
+            client_connection.writer.write(SLEEP_BYTES)
+            await client_connection.writer.drain()
+            
+            LOGGER.info(f"Command - Sleep command sent to GameServer #{game_server.id}.")
+        except Exception as e:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def cmd_message_server(self, game_server, message):
+        try:
+            client_connection = self.client_connections.get(game_server.port, None)
+            if client_connection is None:
+                return
+
+            if isinstance(message, list): message = (' ').join(message)
+            message_bytes = b'$' + message.encode('ascii') + b'\x00'
+            length = len(message_bytes)
+            length_bytes = length.to_bytes(2, byteorder='little')
+
+            client_connection.writer.write(length_bytes)
+            client_connection.writer.write(message_bytes)
+            await client_connection.writer.drain()
+            LOGGER.info(f"Command - Message command sent to GameServer #{game_server.id}.")
+        except Exception:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    def start_autoping_listener_task(self, port):
         # Create an AutoPing Responder to handle ping requests from master server
         autoping_responder = AutoPingListener(
             port,
             server_name=self.global_config['hon_data']['svr_name'],
             #   TODO: Get the real version number
             game_version=self.global_config['hon_data']['svr_version'])
-        self.tasks.update({'autoping_responder':asyncio.create_task(autoping_responder.start_listener())})
+        task = asyncio.create_task(autoping_responder.start_listener())
+        self.tasks.update({'autoping_listener':task})
+        return task
+
+    def start_game_server_listener_task(self,*args):
+        task = asyncio.create_task(self.start_game_server_listener(*args))
+        self.tasks.update({'gameserver_listener':task})
+        return task
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
@@ -166,8 +219,12 @@ class GameServerManager:
 
         LOGGER.info("Server stopped.")
 
+    def create_handle_connections_task(self, *args):
+        task = asyncio.create_task(self.manage_upstream_connections(*args))
+        self.tasks.update({'authentication_handler':task})
+        return task
 
-    async def authentication_procedure(self, udp_ping_responder_port,retry=30):
+    async def manage_upstream_connections(self, udp_ping_responder_port, retry=30):
         """
         Authenticate the game server with the master server and connect to the chat server.
 
@@ -187,10 +244,10 @@ class GameServerManager:
                 parsed_mserver_auth_response = await self.send_auth_request_to_masterserver()
 
                 # Connect to the chat server and authenticate
-                await self.event_bus.emit('authenticate_to_chat_svr', parsed_mserver_auth_response, udp_ping_responder_port)
-                break  # If successful, break the loop
-            except AuthenticationError:
-                LOGGER.error(f"Authentication failed. Retrying in {retry} seconds...")
+                await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
+
+            except (AuthenticationError, ConnectionResetError) as e:
+                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
 
     async def send_auth_request_to_masterserver(self):
@@ -238,9 +295,10 @@ class GameServerManager:
         chat_auth_response = await chat_server_handler.connect()
 
         if not chat_auth_response:
-            LOGGER.error("Authentication to ChatServer failed.")
             raise AuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
+
         LOGGER.info("Authenticated to ChatServer.")
+
         # Start handling packets from the chat server
         await chat_server_handler.handle_packets()
 
@@ -408,12 +466,17 @@ class GameServerManager:
         for key, value in self.client_connections.items():
             if value == client_connection:
                 del self.client_connections[key]
-                self.game_servers[key].status_received.clear()
+                self.game_servers[key].reset_game_state()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
                 await self.commands.initialise_commands()
                 self.commands.subcommands_changed.set()
                 return True
         return False
+
+    def start_game_servers_task(self, *args, timeout=120):
+        task = asyncio.create_task(self.start_game_servers(*args))
+        self.tasks.update({'gameserver_startup':task})
+        return task
 
     async def start_game_servers(self, game_server, timeout=120):
         """
@@ -429,18 +492,8 @@ class GameServerManager:
         """
         async def start_game_server_with_semaphore(game_server, timeout):
             async with self.server_start_semaphore:
-                started = await game_server.start_server()
-                if started:
-                    LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} started queued for start.")
-                    try:
-                        start_time = time.perf_counter()
-                        await asyncio.wait_for(game_server.status_received.wait(), timeout)
-                        elapsed_time = time.perf_counter() - start_time
-                        LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} started successfully in {elapsed_time:.2f} seconds.")
-                    except asyncio.TimeoutError:
-                        LOGGER.error(f"GameServer #{game_server.id} with port {game_server.port} timed out ({timeout} seconds) waiting for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
-                        game_server.schedule_shutdown()
-                else:
+                started = await game_server.start_server(timeout=timeout)
+                if not started:
                     LOGGER.error(f"GameServer #{game_server.id} with port {game_server.port} failed to start.")
 
         if game_server == "all":
@@ -453,31 +506,10 @@ class GameServerManager:
                     LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} already running.")
                 else:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
-                    #monitor_tasks.append(self.monitor_game_state_status(game_server))
             await asyncio.gather(*start_tasks, *monitor_tasks)
         else:
             await start_game_server_with_semaphore(game_server, timeout)
-            #await self.monitor_game_state_status(game_server)
-    
-    async def monitor_game_state_status(self, game_server, timeout=60):
-        game_server.set_start_timer(0)
-        while not game_server.status_received.is_set():
-            game_server.increment_start_timer(1)
-            await asyncio.sleep(1)
-            print(f"waiting on {game_server.id}.. {game_server.get_start_timer()}")
-            if game_server.get_start_timer() >= timeout:
-                LOGGER.error(f"GameServer #{game_server.id} either did not start correctly or took too long to start.")
-                game_server.reset_start_timer()
-                break
-    
-    async def update_game_state_monitor_task(self, task, game_server_port):
-        self.tasks.update({'game_servers':{
-            game_server_port : {'game_start_monitor':task}
-        }})
-    
-    async def cancel_game_state_monitor(self, game_server_port):
-        if game_server_port in list(self.tasks['game_servers']):
-            self.tasks['game_servers'][game_server_port]['game_start_monitor'].cancel()
+
     async def disable_game_server(self, game_server):
         game_server.disable_server()
     

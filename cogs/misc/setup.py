@@ -229,7 +229,7 @@ class SetupEnvironment:
 
             return True
 
-        hon_data_to_save = {key: value for key, value in self.hon_data.items() if key not in self.PATH_KEYS_NOT_IN_CONFIG_FILE}
+        hon_data_to_save = {key: value for key, value in self.hon_data.items() if key not in self.PATH_KEYS_NOT_IN_CONFIG_FILE and key not in self.OTHER_CONFIG_EXCLUSIONS}
         # ensure path objects are
         for path in self.PATH_KEYS_IN_CONFIG_FILE:
             hon_data_to_save[path] = str(hon_data_to_save[path])

@@ -75,6 +75,9 @@ class GameManagerParser:
 
         """
         self.log("debug",f"GameServer #{self.id} - Received server closed packet: {packet}")
+        game_server.reset_game_state()
+        game_server.save_gamestate_to_file()
+        game_server.reset_skipped_frames()
 
 
     async def server_status(self,packet, game_server):

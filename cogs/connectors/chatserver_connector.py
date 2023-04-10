@@ -72,8 +72,11 @@ class ChatServerHandler:
                 else:
                     msg_type = int.from_bytes(data[:2], byteorder='little')
                     await self.handle_received_packet(msg_len, msg_type, bytes(data))
-            except asyncio.IncompleteReadError as e:
-                LOGGER.error(f"IncompleteReadError: {e}")
+            except asyncio.IncompleteReadError:
+                LOGGER.error(f"IncompleteReadError: {traceback.format_exc()}")
+            except ConnectionResetError:
+                LOGGER.error("Connection reset by the server.")
+                break
 
     def create_handshake_packet(self, session_id, server_id):
         msg_type = 0x1600
@@ -128,9 +131,12 @@ class ChatServerHandler:
             packet_data = packet_data + b'\x00'
         msg_len = len(packet_data)
         packet_data = struct.pack('<H', msg_len) + packet_data
-        # Send the packet to the chat server
-        self.writer.write(packet_data)
-        await self.writer.drain()
+        try:
+            # Send the packet to the chat server
+            self.writer.write(packet_data)
+            await self.writer.drain()
+        except ConnectionResetError:
+            LOGGER.error("Connection reset by the server.")
         
 
     def get_headers(self, data):

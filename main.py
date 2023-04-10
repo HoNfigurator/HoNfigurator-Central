@@ -59,15 +59,20 @@ async def main():
     # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
     try:
         try:
-            auth_task = asyncio.create_task(game_server_manager.authentication_procedure(udp_ping_responder_port))
+            #auth_task = asyncio.create_task(game_server_manager.authentication_procedure(udp_ping_responder_port))
+            auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
         except AuthenticationError as e:
             LOGGER.exception(f"{traceback.format_exc()}")
         except ServerConnectionError as e:
             LOGGER.exception(f"{traceback.format_exc()}")
-        game_server_listener_task = asyncio.create_task(game_server_manager.start_game_server_listener(host,game_server_to_mgr_port))
-        auto_ping_listener_task = asyncio.create_task(game_server_manager.start_autoping_listener(udp_ping_responder_port))
+        game_server_listener_task = game_server_manager.start_game_server_listener_task(host,game_server_to_mgr_port)
+        auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
+        start_task = game_server_manager.start_game_servers_task("all")
 
-        start_task = asyncio.create_task(game_server_manager.start_game_servers("all", global_config['hon_data']['svr_startup_timeout']))
+        # game_server_listener_task = asyncio.create_task(game_server_manager.start_game_server_listener(host,game_server_to_mgr_port))
+        # auto_ping_listener_task = asyncio.create_task(game_server_manager.start_autoping_listener(udp_ping_responder_port))
+
+        # start_task = asyncio.create_task(game_server_manager.start_game_servers("all", global_config['hon_data']['svr_startup_timeout']))
 
         stop_task = asyncio.create_task(stop_event.wait())
         done, pending = await asyncio.wait(
