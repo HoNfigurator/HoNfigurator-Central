@@ -71,8 +71,9 @@ class ChatServerHandler:
                 else:
                     msg_type = int.from_bytes(data[:2], byteorder='little')
                     await self.handle_received_packet(msg_len, msg_type, bytes(data))
-            except asyncio.IncompleteReadError as e:
-                LOGGER.error(f"IncompleteReadError: {e}")
+            except (asyncio.IncompleteReadError, ConnectionResetError) as e:
+                LOGGER.error(f"Error occurred during packet handling: {e}")
+                break
 
     def create_handshake_packet(self, session_id, server_id):
         msg_type = 0x1600
@@ -113,7 +114,7 @@ class ChatServerHandler:
         	b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x05'	- OK I have the replay
             b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x06'	- Uploading..
             b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x07\x00' - finished uploading
-            
+
 
             b'\x0b\x00\x03\x16ac\x1c\x00\x80\x03\x00\x00\x01' - mine (for not found)
             b'\x0b\x00\x03\x16/\x9a\x1a\x00\x80\x03\x00\x00\x01' - working (for not found)
@@ -130,7 +131,7 @@ class ChatServerHandler:
         # Send the packet to the chat server
         self.writer.write(packet_data)
         await self.writer.drain()
-        
+
 
     def get_headers(self, data):
         msg_len = int.from_bytes(data[0:2], byteorder='little')
