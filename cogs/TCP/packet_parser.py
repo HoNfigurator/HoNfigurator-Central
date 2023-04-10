@@ -19,7 +19,7 @@ class GameManagerParser:
             0x4A: self.replay_update,
         }
         self.id = client_id
-    
+
     def log(self,level,message):
         if self.logger:
             getattr(self.logger, level)(message)
@@ -329,7 +329,7 @@ class ManagerChatParser:
 
     async def chat_heartbeat_received(self,packet_data):
         self.log("debug",f"{self.print_prefix}Received heartbeat.")
-    
+
     async def chat_policies(self,packet_data):
         self.log("debug",f"{self.print_prefix}Received server setting policy.")
 
@@ -339,7 +339,7 @@ class ManagerChatParser:
         server_id = int.from_bytes(packet_data[2:6],byteorder='little')
         session_id = packet_data[6:].split(b'\x00', 1)[0].decode('utf-8')
         self.log("debug",f"{self.print_prefix}Handshake\n\tServer ID: {server_id}\n\tSession: {session_id}")
-    
+
     async def mgr_server_info_update(self,packet_data):
         #   b'\x02\x16Y\xf0\x02\x00AUSFRANKHOST:\x00NEWERTH\x00T4NK 0\x004.10.6.0\x00103.193.80.121\x00\xe3+\x00' - original
         server_id = int.from_bytes(packet_data[2:6],byteorder='little')
@@ -358,10 +358,10 @@ class ManagerChatParser:
 
     async def mgr_sending_heartbeat(self,packet_data):
         self.log("debug",f"{self.print_prefix}Sending heartbeat..")
-    
+
     async def mgr_receiving_heartbeat(self,packet_data):
         self.log("debug",f"{self.print_prefix}Received heartbeat")
-    
+
     async def mgr_replay_response(self,packet_data):
         # Example, replay not found: b'\x03\x16\x00\x80\x19\x00\x80\x03\x00\x00\x01'
         # Example, replay not found: b'\x03\x16ob\x1c\x00\x80\x03\x00\x00\x01'
@@ -404,7 +404,7 @@ class GameChatParser:
             0x1500: self.chat_logon_response,
             0x2a01: self.chat_heartbeat_received
         }
-    
+
     def log(self,level,message):
         if self.logger:
             getattr(self.logger, level)(message)
@@ -421,20 +421,20 @@ class GameChatParser:
         if packet_len != len(packet_data):
             self.log("warn",f"{self.print_prefix}LEN DOESNT MATCH PACKET: {packet_len} and {len(packet_data)}")
         await handler(packet_data)
-    
+
     async def game_login(self,packet_data):
         server_id = int.from_bytes(packet_data[2:6],byteorder='little')  # not the slave ID, the server ID given by master server
         session_id,_,remaining_data = packet_data[6:].partition(b'\x00')     # session ID is cookie given by master server
         chat_protocol = int.from_bytes(remaining_data,byteorder='little')   # unlikely to change
         session_id = session_id.decode('utf8')
         self.log("debug",f"{self.print_prefix}Logging in...\n\tServer ID: {server_id}\n\tSession ID: {session_id}")
-    
+
     async def game_server_closed(self,packet_data):
         self.log("debug",f"{self.print_prefix}Notifying of shutdown..")
-    
+
     async def game_send_heartbeat(self,packet_data):
         self.log("debug",f"{self.print_prefix}Sending heartbeat..")
-    
+
     async def game_send_server_info(self,packet_data):
         server_id = int.from_bytes(packet_data[2:6],byteorder='little')
         ip_addr, _, remaining_data = packet_data[6:].partition(b'\x00')
@@ -457,20 +457,20 @@ class GameChatParser:
         # version_number = reversed_bytes[version_index:].split(b'\x00', 1)[0].decode('utf-8')
         # version_number = version_number[::-1]
         self.log("debug",f"{self.print_prefix}Server sent lobby information\n\tIP Addr: {ip_addr}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tSlave ID: {slave_id}\n\tMatch ID: {match_id}")
-    
+
     async def game_player_connection(self, packet_data):
         self.log("debug",f"{self.print_prefix}Player connection")
 
     async def chat_logon_response(self,packet_data):
         self.log("debug",f"{self.print_prefix}Authenticated to Chat Server")
-    
+
     async def chat_heartbeat_received(self,packet_data):
         self.log("debug",f"{self.print_prefix}Received heartbeat")
-    
+
     async def unhandled_packet(self,packet_data):
         self.log("warn",f"Unhandled: {self.print_prefix}{packet_data}")
 
-    
+
 
 """
 class GameHTTPParser:

@@ -11,6 +11,7 @@ from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
 from cogs.TCP.auto_ping_lsnr import AutoPingListener
+from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, EventBus as ManagerEventBus
@@ -186,6 +187,11 @@ class GameServerManager:
     def start_game_server_listener_task(self,*args):
         task = asyncio.create_task(self.start_game_server_listener(*args))
         self.tasks.update({'gameserver_listener':task})
+        return task
+
+    async def start_api_server(self):
+        task = asyncio.create_task(start_api_server(self.global_config, daemon = True))
+        self.tasks.update({'api_server':task})
         return task
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
@@ -419,7 +425,7 @@ class GameServerManager:
             #TODO: raise error or happy with logger?
             LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
             return False
- 
+
     async def handle_replay_request(self, match_id, extension, account_id):
         replay_file_name = f"M{match_id}.{extension}"
         replay_file_path = (self.global_config['hon_data']['hon_replays_directory'] / replay_file_name)
@@ -435,13 +441,13 @@ class GameServerManager:
 
         # Upload the file and send status updates as required
         file_size = os.path.getsize(replay_file_path)
-        
+
         upload_details = await self.master_server_handler.get_replay_upload_info(match_id, extension, self.global_config['hon_data']['svr_login'], file_size)
 
         if upload_details is None or upload_details[1] != 200:
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             return
-        
+
         upload_details_parsed = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in upload_details[0].items()}
 
         await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
@@ -451,7 +457,7 @@ class GameServerManager:
             return
         await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
 
-        
+
     async def remove_client_connection(self,client_connection):
         """
         Removes a client connection from the client connection dictionary with the specified port as the key
@@ -484,7 +490,7 @@ class GameServerManager:
 
         This function starts all the game servers that were created by the GameServerManager. It
         does this by calling the start_server method of each game server object.
-        
+
         Game servers are started using a "semaphore", to stagger their start to groups and not all at once.
         The timeout value may be reached, for slow servers, it may need to be adjusted in the config file if required.
 

@@ -2,6 +2,8 @@
 import traceback, sys
 from pathlib import Path
 import asyncio
+from pathlib import Path
+from cogs.connectors.api_server import start_api_server
 
 #   This must be first, to initialise logging which all other classes rely on.
 from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc
@@ -67,21 +69,20 @@ async def main():
             LOGGER.exception(f"{traceback.format_exc()}")
         game_server_listener_task = game_server_manager.start_game_server_listener_task(host,game_server_to_mgr_port)
         auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
+        # Start API Server
+        api_task = game_server_manager.start_api_server()
+        
         start_task = game_server_manager.start_game_servers_task("all")
-
-        # game_server_listener_task = asyncio.create_task(game_server_manager.start_game_server_listener(host,game_server_to_mgr_port))
-        # auto_ping_listener_task = asyncio.create_task(game_server_manager.start_autoping_listener(udp_ping_responder_port))
-
-        # start_task = asyncio.create_task(game_server_manager.start_game_servers("all", global_config['hon_data']['svr_startup_timeout']))
 
         stop_task = asyncio.create_task(stop_event.wait())
         done, pending = await asyncio.wait(
-            [auth_task, game_server_listener_task, auto_ping_listener_task, start_task, stop_task]
+            [auth_task, game_server_listener_task, auto_ping_listener_task, start_task, api_task, stop_task]
         )
         for task in pending:
             task.cancel()
     except asyncio.CancelledError:
         LOGGER.info("Tasks cancelled due to stop_event being set.")
+
 
 if __name__ == "__main__":
     try:

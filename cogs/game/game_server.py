@@ -362,13 +362,23 @@ class GameServer:
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.IDLE_PRIORITY_CLASS)
         else:
-            self._proc_hook.nice(0)
+            # TODO:
+            # Process spawning works a bit different in linux.
+            # Each server spawn command executes a shell, which
+            # spawns the actual server as its child.
+            # Until i got a better idea how to handle this, i
+            # gladly introduce the following workaround :-P
+            self._proc_hook.nice(20)
+            for child in self._proc_hook.children(recursive=True):
+                child.nice(20)
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
     def set_server_priority_increase(self):
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
         else:
-            self._proc_hook.nice(19)
+            self._proc_hook.nice(-10)
+            for child in self._proc_hook.children(recursive=True):
+                child.nice(-19)
         LOGGER.info(f"GameServer #{self.id} - Priority set to High.")
 
     async def monitor_process(self):

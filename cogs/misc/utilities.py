@@ -62,7 +62,14 @@ class Misc:
     def get_cpu_count(self):
         return self.cpu_count
     def get_cpu_name(self):
-        return self.cpu_name
+        if self.get_os_platform() == "win32":
+            return self.cpu_name
+        elif self.get_os_platform() == "linux":
+            # Linux uses the /proc/cpuinfo file
+            with open('/proc/cpuinfo') as f:
+                for line in f:
+                    if line.startswith('model name'):
+                        return line.split(':')[1].strip()
     def get_total_ram(self):
         return self.total_ram
     def get_cpu_load():
@@ -117,7 +124,7 @@ class Misc:
                     return False
 
             return True
-        
+
         if not exists(hon_exe):
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
 
@@ -130,11 +137,11 @@ class Misc:
                 split_bytes = version.split(b'\x00')
                 # Decode the byte sequences and join them together
                 version = ''.join(part.decode('utf-8') for part in split_bytes if part)
-            
+
             if not validate_version_format(version):
                 raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
             else:
                 return version
         elif self.get_os_platform() == "linux":
-            with open(os.path.join(os.path.abspath(hon_exe), "version.txt"), 'r') as f:
-                version = f.readline()
+            with open(Path(hon_exe).parent / "version.txt", 'r') as f:
+                return f.readline()
