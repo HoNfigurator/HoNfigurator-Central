@@ -117,7 +117,7 @@ class ChatServerHandler:
         	b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x05'	- OK I have the replay
             b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x06'	- Uploading..
             b'\x03\x16\x18L\x1d\x00\x80\x03\x00\x00\x07\x00' - finished uploading
-            
+
 
             b'\x0b\x00\x03\x16ac\x1c\x00\x80\x03\x00\x00\x01' - mine (for not found)
             b'\x0b\x00\x03\x16/\x9a\x1a\x00\x80\x03\x00\x00\x01' - working (for not found)
@@ -131,13 +131,20 @@ class ChatServerHandler:
             packet_data = packet_data + b'\x00'
         msg_len = len(packet_data)
         packet_data = struct.pack('<H', msg_len) + packet_data
+<<<<<<< HEAD
+        # Send the packet to the chat server
+        self.writer.write(packet_data)
+        await self.writer.drain()
+
+=======
         try:
             # Send the packet to the chat server
             self.writer.write(packet_data)
             await self.writer.drain()
         except ConnectionResetError:
             LOGGER.error("Connection reset by the server.")
-        
+
+>>>>>>> 2ae606859f89f6dddfb73a7173ce84d5eeb87326
 
     def get_headers(self, data):
         msg_len = int.from_bytes(data[0:2], byteorder='little')
