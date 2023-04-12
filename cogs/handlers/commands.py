@@ -151,15 +151,22 @@ class Commands:
 
     def generate_config_subcommands(self, config_dict, command_coro):
         sub_commands = {}
+
         for key, value in config_dict.items():
             if isinstance(value, dict):
-                sub_commands[key] = self.generate_config_subcommands(value, command_coro)
+                if key == "discord_data" or key == "hon_data":
+                    sub_commands[key] = self.generate_config_subcommands(value, command_coro)
+                else:
+                    continue
             else:
+                if key == "discord_data" or key == "hon_data":
+                    continue
                 sub_commands[key] = lambda *cmd_args: asyncio.ensure_future(command_coro(*cmd_args))
                 sub_commands[key].current_value = value
 
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands_with_help
+
 
     async def generate_args_for_set_config(self, key, value, current_path=None):
         if current_path is None:
@@ -449,7 +456,7 @@ class CustomCommandCompleter(Completer):
                     yield Completion(cmd_name, start_position=-len(current_word), display_meta=cmd_obj.usage)
                 return
 
-            if len(words) > 1 or current_word == '':
+            if len(words) > 1 or (current_word == '' and len(words) > 0):
                 current_command = self.commands.get(words[0], None)
                 if current_command is not None:
                     sub_command = current_command.sub_commands
