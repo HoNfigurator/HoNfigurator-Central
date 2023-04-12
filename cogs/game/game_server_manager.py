@@ -4,6 +4,8 @@ import traceback
 import asyncio
 import hashlib
 import os.path
+import subprocess
+import sys
 import time
 import inspect
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError
@@ -15,12 +17,13 @@ from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, EventBus as ManagerEventBus
-from cogs.misc.logging import get_logger, get_misc
+from cogs.misc.logging import get_logger, get_misc, get_home
 from enum import Enum
 from os.path import exists
 
 LOGGER = get_logger()
 MISC = get_misc()
+HOME_PATH = get_home()
 
 # TCP Command definitions
 COMMAND_LEN_BYTES = b'\x01\x00'
@@ -74,6 +77,7 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_shutdown_server', self.cmd_shutdown_server)
         self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
+        self.event_bus.subscribe('update', self.update)
         self.tasks = {
             'game_servers':'',
             'cli_handler':'',
@@ -189,9 +193,8 @@ class GameServerManager:
         self.tasks.update({'gameserver_listener':task})
         return task
 
-    def start_api_server(self):
-        """legacy"""
-        task = asyncio.create_task(start_api_server(self.global_config))
+    async def start_api_server(self):
+        task = await start_api_server(self.global_config, self.game_servers, self.event_bus)
         self.tasks.update({'api_server':task})
         return task
 
@@ -225,6 +228,25 @@ class GameServerManager:
         await self.game_server_lsnr.wait_closed()
 
         LOGGER.info("Server stopped.")
+
+    def update(self):
+        try:
+            # Change the current working directory to the HOME_PATH
+            os.chdir(HOME_PATH)
+
+            # Run the git pull command
+            result = subprocess.run(["git", "pull"], check=True, text=True, capture_output=True)
+
+            # Check if the update was successful
+            if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
+                print("Update successful. Relaunching the code...")
+
+                # Relaunch the code
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                print("Already up to date. No need to relaunch.")
+        except subprocess.CalledProcessError as e:
+            print(f"Error updating the code: {e}")
 
     def create_handle_connections_task(self, *args):
         task = asyncio.create_task(self.manage_upstream_connections(*args))

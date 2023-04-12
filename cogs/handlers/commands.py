@@ -132,7 +132,8 @@ class Commands:
             "disconnect": Command("disconnect", description="Disconnect the specified GameServer. This only closes the network communication between the manager and game server, not shutdown.", usage="disconnect <GameServer# / ALL>", function=None, sub_commands=await self.disconnect_subcommands()),
             "setconfig": Command("setconfig", description="Set a configuration value for the server", usage="set config <config key> <config value>", function=None, sub_commands=await self.config_commands(),args=["force"]),
             "quit": Command("quit", description="Exit this program. Servers may terminate when they are no longer in a game.", usage="quit", function=self.quit),
-            "help": Command("help", description="Show this help text", usage="help", function=self.help, sub_commands={})
+            "help": Command("help", description="Show this help text", usage="help", function=self.help, sub_commands={}),
+            "update": Command("update", description="Update this program from the upstream git repository.", usage="update", function=self.update, sub_commands={})
         }
     def generate_subcommands(self, command_coro):
         sub_commands = {"all": (lambda *cmd_args: asyncio.create_task(command_coro("all", *cmd_args)))}
@@ -416,6 +417,10 @@ class Commands:
             print_formatted_text(table)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+    
+    async def update(self):
+        self.manager_event_bus.emit('update')
+
 
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
@@ -433,6 +438,12 @@ class CustomCommandCompleter(Completer):
         try:
             words = document.text_before_cursor.lower().split()
             current_word = document.get_word_before_cursor()
+
+            if '?' in current_word:
+                # If "?" is present, return all possible commands
+                for cmd_name, cmd_obj in self.commands.items():
+                    yield Completion(cmd_name, start_position=-len(current_word), display_meta=cmd_obj.usage)
+                return
 
             if len(words) > 1 or current_word == '':
                 current_command = self.commands.get(words[0], None)
@@ -457,7 +468,6 @@ class CustomCommandCompleter(Completer):
                                 for subcommand in sub_command.keys():
                                     yield Completion(subcommand, start_position=0)
                             elif callable(sub_command):
-                                #for arg in sub_command.current_value:
                                 if current_command.name == "setconfig":
                                     yield Completion(f"<current value: {sub_command.current_value}>", start_position=-len(current_word))
                                     yield Completion(f"<enter new value>", start_position=-len(current_word))

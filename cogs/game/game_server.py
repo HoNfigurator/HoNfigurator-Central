@@ -178,7 +178,11 @@ class GameServer:
             'Connections': 0,
             'Players': 'Unknown',
             'Uptime': 'Unknown',
-            'Performance (lag)': f"{self.get_dict_value('grandtotal_skipped_frames')/1000} sec (grand total)\n{self.get_dict_value('total_ingame_skipped_frames')/1000} sec (total while in game)\n{self.get_dict_value('now_ingame_skipped_frames')/1000} sec (current game)",
+            'Performance (lag)': {
+                'grand total':f"{self.get_dict_value('grandtotal_skipped_frames')/1000} seconds",
+                'total while in-game':f"{self.get_dict_value('total_ingame_skipped_frames')/1000} seconds",
+                'current game':f"{self.get_dict_value('now_ingame_skipped_frames')/1000} seconds"
+            },
             'Core': self.config.get_local_by_key('host_affinity')
         }
         if self.get_dict_value('status') == 0:
@@ -202,7 +206,7 @@ class GameServer:
         temp['Players'] = ', '.join(player_names)
         temp['Uptime'] = format_time(self.get_dict_value('uptime') / 1000) if self.get_dict_value('uptime') is not None else 'Unknown'
 
-        return flatten_dict(temp)
+        return (temp)
 
     def cancel_task(self, task_name):
         task = self.tasks.get(task_name)

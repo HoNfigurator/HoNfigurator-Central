@@ -39,7 +39,7 @@ class ConfigManagement():
         self.local = ({
             'config' : {
                 'file_name':file_name,
-                'file_path' : Path(self.get_global_by_key("hon_install_directory")) / f'{file_name}'
+                'file_path' : str(Path(self.get_global_by_key("hon_install_directory")) / f'{file_name}')
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
