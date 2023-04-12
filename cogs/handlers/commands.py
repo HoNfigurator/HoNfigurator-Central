@@ -136,10 +136,16 @@ class Commands:
             "update": Command("update", description="Update this program from the upstream git repository.", usage="update", function=self.update, sub_commands={})
         }
     def generate_subcommands(self, command_coro):
+        command_type = command_coro.__name__
         sub_commands = {"all": (lambda *cmd_args: asyncio.create_task(command_coro("all", *cmd_args)))}
-        for game_server in list(self.game_servers.values()):
-            if game_server.port in list(self.client_connections):
-                sub_commands[str(game_server.id)] = (lambda gs: (lambda *cmd_args: asyncio.create_task(command_coro(gs, *cmd_args))))(game_server)
+        if command_type == "startup_servers":
+            for game_server in list(self.game_servers.values()):
+                if game_server.port not in list(self.client_connections):
+                    sub_commands[str(game_server.id)] = (lambda gs: (lambda *cmd_args: asyncio.create_task(command_coro(gs, *cmd_args))))(game_server)
+        else:
+            for game_server in list(self.game_servers.values()):
+                if game_server.port in list(self.client_connections):
+                    sub_commands[str(game_server.id)] = (lambda gs: (lambda *cmd_args: asyncio.create_task(command_coro(gs, *cmd_args))))(game_server)
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands
 
@@ -361,7 +367,7 @@ class Commands:
             for game_server in list(self.game_servers.values()):
                 await self.manager_event_bus.emit('enable_game_server', game_server)
         else:
-            self.manager_event_bus.emit('enable_game_server', game_server)
+            await self.manager_event_bus.emit('enable_game_server', game_server)
     
     async def shutdown_servers(self,game_server):
         if game_server == "all":
@@ -388,9 +394,6 @@ class Commands:
                     if isinstance(v, dict):
                         # Flatten nested dict into a string
                         v = '\n'.join([f'{sub_k}: {sub_v}' for sub_k, sub_v in v.items()])
-                    elif k == "players":
-                        players_chunks = [v[i:i+5] for i in range(0, len(v), 5)]
-                        v = "\n".join(map(str, players_chunks))
                     data.append(v)
                 rows.append(data)
 

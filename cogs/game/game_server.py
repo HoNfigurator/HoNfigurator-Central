@@ -389,7 +389,7 @@ class GameServer:
         while not stop_event.is_set():
             if self._proc is not None and self._proc_hook is not None:
                 if not self._proc_hook.is_running() and self.enabled:
-                    LOGGER.warning(f"GameServer #{self.id} - Starting...")
+                    LOGGER.info(f"GameServer #{self.id} - Starting...")
                     self._proc = None  # Reset the process reference
                     self._proc_hook = None  # Reset the process hook reference
                     self._pid = None
