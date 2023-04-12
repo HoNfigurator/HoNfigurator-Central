@@ -22,11 +22,11 @@ class EventBus:
                         # await callback(*args, **kwargs)
                         task = asyncio.create_task(callback(*args, **kwargs))
                         self.tasks.append(task)
+                        return task
                     else:
                         callback(*args, **kwargs)
                 except Exception as e:
                     LOGGER.exception(f"An error occurred while emitting the event '{event_type}' and executing the callback '{callback.__name__}': {e}")
-        return task
     
     async def get_tasks(self):
         return self.tasks

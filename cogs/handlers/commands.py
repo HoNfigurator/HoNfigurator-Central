@@ -372,32 +372,33 @@ class Commands:
 
     async def status(self):
         try:
-
             if len(self.game_servers) == 0:
                 print_formatted_text("No GameServers connected.")
                 return
+
             headers = []
             rows = []
             for game_server in list(self.game_servers.values()):
                 status = game_server.get_pretty_status()
-                flattened_status = flatten_dict(status)
+                flattened_status = status
                 data = []
                 for k, v in flattened_status.items():
                     if k not in headers:
                         headers.append(k)
-                    if k == "players":
-
+                    if isinstance(v, dict):
+                        # Flatten nested dict into a string
+                        v = '\n'.join([f'{sub_k}: {sub_v}' for sub_k, sub_v in v.items()])
+                    elif k == "players":
                         players_chunks = [v[i:i+5] for i in range(0, len(v), 5)]
-                        formatted_players = "\n".join(map(str, players_chunks))
-                        data.append(formatted_players)
-                    else:
-                        data.append(v)
+                        v = "\n".join(map(str, players_chunks))
+                    data.append(v)
                 rows.append(data)
 
             table = columnar(rows, headers=headers)
             print_formatted_text(table)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
 
     async def reconnect(self):
         try:
@@ -419,7 +420,7 @@ class Commands:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
     
     async def update(self):
-        self.manager_event_bus.emit('update')
+        await self.manager_event_bus.emit('update')
 
 
 from prompt_toolkit.completion import Completer, Completion
