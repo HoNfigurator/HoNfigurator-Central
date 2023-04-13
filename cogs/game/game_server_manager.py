@@ -438,13 +438,17 @@ class GameServerManager:
         replay_file_path = (self.global_config['hon_data']['hon_replays_directory'] / replay_file_name)
         file_exists = exists(replay_file_path)
 
+        LOGGER.debug(f"Received replay upload request.\n\File Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
+
         if not file_exists:
             # Send the "does not exist" packet
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
+            LOGGER.warn(f"Replay file {replay_file_path} does not exist.")
             return
 
         # Send the "exists" packet
         await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.QUEUED)
+        LOGGER.debug(f"Replay file exists. Obtaining upload location information.")
 
         # Upload the file and send status updates as required
         file_size = os.path.getsize(replay_file_path)
@@ -453,7 +457,10 @@ class GameServerManager:
 
         if upload_details is None or upload_details[1] != 200:
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            LOGGER.error(f"Failed to obtain upload location information. HTTP Response ({upload_details[1]}):\n\t{upload_details[0]}")
             return
+        
+        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
 
         upload_details_parsed = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in upload_details[0].items()}
 
@@ -461,8 +468,10 @@ class GameServerManager:
         upload_result = await self.master_server_handler.upload_replay_file(replay_file_path, replay_file_name, upload_details_parsed['TargetURL'])
         if upload_result[1] not in [204,200]:
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            LOGGER.error(f"Replay upload failed! HTTP Upload Response ({upload_result[1]})\n\t{upload_result[0]}")
             return
         await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
+        LOGGER.debug("Replay upload completed successfully.")
 
 
     async def remove_client_connection(self,client_connection):
