@@ -12,6 +12,7 @@ import ssl
 import traceback
 
 app = FastAPI()
+
 LOGGER = get_logger()
 MISC = get_misc()
 HOME_PATH = get_home()
@@ -157,7 +158,7 @@ async def start_api_server(config, game_servers_dict, event_bus, host="127.0.0.1
             # Set the handlers, log level, and propagation settings to match your existing logger
             uvicorn_logger.handlers = LOGGER.handlers.copy()
 
-            uvicorn_logger.setLevel(LOGGER.level)
+            uvicorn_logger.setLevel(logging.WARNING)
             uvicorn_logger.propagate = LOGGER.propagate
 
             # Specify the path to the certificate and key files
@@ -168,7 +169,7 @@ async def start_api_server(config, game_servers_dict, event_bus, host="127.0.0.1
                     app,
                     host=host,
                     port=port,
-                    log_level="info",
+                    log_level="warning",
                     lifespan="on",
                     use_colors=False,
                     ssl_keyfile=ssl_keyfile,
@@ -179,7 +180,7 @@ async def start_api_server(config, game_servers_dict, event_bus, host="127.0.0.1
                     app,
                     host=host,
                     port=port,
-                    log_level="info",
+                    log_level="warning",
                     lifespan="on",
                     use_colors=False
                 )
