@@ -62,7 +62,7 @@ class GameServer:
 
     def link_client_connection(self,client_connection):
         self.client_connection = client_connection
-    
+
     async def on_game_state_change(self, key, value):
         # if not self.status_received.is_set():
         #     self.status_received.set()
@@ -280,7 +280,7 @@ class GameServer:
             else:
                 await self.stop_server_network(client_connection, packet_data)
                 break
-                
+
     async def monitor_game_state_status(self, timeout=60):
         self.set_start_timer(0)
         while not self.status_received.is_set():
@@ -295,16 +295,16 @@ class GameServer:
                 LOGGER.error(f"GameServer #{self.id} either did not start correctly or took too long to start.")
                 self.reset_start_timer()
                 break
-        
+
     def get_start_timer(self):
         return self.start_timer
-    
+
     def set_start_timer(self, val):
         self.start_timer = val
-    
+
     def increment_start_timer(self, val):
         self.start_timer += 1
-    
+
     def reset_start_timer(self):
         self.start_timer = 0
 
@@ -313,7 +313,7 @@ class GameServer:
             if self.game_state["num_clients"] != 0:
                 return
         self.status_received.clear()
-            
+
         LOGGER.info(f"GameServer #{self.id} - Stopping")
         length_bytes, message_bytes = packet_data
         client_connection.writer.write(length_bytes)
@@ -373,7 +373,7 @@ class GameServer:
             # spawns the actual server as its child.
             # Until i got a better idea how to handle this, i
             # gladly introduce the following workaround :-P
-            self._proc_hook.nice(0)
+            self._proc_hook.nice(-10)
             for child in self._proc_hook.children(recursive=True):
                 child.nice(20)
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
@@ -381,7 +381,7 @@ class GameServer:
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
         else:
-            self._proc_hook.nice(0)
+            self._proc_hook.nice(10)
             for child in self._proc_hook.children(recursive=True):
                 child.nice(-19)
         LOGGER.info(f"GameServer #{self.id} - Priority set to High.")
@@ -428,7 +428,7 @@ class GameState:
     def __setitem__(self, key, value):
         self._state[key] = value
         self._emit_event(key, value)
-    
+
     def get_full_key(self, key, current_level, level=None, path=None):
         if level is None:
             level = self._state
