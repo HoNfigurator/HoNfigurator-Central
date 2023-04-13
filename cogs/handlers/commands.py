@@ -132,27 +132,41 @@ class Commands:
             "disconnect": Command("disconnect", description="Disconnect the specified GameServer. This only closes the network communication between the manager and game server, not shutdown.", usage="disconnect <GameServer# / ALL>", function=None, sub_commands=await self.disconnect_subcommands()),
             "setconfig": Command("setconfig", description="Set a configuration value for the server", usage="set config <config key> <config value>", function=None, sub_commands=await self.config_commands(),args=["force"]),
             "quit": Command("quit", description="Exit this program. Servers may terminate when they are no longer in a game.", usage="quit", function=self.quit),
-            "help": Command("help", description="Show this help text", usage="help", function=self.help, sub_commands={})
+            "help": Command("help", description="Show this help text", usage="help", function=self.help, sub_commands={}),
+            "update": Command("update", description="Update this program from the upstream git repository.", usage="update", function=self.update, sub_commands={})
         }
     def generate_subcommands(self, command_coro):
+        command_type = command_coro.__name__
         sub_commands = {"all": (lambda *cmd_args: asyncio.create_task(command_coro("all", *cmd_args)))}
-        for game_server in list(self.game_servers.values()):
-            if game_server.port in list(self.client_connections):
-                sub_commands[str(game_server.id)] = (lambda gs: (lambda *cmd_args: asyncio.create_task(command_coro(gs, *cmd_args))))(game_server)
+        if command_type == "startup_servers":
+            for game_server in list(self.game_servers.values()):
+                if game_server.port not in list(self.client_connections):
+                    sub_commands[str(game_server.id)] = (lambda gs: (lambda *cmd_args: asyncio.create_task(command_coro(gs, *cmd_args))))(game_server)
+        else:
+            for game_server in list(self.game_servers.values()):
+                if game_server.port in list(self.client_connections):
+                    sub_commands[str(game_server.id)] = (lambda gs: (lambda *cmd_args: asyncio.create_task(command_coro(gs, *cmd_args))))(game_server)
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands
 
     def generate_config_subcommands(self, config_dict, command_coro):
         sub_commands = {}
+
         for key, value in config_dict.items():
             if isinstance(value, dict):
-                sub_commands[key] = self.generate_config_subcommands(value, command_coro)
+                if key == "discord_data" or key == "hon_data":
+                    sub_commands[key] = self.generate_config_subcommands(value, command_coro)
+                else:
+                    continue
             else:
+                if key == "discord_data" or key == "hon_data":
+                    continue
                 sub_commands[key] = lambda *cmd_args: asyncio.ensure_future(command_coro(*cmd_args))
                 sub_commands[key].current_value = value
 
         sub_commands_with_help = build_subcommands_with_help(sub_commands, CONFIG_HELP)
         return sub_commands_with_help
+
 
     async def generate_args_for_set_config(self, key, value, current_path=None):
         if current_path is None:
@@ -205,7 +219,7 @@ class Commands:
         self.history = FileHistory('.command_history')
 
         async def read_user_input(prompt, completer):
-            session = PromptSession(completer=completer, complete_while_typing=True, history=self.history)
+            session = PromptSession(completer=completer, history=self.history)
             return await session.prompt_async(prompt)
 
 
@@ -360,7 +374,7 @@ class Commands:
             for game_server in list(self.game_servers.values()):
                 await self.manager_event_bus.emit('enable_game_server', game_server)
         else:
-            self.manager_event_bus.emit('enable_game_server', game_server)
+            await self.manager_event_bus.emit('enable_game_server', game_server)
     
     async def shutdown_servers(self,game_server):
         if game_server == "all":
@@ -371,32 +385,30 @@ class Commands:
 
     async def status(self):
         try:
-
             if len(self.game_servers) == 0:
                 print_formatted_text("No GameServers connected.")
                 return
+
             headers = []
             rows = []
             for game_server in list(self.game_servers.values()):
                 status = game_server.get_pretty_status()
-                flattened_status = flatten_dict(status)
+                flattened_status = status
                 data = []
                 for k, v in flattened_status.items():
                     if k not in headers:
                         headers.append(k)
-                    if k == "players":
-
-                        players_chunks = [v[i:i+5] for i in range(0, len(v), 5)]
-                        formatted_players = "\n".join(map(str, players_chunks))
-                        data.append(formatted_players)
-                    else:
-                        data.append(v)
+                    if isinstance(v, dict):
+                        # Flatten nested dict into a string
+                        v = '\n'.join([f'{sub_k}: {sub_v}' for sub_k, sub_v in v.items()])
+                    data.append(v)
                 rows.append(data)
 
             table = columnar(rows, headers=headers)
             print_formatted_text(table)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
 
     async def reconnect(self):
         try:
@@ -416,6 +428,10 @@ class Commands:
             print_formatted_text(table)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+    
+    async def update(self):
+        await self.manager_event_bus.emit('update')
+
 
 from prompt_toolkit.completion import Completer, Completion
 from prompt_toolkit.formatted_text import ANSI
@@ -434,7 +450,13 @@ class CustomCommandCompleter(Completer):
             words = document.text_before_cursor.lower().split()
             current_word = document.get_word_before_cursor()
 
-            if len(words) > 1 or current_word == '':
+            if '?' in current_word:
+                # If "?" is present, return all possible commands
+                for cmd_name, cmd_obj in self.commands.items():
+                    yield Completion(cmd_name, start_position=-len(current_word), display_meta=cmd_obj.usage)
+                return
+
+            if len(words) > 1 or (current_word == '' and len(words) > 0):
                 current_command = self.commands.get(words[0], None)
                 if current_command is not None:
                     sub_command = current_command.sub_commands
@@ -457,7 +479,6 @@ class CustomCommandCompleter(Completer):
                                 for subcommand in sub_command.keys():
                                     yield Completion(subcommand, start_position=0)
                             elif callable(sub_command):
-                                #for arg in sub_command.current_value:
                                 if current_command.name == "setconfig":
                                     yield Completion(f"<current value: {sub_command.current_value}>", start_position=-len(current_word))
                                     yield Completion(f"<enter new value>", start_position=-len(current_word))

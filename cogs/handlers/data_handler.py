@@ -29,9 +29,9 @@ class ConfigManagement():
         return None
     def get_local_configuration(self):
         if MISC.get_os_platform() == "win32":
-            executable = f"KONGOR_ARENA"
+            executable = f"hon_x64"
             suffix = ".exe"
-            file_name = f'{executable}_{self.id}{suffix}'
+            file_name = f'{executable}{suffix}'
         else:
             executable = "hon-x86_64-server"
             file_name = executable
@@ -39,7 +39,7 @@ class ConfigManagement():
         self.local = ({
             'config' : {
                 'file_name':file_name,
-                'file_path' : Path(self.get_global_by_key("hon_install_directory")) / f'{file_name}'
+                'file_path' : str(Path(self.get_global_by_key("hon_install_directory")) / f'{file_name}')
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
