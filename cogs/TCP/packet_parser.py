@@ -4,6 +4,7 @@ import inspect
 import re
 import asyncio
 import struct
+import datetime
 
 class GameManagerParser:
     def __init__(self, client_id,logger=None):
@@ -149,19 +150,18 @@ class GameManagerParser:
         # Update game dictionary with player information and print
         game_server.game_state.update({'players':clients})
 
-
-    async def long_frame(self,packet, game_server):
+    async def long_frame(self, packet, game_server):
         """  0x43 Long Frame
         when there are skipped server frames, this packet contains the time spent skipping frames (msec)
         int 1 msg type
         int 2 skipped frame LE
-
-
         """
         # TODO, event?
-        skipped_frames = int.from_bytes(packet[1:3],byteorder='little')
-        self.log("debug",f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
-        game_server.increment_skipped_frames(skipped_frames)
+        skipped_frames = int.from_bytes(packet[1:3], byteorder='little')
+        current_time = datetime.datetime.now().timestamp()  # Get current time in Unix timestamp format
+        self.log("debug", f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
+        game_server.increment_skipped_frames(skipped_frames, current_time)
+
 
 
     async def lobby_created(self,packet, game_server):
@@ -254,7 +254,7 @@ class GameManagerParser:
                 match_id = int(match.group(1))
                 self.log("debug",f"Match ID: {match_id}")
                 game_server.update_dict_value('current_match_id',match_id)
-                game_server.load(match_only=True)
+                game_server.load_gamestate_from_file(match_only=True)
             else:
                 self.log("debug","Match ID not found")
 

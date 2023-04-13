@@ -16,7 +16,7 @@ from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
-from cogs.handlers.events import stop_event, EventBus as ManagerEventBus
+from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, HealthChecks, EventBus as ManagerEventBus
 from cogs.misc.logging import get_logger, get_misc, get_home
 from enum import Enum
 from os.path import exists
@@ -30,22 +30,6 @@ COMMAND_LEN_BYTES = b'\x01\x00'
 SHUTDOWN_BYTES = b'"'
 SLEEP_BYTES = b' '
 WAKE_BYTES = b'!'
-
-# Define an Enum class for health checks
-class HealthChecks(Enum):
-    public_ip_healthcheck = 1
-    general_healthcheck = 2
-    lag_healthcheck = 3
-class ReplayStatus(Enum):
-    NONE = -1
-    GENERAL_FAILURE = 0
-    DOES_NOT_EXIST = 1
-    INVALID_HOST = 2
-    ALREADY_UPLOADED = 3
-    ALREADY_QUEUED = 4
-    QUEUED = 5
-    UPLOADING = 6
-    UPLOAD_COMPLETE = 7
 
 # Define a function to choose a health check based on its type
 # def choose_health_check(type):
@@ -520,6 +504,7 @@ class GameServerManager:
         This function does not return anything, but can log errors or other information.
         """
         async def start_game_server_with_semaphore(game_server, timeout):
+            game_server.game_state.update({'status':GameStatus.QUEUED.value})
             async with self.server_start_semaphore:
                 started = await game_server.start_server(timeout=timeout)
                 if not started:

@@ -33,8 +33,14 @@ class Misc:
             return Misc.parse_linux_procs(proc_name, slave_id)
         procs = []
         for proc in psutil.process_iter():
-            if proc.name() == proc_name:
-                procs.append(proc)
+            if proc_name == proc.name():
+                cmd_line = proc.cmdline()
+                if len(cmd_line) < 5:
+                    continue
+                for item in cmd_line[4].split(";"):
+                    if "svr_slave" in item:
+                        if int(item.split(" ")[-1]) == slave_id:
+                            procs.append(proc)
         return procs
     def check_port(port):
         command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)
@@ -70,10 +76,28 @@ class Misc:
                 for line in f:
                     if line.startswith('model name'):
                         return line.split(':')[1].strip()
+    def format_memory(self,value):
+        if value < 1:
+            return round(value * 1024)  # Convert to MB and round
+        else:
+            return round(value, 2)  # Keep value in GB, round to 2 decimal points
+
     def get_total_ram(self):
-        return self.total_ram
-    def get_cpu_load():
-        return psutil.getloadavg()
+        total_ram_gb = self.total_ram / (1024 ** 3)  # Convert bytes to GB
+        return self.format_memory(total_ram_gb)
+
+    def get_used_ram(self):
+        used_ram_gb = psutil.virtual_memory().used / (1024 ** 3)  # Convert bytes to GB
+        return self.format_memory(used_ram_gb)
+
+    def get_cpu_load(self):
+        # Getting loadover15 minutes
+        load1, load5, load15 = psutil.getloadavg()
+
+        cpu_usage = (load1/os.cpu_count()) * 100
+
+        return round(cpu_usage, 2)
+
     def get_os_platform(self):
         return self.os_platform
     def get_total_allowed_servers(self,svr_total_per_core):

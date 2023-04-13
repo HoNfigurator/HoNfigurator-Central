@@ -219,7 +219,7 @@ class Commands:
         self.history = FileHistory('.command_history')
 
         async def read_user_input(prompt, completer):
-            session = PromptSession(completer=completer, complete_while_typing=True, history=self.history)
+            session = PromptSession(completer=completer, history=self.history)
             return await session.prompt_async(prompt)
 
 

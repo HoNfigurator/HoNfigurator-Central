@@ -7,6 +7,9 @@ GameServer*state*.json
 config.json
 .command_history
 logs/*
+*.pem
+*.key
+*.crt
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]

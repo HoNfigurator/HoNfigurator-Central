@@ -29,9 +29,9 @@ class ConfigManagement():
         return None
     def get_local_configuration(self):
         if MISC.get_os_platform() == "win32":
-            executable = f"KONGOR_ARENA"
+            executable = f"hon_x64"
             suffix = ".exe"
-            file_name = f'{executable}_{self.id}{suffix}'
+            file_name = f'{executable}{suffix}'
         else:
             executable = "hon-x86_64-server"
             file_name = executable

@@ -9,7 +9,7 @@ import math
 import sys
 import os
 from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
-from cogs.handlers.events import stop_event, EventBus as GameEventBus
+from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 
@@ -106,7 +106,6 @@ class GameServer:
             with open(self.data_file, "r") as f:
                 performance_data = json.load(f)
             if not match_only:
-                self.game_state._state['performance']['grandtotal_skipped_frames'] = performance_data['grandtotal_skipped_frames']
                 self.game_state._state['performance']['total_ingame_skipped_frames'] = performance_data['total_ingame_skipped_frames']
             if self.game_state._state['current_match_id'] in performance_data:
                 self.game_state._state.update({'now_ingame_skipped_frames':self.game_state._state['now_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
@@ -118,7 +117,6 @@ class GameServer:
                 performance_data = json.load(f)
 
             performance_data = {
-                'grandtotal_skipped_frames':self.game_state._state['performance']['grandtotal_skipped_frames'],
                 'total_ingame_skipped_frames':self.game_state._state['performance']['total_ingame_skipped_frames'],
                 current_match_id: {
                     'now_ingame_skipped_frames': self.game_state._state['performance'].get('now_ingame_skipped_frames', 0)
@@ -127,7 +125,6 @@ class GameServer:
 
         else:
             performance_data = {
-                'grandtotal_skipped_frames': 0,
                 'total_ingame_skipped_frames': 0,
                 current_match_id: {
                     'now_ingame_skipped_frames': self.game_state._state['performance'].get('now_ingame_skipped_frames', 0)
@@ -146,11 +143,11 @@ class GameServer:
     def reset_skipped_frames(self):
         self.game_state._state['performance']['now_ingame_skipped_frames'] = 0
 
-    def increment_skipped_frames(self, frames):
-        self.game_state._state['performance']['grandtotal_skipped_frames'] +=frames
+    def increment_skipped_frames(self, frames, time):
         if self.get_dict_value('match_started') == 1:
             self.game_state._state['performance']['total_ingame_skipped_frames'] += frames
             self.game_state._state['performance']['now_ingame_skipped_frames'] += frames
+        self.game_state._state['skipped_frames_detailed'][time] = frames
 
     def get_pretty_status(self):
         def format_time(seconds):
@@ -175,22 +172,26 @@ class GameServer:
             'Port': self.port,
             'Status': 'Unknown',
             'Game Phase': 'Unknown',
-            'Connections': 0,
+            'Connections': self.get_dict_value('num_clients'),
             'Players': 'Unknown',
             'Uptime': 'Unknown',
+            'CPU Core': self.config.get_local_by_key('host_affinity'),
+            'Scheduled Shutdown': 'Yes' if self.scheduled_shutdown else 'No',
             'Performance (lag)': {
-                'grand total':f"{self.get_dict_value('grandtotal_skipped_frames')/1000} seconds",
                 'total while in-game':f"{self.get_dict_value('total_ingame_skipped_frames')/1000} seconds",
                 'current game':f"{self.get_dict_value('now_ingame_skipped_frames')/1000} seconds"
             },
-            'Core': self.config.get_local_by_key('host_affinity')
         }
-        if self.get_dict_value('status') == 0:
+        if self.get_dict_value('status') == GameStatus.SLEEPING.value:
             temp['Status'] = 'Sleeping'
-        if self.get_dict_value('status') == 1:
+        elif self.get_dict_value('status') == GameStatus.READY.value:
             temp['Status'] = 'Ready'
-        elif self.get_dict_value('status') == 3:
-            temp['Status'] = 'Active'
+        elif self.get_dict_value('status') == GameStatus.OCCUPIED.value:
+            temp['Status'] = 'Occupied'
+        elif self.get_dict_value('status') == GameStatus.STARTING.value:
+            temp['Status'] = 'Starting'
+        elif self.get_dict_value('status') == GameStatus.QUEUED.value:
+            temp['Status'] = 'Queued'
 
         game_phase_mapping = {
             0: '',
@@ -221,7 +222,6 @@ class GameServer:
 
         if await self.get_running_server():
             self.scheduled_shutdown = False
-            self.tasks['monitor']
             return True
 
         free_mem = psutil.virtual_memory().available
@@ -248,6 +248,7 @@ class GameServer:
         self._proc_hook = psutil.Process(pid=exe.pid)
         self._proc_owner =self._proc_hook.username()
         self.scheduled_shutdown = False
+        self.game_state.update({'status':GameStatus.STARTING.value})
 
         #self.tasks.update({'startup_monitor':asyncio.create_task(self.monitor_game_state_status())})
 
@@ -488,10 +489,10 @@ class GameState:
             'current_match_id': None,
             'players': [],
             'performance': {
-                'grandtotal_skipped_frames': 0,
                 'total_ingame_skipped_frames': 0,
                 'now_ingame_skipped_frames': 0
             },
+            'skipped_frames_detailed': {},
             'match_info':{
                 'map':None,
                 'mode':None,
