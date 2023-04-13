@@ -62,8 +62,6 @@ class MasterServerHandler:
             try:
                 with open(file_path, 'rb') as file:
                     data = aiohttp.FormData(quote_fields=False)
-                    # data.add_field('match_id', str(match_id))
-                    # data.add_field('file_extension', extension)
                     data.add_field('file', file, filename=file_name, content_type='application/octet-stream')
                     async with session.post(f"http://{url}", data=data) as response:
                         return await response.text(), response.status
