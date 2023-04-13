@@ -438,7 +438,7 @@ class GameServerManager:
         replay_file_path = (self.global_config['hon_data']['hon_replays_directory'] / replay_file_name)
         file_exists = exists(replay_file_path)
 
-        LOGGER.debug(f"Received replay upload request.\n\File Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
+        LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
 
         if not file_exists:
             # Send the "does not exist" packet
