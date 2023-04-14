@@ -100,6 +100,13 @@ class Misc:
 
     def get_os_platform(self):
         return self.os_platform
+    def get_num_reserved_cpus(self):
+        if self.cpu_count <=4:
+            return 1
+        elif self.cpu_count >4 and self.cpu_count <= 12:
+            return 2
+        elif self.cpu_count >12:
+            return 4
     def get_total_allowed_servers(self,svr_total_per_core):
         total = svr_total_per_core * self.cpu_count
         if self.cpu_count <=4:

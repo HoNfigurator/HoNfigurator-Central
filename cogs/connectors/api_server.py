@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Response, Body, Request
+from fastapi import FastAPI, Response, Body, HTTPException
 from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import uvicorn
@@ -27,6 +27,17 @@ def get_config_item_by_key(k):
         try: return d[k]
         except: pass
     return None
+
+class Credentials(BaseModel):
+    email: str
+    password: str
+
+@app.post("/api/authenticate")
+def authenticate_user(credentials: Credentials):
+    if credentials.email == "test@test.com" and credentials.password == "test":
+        return {"token": "sample_token"}
+    else:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
 
 @app.get("/api/data")
 def get_data():
@@ -115,6 +126,9 @@ def get_server_config():
     # Return the local configurations as a JSON response
     return Response(content=json_content, media_type="application/json")
 
+@app.get("/api/get_num_reserved_cpus")
+def get_num_reserved_cpus():
+    return str(MISC.get_num_reserved_cpus())
 
 @app.get("/api/get_instances_status")
 def get_instances():
