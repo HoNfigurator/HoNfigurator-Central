@@ -223,14 +223,14 @@ class GameServerManager:
 
             # Check if the update was successful
             if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
-                print("Update successful. Relaunching the code...")
+                LOGGER.info("Update successful. Relaunching the code...")
 
                 # Relaunch the code
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             else:
-                print("Already up to date. No need to relaunch.")
+                LOGGER.info("Already up to date. No need to relaunch.")
         except subprocess.CalledProcessError as e:
-            print(f"Error updating the code: {e}")
+            LOGGER.error(f"Error updating the code: {e}")
 
     def create_handle_connections_task(self, *args):
         task = asyncio.create_task(self.manage_upstream_connections(*args))
@@ -469,8 +469,8 @@ class GameServerManager:
         await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
         try:
             upload_result = await self.master_server_handler.upload_replay_file(replay_file_path, replay_file_name, upload_details_parsed['TargetURL'])
-        except Exception as e:
-            print("Undefined Exception: ", e)
+        except Exception:
+            LOGGER.exception(f"Undefined Exception: {traceback.format_exc()}")
 
         if upload_result[1] not in [204,200]:
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)

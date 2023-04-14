@@ -199,6 +199,6 @@ async def start_api_server(config, game_servers_dict, event_bus, host="127.0.0.1
                     use_colors=False
                 )
         except Exception:
-            print(traceback.format_exc())
+            LOGGER.exception(traceback.format_exc())
     # Create an asyncio task from the coroutine, and return the task
     return asyncio.create_task(asgi_server())

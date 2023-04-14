@@ -451,11 +451,6 @@ class GameChatParser:
         ip_addr = ip_addr.decode('utf-8')
         region = region.decode('utf-8')
         server_name = server_name.decode('utf-8')
-        #reversed_bytes = new_packet[::-1]
-        #second_null_index = reversed_bytes[1:].find(b'\x00')
-        # version_index = second_null_index+8+2   #   there are always 8 null bytes after the hostname in the reversed byte array. add 2 to make up for the skipped null index at the start
-        # version_number = reversed_bytes[version_index:].split(b'\x00', 1)[0].decode('utf-8')
-        # version_number = version_number[::-1]
         self.log("debug",f"{self.print_prefix}Server sent lobby information\n\tIP Addr: {ip_addr}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tSlave ID: {slave_id}\n\tMatch ID: {match_id}")
 
     async def game_player_connection(self, packet_data):
