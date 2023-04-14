@@ -459,10 +459,10 @@ class GameServerManager:
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             LOGGER.error(f"Failed to obtain upload location information. HTTP Response ({upload_details[1]}):\n\t{upload_details[0]}")
             return
-        
-        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
 
         upload_details_parsed = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in upload_details[0].items()}
+
+        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
 
         await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
         upload_result = await self.master_server_handler.upload_replay_file(replay_file_path, replay_file_name, upload_details_parsed['TargetURL'])

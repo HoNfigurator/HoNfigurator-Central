@@ -18,17 +18,53 @@ MISC = get_misc()
 pip_requirements = HOME_PATH / 'requirements.txt'
 
 class SetupEnvironment:
-    def __init__(self,config_file):
+    def __init__(self,config_file_hon):
         self.PATH_KEYS_IN_CONFIG_FILE = ["hon_install_directory","hon_home_directory"]
         self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path']
         self.ALL_PATH_TYPES = self.PATH_KEYS_IN_CONFIG_FILE + self.PATH_KEYS_NOT_IN_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip","svr_version","hon_executable"]
-        self.config_file = config_file
-        self.default_configuration = self.get_default_configuration()
+        self.config_file_hon = config_file_hon
+        self.config_file_logging = HOME_PATH / "config" / "logging.json"
+        self.default_configuration = self.get_default_hon_configuration()
         self.hon_data = self.default_configuration['hon_data']
         self.current_data = None
 
-    def get_default_configuration(self):
+    def get_default_logging_configuration(self):
+        return {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "formatters": {
+                "default": {
+                    "format": "%(asctime)s - %(levelname)s - %(filename)s:%(lineno)d - %(message)s"
+                },
+                "simple": {
+                    "format": "%(asctime)s - %(levelname)s - %(message)s"
+                }
+            },
+            "handlers": {
+                "file": {
+                    "class": "logging.handlers.RotatingFileHandler",
+                    "filename": "logs/server.log",
+                    "maxBytes": 10485760,
+                    "backupCount": 5,
+                    "formatter": "default"
+                },
+                "console": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "simple"
+                }
+            },
+            "loggers": {
+                "Server": {
+                    "handlers": ["file", "console"],
+                    "level": "INFO",
+                    "propagate": False
+                }
+            }
+        }
+
+
+    def get_default_hon_configuration(self):
         return {
             "discord_data": {
                 "token": "asdfasd",
@@ -76,8 +112,8 @@ class SetupEnvironment:
         }
 
     def get_existing_configuration(self):
-        with open(self.config_file, 'r') as config_file:
-            hon_data = json.load(config_file)
+        with open(self.config_file_hon, 'r') as config_file_hon:
+            hon_data = json.load(config_file_hon)
         return hon_data
 
     def validate_hon_data(self, hon_data=None):
@@ -87,7 +123,7 @@ class SetupEnvironment:
         major_issues = []
         minor_issues = []
 
-        default_configuration = self.get_default_configuration()
+        default_configuration = self.get_default_hon_configuration()
         default_hon_data = default_configuration['hon_data']
 
         for key, value in self.hon_data.items():
@@ -166,18 +202,24 @@ class SetupEnvironment:
         return True
 
     def check_configuration(self):
-        if not os.path.exists(pathlib.PurePath(self.config_file).parent):
-            os.makedirs(pathlib.PurePath(self.config_file).parent)
-        if not os.path.exists(self.config_file):
-            return self.create_configuration_file()
+        if not os.path.exists(pathlib.PurePath(self.config_file_hon).parent):
+            os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
+        if not os.path.exists(self.config_file_logging):
+            self.create_logging_configuration_file()
+        if not os.path.exists(self.config_file_hon):
+            return self.create_hon_configuration_file()
         else:
             self.hon_data = self.get_existing_configuration()
             self.full_config = self.merge_config()
             if self.validate_hon_data(self.full_config['hon_data']):
                 return True
             else: return False
+    
+    def create_logging_configuration_file(self):
+        with open(str(self.config_file_logging), 'w') as config_file_logging:
+            json.dump(self.get_default_logging_configuration(), config_file_logging, indent=4)
 
-    def create_configuration_file(self):
+    def create_hon_configuration_file(self):
 
         print("Configuration file not found. Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
 
@@ -234,17 +276,17 @@ class SetupEnvironment:
         for path in self.PATH_KEYS_IN_CONFIG_FILE:
             hon_data_to_save[path] = str(hon_data_to_save[path])
 
-        if Path(self.config_file).exists():
+        if Path(self.config_file_hon).exists():
             if are_dicts_equal_with_types(self.get_existing_configuration(), hon_data_to_save):
                 return False
 
-        with open(self.config_file, 'w') as config_file:
-            json.dump(hon_data_to_save, config_file, indent=4)
+        with open(self.config_file_hon, 'w') as config_file_hon:
+            json.dump(hon_data_to_save, config_file_hon, indent=4)
 
         return True
 
     def merge_config(self):
-        config = self.get_default_configuration()
+        config = self.get_default_hon_configuration()
         config['system_data'] = self.add_miscellaneous_data()
         config['hon_data'].update(self.hon_data)
         return config
