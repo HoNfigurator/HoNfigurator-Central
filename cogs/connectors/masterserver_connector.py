@@ -59,15 +59,16 @@ class MasterServerHandler:
                 else:
                     LOGGER.error(f"Error fetching upload information: {response.status}")
                     return {"error": "Error fetching upload information", "status": response.status}, response.status
-    
+
     async def upload_replay_file(self, file_path, file_name, url):
         async with aiohttp.ClientSession() as session:
             try:
-                with open(file_path, 'rb') as file:
+                with open(file_path, 'rb') as replay_file:
                     data = aiohttp.FormData(quote_fields=False)
-                    data.add_field('file', file, filename=file_name, content_type='application/octet-stream')
+                    headers = {'User-Agent': f'S2 Games/Heroes of Newerth/{self.version}/was/x86_64'}
+                    data.add_field('file', replay_file, filename=file_name, content_type='application/octet-stream')
                     LOGGER.debug(f"Request data: {data[:100]}... (truncated)")
-                    async with session.post(f"http://{url}", data=data) as response:
+                    async with session.post(f"https://{url}", data=data, headers=headers) as response:
                         return await response.text(), response.status
             except IOError:
                 LOGGER.exception(f"Error opening the file: {file_path}")

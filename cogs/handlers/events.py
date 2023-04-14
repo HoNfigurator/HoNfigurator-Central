@@ -28,7 +28,7 @@ class EventBus:
                         callback(*args, **kwargs)
                 except Exception as e:
                     LOGGER.exception(f"An error occurred while emitting the event '{event_type}' and executing the callback '{callback.__name__}': {e}")
-    
+
     async def get_tasks(self):
         return self.tasks
 
