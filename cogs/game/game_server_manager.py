@@ -83,13 +83,13 @@ class GameServerManager:
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         self.create_all_game_servers()
-        
+
         self.tasks.update({'cli_handler':asyncio.create_task(self.commands.handle_input())})
 
         # Start running health checks
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus)
         self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
-    
+
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0):
         try:
             if game_server is None: return
@@ -121,11 +121,11 @@ class GameServerManager:
         try:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
-            
+
             client_connection.writer.write(COMMAND_LEN_BYTES)
             client_connection.writer.write(WAKE_BYTES)
             await client_connection.writer.drain()
-            
+
             LOGGER.info(f"Command - Wake command sent to GameServer #{game_server.id}.")
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -134,11 +134,11 @@ class GameServerManager:
         try:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
-            
+
             client_connection.writer.write(COMMAND_LEN_BYTES)
             client_connection.writer.write(SLEEP_BYTES)
             await client_connection.writer.drain()
-            
+
             LOGGER.info(f"Command - Sleep command sent to GameServer #{game_server.id}.")
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -455,17 +455,21 @@ class GameServerManager:
 
         upload_details = await self.master_server_handler.get_replay_upload_info(match_id, extension, self.global_config['hon_data']['svr_login'], file_size)
 
+
         if upload_details is None or upload_details[1] != 200:
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             LOGGER.error(f"Failed to obtain upload location information. HTTP Response ({upload_details[1]}):\n\t{upload_details[0]}")
             return
-        
-        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
 
         upload_details_parsed = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in upload_details[0].items()}
+        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
 
         await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
-        upload_result = await self.master_server_handler.upload_replay_file(replay_file_path, replay_file_name, upload_details_parsed['TargetURL'])
+        try:
+            upload_result = await self.master_server_handler.upload_replay_file(replay_file_path, replay_file_name, upload_details_parsed['TargetURL'])
+        except Exception as e:
+            print("Undefined Exception: ", e)
+
         if upload_result[1] not in [204,200]:
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             LOGGER.error(f"Replay upload failed! HTTP Upload Response ({upload_result[1]})\n\t{upload_result[0]}")
@@ -535,7 +539,7 @@ class GameServerManager:
 
     async def disable_game_server(self, game_server):
         game_server.disable_server()
-    
+
     async def enable_game_server(self, game_server):
         game_server.enable_server()
 
