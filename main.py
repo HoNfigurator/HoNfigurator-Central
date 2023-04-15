@@ -35,9 +35,11 @@ async def main():
 
     if sys.platform == "linux":
         if os.getuid() != 0:
+            print("---- IMPORTANT ----")
             print("You have to run it as root (at the moment)")
             print("Reason is the priority setting on the game instances.")
-            exit()
+            print("---- IMPORTANT ----")
+            return
 
     requirements_check = PrepareDependencies()
     requirements_check.update_dependencies()
