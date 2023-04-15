@@ -20,6 +20,8 @@ from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, Con
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
 
+import cProfile
+
 LOGGER = get_logger()
 CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
 
@@ -44,7 +46,7 @@ async def main():
     else:
         LOGGER.exception(f"{traceback.format_exc()}")
         raise ConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
-    
+
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
     # TODO: Put this back to -1 when done
@@ -52,6 +54,7 @@ async def main():
 
     # instantiate the manager
     game_server_manager = GameServerManager(global_config)
+    handle_input_task = asyncio.create_task(game_server_manager.commands.handle_input())
     # Print configuration overview
     print_formatted_text("\nConfiguration Overview")
     for key,value in global_config['hon_data'].items():
@@ -70,7 +73,7 @@ async def main():
         api_task = await game_server_manager.start_api_server()
         game_server_listener_task = game_server_manager.start_game_server_listener_task(host,game_server_to_mgr_port)
         auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
-        
+
         start_task = game_server_manager.start_game_servers_task("all")
 
         stop_task = asyncio.create_task(stop_event.wait())
@@ -85,6 +88,7 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        #cProfile.run("asyncio.run(main())", sort="cumtime", filename="profile_results.prof")
         asyncio.run(main())
     except KeyboardInterrupt:
         LOGGER.info("KeyBoardInterrupt: Manager shutting down...")

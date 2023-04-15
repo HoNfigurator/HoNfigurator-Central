@@ -49,7 +49,7 @@ def compute_sub_command_depth(sub_commands, target_sub_command):
             return max(depths)
         else:
             return 0
-        
+
 def get_value_from_nested_dict(nested_dict, keys):
     current_dict = nested_dict
     for key in keys:
@@ -86,7 +86,7 @@ class Command:
         self.sub_commands = sub_commands or {}
         self.args = args or []
         self.aliases = aliases or []
-        
+
     def get(self, key, default=None):
         return super().get(key, default)
 
@@ -105,7 +105,7 @@ class Commands:
 
     async def disconnect_subcommands(self):
         return self.generate_subcommands(self.disconnect)
-    
+
     async def startup_servers_subcommands(self):
         return self.generate_subcommands(self.startup_servers)
 
@@ -113,6 +113,7 @@ class Commands:
         return self.generate_config_subcommands(self.global_config, self.set_config)
 
     def __init__(self, game_servers, client_connections, global_config, manager_event_bus):
+        self.subcommands_changed = asyncio.Event()
         self.manager_event_bus = manager_event_bus
         self.game_servers = game_servers
         self.client_connections = client_connections
@@ -180,7 +181,7 @@ class Commands:
             args_list.append(new_path + [value])
 
         return args_list
-    
+
     async def set_config(self, args):
         keys = args[:-1]
         value = args[-1]
@@ -233,7 +234,6 @@ class Commands:
                 completer = self.command_completer
 
                 input_future = asyncio.ensure_future(read_user_input(prompt, completer))
-
                 done, pending = await asyncio.wait([input_future, self.subcommands_changed.wait()], return_when=asyncio.FIRST_COMPLETED)
 
                 if input_future in done:
@@ -310,7 +310,7 @@ class Commands:
 
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    await self.manager_event_bus.emit('cmd_wake_server', game_server)    
+                    await self.manager_event_bus.emit('cmd_wake_server', game_server)
             else:
                 await self.manager_event_bus.emit('cmd_wake_server', game_server)
         except Exception as e:
@@ -322,18 +322,18 @@ class Commands:
 
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    await self.manager_event_bus.emit('cmd_sleep_server', game_server)    
+                    await self.manager_event_bus.emit('cmd_sleep_server', game_server)
             else:
                 await self.manager_event_bus.emit('cmd_sleep_server', game_server)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def cmd_message_server(self, game_server=None, message=None):
         try:
             if game_server is None or message is None:
                 print_formatted_text("Usage: message <GameServer#> <message>")
                 return
-            
+
             if game_server == "all":
                 for game_server in list(self.game_servers.values()):
                     await self.manager_event_bus.emit('cmd_message_server', game_server, message)
@@ -375,7 +375,7 @@ class Commands:
                 await self.manager_event_bus.emit('enable_game_server', game_server)
         else:
             await self.manager_event_bus.emit('enable_game_server', game_server)
-    
+
     async def shutdown_servers(self,game_server):
         if game_server == "all":
             for game_server in list(self.game_servers.values()):
@@ -428,7 +428,7 @@ class Commands:
             print_formatted_text(table)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def update(self):
         await self.manager_event_bus.emit('update')
 
@@ -501,7 +501,7 @@ class CustomCommandCompleter(Completer):
                                     for subcommand in temp_sub_command.keys():
                                         if subcommand.lower().startswith(current_word.lower()):
                                             yield Completion(subcommand, start_position=-len(current_word))
-                                
+
                                 elif callable(temp_sub_command):
                                     for arg in current_command.args:
                                         if arg.lower().startswith(current_word.lower()):
