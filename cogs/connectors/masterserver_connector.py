@@ -22,6 +22,8 @@ class MasterServerHandler:
             "Accept": "*/*",
             "Content-Type": "application/x-www-form-urlencoded"
         }
+        LOGGER.debug(f"Master server URL: {self.base_url}")
+        LOGGER.debug(f"Headers: {self.headers}")
 
     async def send_replay_auth(self, login, password):
         url = f"{self.base_url}/server_requester.php?f=replay_auth"
@@ -44,6 +46,7 @@ class MasterServerHandler:
             # "md5_checksum": 'ffcb32ec48b2cf5e57943409fb4b44cd',
             # "hash_key": '588da37c6689075914fdaea4a9b93b1d919e93b0'
         }
+        LOGGER.debug(f"Request data: {data}")
         async with aiohttp.ClientSession() as session:
             async with session.post(url, data=data, headers=self.headers) as response:
                 if response.status == 200:
@@ -64,6 +67,7 @@ class MasterServerHandler:
                     data = aiohttp.FormData(quote_fields=False)
                     headers = {'User-Agent': f'S2 Games/Heroes of Newerth/{self.version}/was/x86_64'}
                     data.add_field('file', replay_file, filename=file_name, content_type='application/octet-stream')
+                    LOGGER.debug(f"Request data: {data[:100]}... (truncated)")
                     async with session.post(f"https://{url}", data=data, headers=headers) as response:
                         return await response.text(), response.status
             except IOError:

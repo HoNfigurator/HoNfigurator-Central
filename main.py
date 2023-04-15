@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
-import traceback, sys
-from pathlib import Path
+import traceback, sys, os
 import threading
 import asyncio
 from pathlib import Path
@@ -35,6 +34,14 @@ def show_exception_and_exit(exc_type, exc_value, tb):
 sys.excepthook = show_exception_and_exit
 
 async def main():
+
+    if sys.platform == "linux":
+        if os.getuid() != 0:
+            print("---- IMPORTANT ----")
+            print("You have to run it as root (at the moment)")
+            print("Reason is the priority setting on the game instances.")
+            print("---- IMPORTANT ----")
+            return
 
     requirements_check = PrepareDependencies()
     requirements_check.update_dependencies()
