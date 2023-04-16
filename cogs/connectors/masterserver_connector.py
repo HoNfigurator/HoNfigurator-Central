@@ -67,8 +67,10 @@ class MasterServerHandler:
                     data = aiohttp.FormData(quote_fields=False)
                     headers = {'User-Agent': f'S2 Games/Heroes of Newerth/{self.version}/was/x86_64'}
                     data.add_field('file', replay_file, filename=file_name, content_type='application/octet-stream')
-                    LOGGER.debug(f"Request data: {data[:100]}... (truncated)")
+                    #LOGGER.debug(f"Request data: {data[:100]}... (truncated)")
+                    #'FormData' object is not subscriptable
                     async with session.post(f"https://{url}", data=data, headers=headers) as response:
+                        LOGGER.debug(f"Code: {response.status}, Text: response.text()")
                         return await response.text(), response.status
             except IOError:
                 LOGGER.exception(f"Error opening the file: {file_path}")
