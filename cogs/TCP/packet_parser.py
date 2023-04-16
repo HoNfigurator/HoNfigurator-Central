@@ -134,18 +134,18 @@ class GameManagerParser:
             ip_start, ip_end = ip_match.span()
             name_start = data[ip_end:].find(b'\x00') + ip_end
             name_end = data[name_start+1:].find(b'\x00') + name_start + 1
-            name = data[name_start:name_end].decode('utf-8').replace('\x00', '')
+            name = data[name_start:name_end].decode('utf-16le').replace('\x00', '')
             account_id = int.from_bytes(data[ip_start-4:ip_start], byteorder='little')
             location_start = data[name_end+1:].find(b'\x00') + name_end + 1
             location_end = data[location_start+1:].find(b'\x00') + location_start + 1
-            location = data[location_start:location_end-1].decode('utf-8') if location_start > name_end+1 else ''
+            location = data[location_start:location_end-1].decode('utf-16le') if location_start > name_end+1 else ''
 
             # Append extracted data to the clients list as a dictionary
             clients.append({
                 'account_id': account_id,
                 'name': name,
                 'location': location,
-                'ip': data[ip_start:ip_end].decode('utf-8')
+                'ip': data[ip_start:ip_end].decode('utf-16le')
             })
         # Update game dictionary with player information and print
         game_server.game_state.update({'players':clients})
@@ -187,7 +187,7 @@ class GameManagerParser:
             null_byte_index = packet[current_index:].index(b'\x00')
             # Extract the current string and append it to the list of strings
             try:
-                string_value = packet[current_index:current_index+null_byte_index].decode('utf-8')
+                string_value = packet[current_index:current_index+null_byte_index].decode('utf-16le')
             except (UnicodeDecodeError, ValueError) as e:
                 self.log("exception",f"GameServer #{self.id}: An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet: {packet}")
                 string_value = ""
@@ -197,7 +197,7 @@ class GameManagerParser:
             current_index += null_byte_index + 1
 
         # Extract the unknown string from the packet bytes
-        unknown = packet[28:32].decode('utf-8').rstrip('\x00')
+        unknown = packet[28:32].decode('utf-16le').rstrip('\x00')
 
         # Create a dictionary containing the lobby information
         lobby_info = {
@@ -314,11 +314,11 @@ class ManagerChatParser:
         directory,_,remaining_data = remaining_data.partition(b'\x00')
         upload_to_ftb = remaining_data[0]
         upload_to_s3 = remaining_data[1]
-        download_link = remaining_data[2:].split(b'\x00', 1)[0].decode('utf-8')
+        download_link = remaining_data[2:].split(b'\x00', 1)[0].decode('utf-16le')
 
-        extension = extension.decode('utf-8')
-        filehost = filehost.decode('utf-8')
-        directory = directory.decode('utf-8')
+        extension = extension.decode('utf-16le')
+        filehost = filehost.decode('utf-16le')
+        directory = directory.decode('utf-16le')
 
         parsed = {"account_id":account_id,"match_id":match_id,"extension":extension,"filehost":filehost,"directory":directory,"upload_to_ftb":upload_to_ftb,"upload_to_s3":upload_to_s3,"download_link":download_link}
         self.log("debug",f"{self.print_prefix}Upload replay\n Account ID: {account_id}\n Match ID: {match_id}\n Extension: {extension}\n Filehost: {filehost}\n Directory: {directory}\n Upload to ftb: {upload_to_ftb}\n Upload to S3: {upload_to_s3}\n Download Link: {download_link}")
@@ -337,7 +337,7 @@ class ManagerChatParser:
         #   Handshake
         #   b'+\x00\x00\x16Y\xf0\x02\x00f7851dd680764deaabf4bcc447ce5b57\x00F\x00\x00\x00'  -working
         server_id = int.from_bytes(packet_data[2:6],byteorder='little')
-        session_id = packet_data[6:].split(b'\x00', 1)[0].decode('utf-8')
+        session_id = packet_data[6:].split(b'\x00', 1)[0].decode('utf-16le')
         self.log("debug",f"{self.print_prefix}Handshake\n\tServer ID: {server_id}\n\tSession: {session_id}")
 
     async def mgr_server_info_update(self,packet_data):
@@ -448,9 +448,9 @@ class GameChatParser:
         u2 = packet_data[9]  # ?
         u3 = packet_data[10] # ?     this and above 2 combined = 2097155
         #   8-10 ? b'x03\x00 '
-        ip_addr = ip_addr.decode('utf-8')
-        region = region.decode('utf-8')
-        server_name = server_name.decode('utf-8')
+        ip_addr = ip_addr.decode('utf-16le')
+        region = region.decode('utf-16le')
+        server_name = server_name.decode('utf-16le')
         self.log("debug",f"{self.print_prefix}Server sent lobby information\n\tIP Addr: {ip_addr}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tSlave ID: {slave_id}\n\tMatch ID: {match_id}")
 
     async def game_player_connection(self, packet_data):

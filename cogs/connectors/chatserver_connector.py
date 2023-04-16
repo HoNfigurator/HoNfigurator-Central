@@ -80,7 +80,7 @@ class ChatServerHandler:
 
     def create_handshake_packet(self, session_id, server_id):
         msg_type = 0x1600
-        packet = struct.pack('<H', msg_type) + struct.pack('<I', self.server_id) + self.session_id.encode('utf-8') + b'\x00' + struct.pack('<I', 70)
+        packet = struct.pack('<H', msg_type) + struct.pack('<I', self.server_id) + self.session_id.encode('utf-16le') + b'\x00' + struct.pack('<I', 70)
         msg_len = len(packet)
         packet = struct.pack('<H', msg_len) + packet
 
@@ -91,11 +91,11 @@ class ChatServerHandler:
         msg_type = 0x1602
         packet_data = struct.pack('<H', msg_type)
         packet_data += int.to_bytes(server_id,4,byteorder='little')
-        packet_data += username.encode('utf-8') + b'\x00'
-        packet_data += region.encode('utf-8') + b'\x00'
-        packet_data += server_name.encode('utf-8') + b'\x00'
-        packet_data += version.encode('utf-8') + b'\x00'
-        packet_data += ip_addr.encode('utf-8') + b'\x00'
+        packet_data += username.encode('utf-16le') + b'\x00'
+        packet_data += region.encode('utf-16le') + b'\x00'
+        packet_data += server_name.encode('utf-16le') + b'\x00'
+        packet_data += version.encode('utf-16le') + b'\x00'
+        packet_data += ip_addr.encode('utf-16le') + b'\x00'
         packet_data += int.to_bytes(udp_ping_responder_port,2,byteorder='little')
         packet_data += b'\x00' #    0 = running, 1 = shutting down
         packet_len = len(packet_data)

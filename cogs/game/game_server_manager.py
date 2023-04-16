@@ -283,7 +283,7 @@ class GameServerManager:
             LOGGER.error("Authentication to MasterServer failed.")
             raise AuthenticationError(f"[{mserver_auth_response[1]}] Authentication error")
         LOGGER.info("Authenticated to MasterServer.")
-        parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
+        parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-16le'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
 
         return parsed_mserver_auth_response

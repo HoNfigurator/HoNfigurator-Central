@@ -52,7 +52,7 @@ class MasterServerHandler:
                 if response.status == 200:
                     try:
                         response_text = await response.text()
-                        return phpserialize.loads(response_text.encode('utf-8')), response.status
+                        return phpserialize.loads(response_text.encode('utf-16le')), response.status
                     except Exception:
                         LOGGER.exception(f"Error parsing PHP serialized response: {traceback.format_exc()}")
                         return {"error": "Error parsing PHP serialized response", "exception": str(traceback.format_exc())}, response.status
