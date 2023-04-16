@@ -586,14 +586,8 @@ class HealthCheckManager:
     async def run_health_checks(self):
         stop_task = asyncio.create_task(stop_event.wait())
         done, pending = await asyncio.wait(
-            [auth_task, api_task, game_server_listener_task, auto_ping_listener_task, start_task, stop_task, handle_input_task],
+            [self.public_ip_healthcheck(), self.general_healthcheck(), self.lag_healthcheck(), stop_task],
             return_when=asyncio.FIRST_COMPLETED
         )
         for task in pending:
             task.cancel()
-
-        try:
-            await handle_input_task
-        except asyncio.CancelledError:
-            pass
-
