@@ -25,6 +25,11 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+def get_config_item_by_key(k):
+    for d in global_config.values():
+        try: return d[k]
+        except: pass
+    return None
 class Credentials(BaseModel):
     email: str
     password: str
