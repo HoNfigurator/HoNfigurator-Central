@@ -175,4 +175,4 @@ class Misc:
                 return version
         elif self.get_os_platform() == "linux":
             with open(Path(hon_exe).parent / "version.txt", 'r') as f:
-                return f.readline()
+                return f.readline().rstrip('\n')
