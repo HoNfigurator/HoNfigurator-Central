@@ -72,7 +72,6 @@ async def main():
     # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
     try:
         try:
-            #auth_task = asyncio.create_task(game_server_manager.authentication_procedure(udp_ping_responder_port))
             auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
         except AuthenticationError as e:
             LOGGER.exception(f"{traceback.format_exc()}")
@@ -85,11 +84,13 @@ async def main():
         start_task = game_server_manager.start_game_servers_task("all")
 
         stop_task = asyncio.create_task(stop_event.wait())
+
         done, pending = await asyncio.wait(
             [auth_task, api_task, game_server_listener_task, auto_ping_listener_task, start_task, stop_task]
         )
         for task in pending:
             task.cancel()
+
     except asyncio.CancelledError:
         LOGGER.info("Tasks cancelled due to stop_event being set.")
     finally:
@@ -102,4 +103,4 @@ if __name__ == "__main__":
     try:
         asyncio.run(main())
     except KeyboardInterrupt:
-        LOGGER.info("KeyBoardInterrupt: Manager shutting down...")
+        LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
