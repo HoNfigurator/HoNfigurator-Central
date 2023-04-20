@@ -35,7 +35,7 @@ class CustomHTTPRequestHandler(BaseHTTPRequestHandler):
             content_type = self.headers.get("Content-Type", "")
             post_data = self.rfile.read(content_length)
             if content_type == "application/x-www-form-urlencoded":
-                post_data_dict = parse_qs(post_data.decode("utf-16le"))
+                post_data_dict = parse_qs(post_data.decode("utf-8"))
                 my_print(f"POST request to {self.path} with data:")
                 for key, values in post_data_dict.items():
                     print(f"  {key}: {values}")

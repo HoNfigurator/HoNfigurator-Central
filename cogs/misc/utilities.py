@@ -167,7 +167,7 @@ class Misc:
                 # Split the byte array on b'\x00' bytes
                 split_bytes = version.split(b'\x00')
                 # Decode the byte sequences and join them together
-                version = ''.join(part.decode('utf-16le') for part in split_bytes if part)
+                version = ''.join(part.decode('utf-8') for part in split_bytes if part)
 
             if not validate_version_format(version):
                 raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
