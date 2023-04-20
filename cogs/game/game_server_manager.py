@@ -161,16 +161,12 @@ class GameServerManager:
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
-    def start_autoping_listener_task(self, port):
-        # Create an AutoPing Responder to handle ping requests from master server
-        autoping_responder = AutoPingListener(
-            port,
-            server_name=self.global_config['hon_data']['svr_name'],
-            #   TODO: Get the real version number
-            game_version=self.global_config['hon_data']['svr_version'])
-        task = asyncio.create_task(autoping_responder.start_listener())
-        self.tasks.update({'autoping_listener':task})
-        return task
+    async def start_autoping_listener_task(self, port, stop_event):
+        LOGGER.info("Starting AutoPingListener...")
+        self.auto_ping_listener = AutoPingListener(self.global_config, port, stop_event)
+        self.auto_ping_listener_task = asyncio.create_task(self.auto_ping_listener.start_listener())
+        self.tasks.update({'autoping_listener':self.auto_ping_listener_task})
+        return self.auto_ping_listener_task
 
     def start_game_server_listener_task(self,*args):
         task = asyncio.create_task(self.start_game_server_listener(*args))
