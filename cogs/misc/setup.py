@@ -88,6 +88,13 @@ class SetupEnvironment:
                             "public_ip_healthcheck": 1800
                         },
                         "heartbeat_frequency": 10
+                    },
+                    "replay_cleaner" : {
+                        "active" : True,
+                        "max_replay_age_days" : 0,
+                        "max_temp_files_age_days" : 0,
+                        "max_temp_folders_age_days" : 0,
+                        "max_clog_age_days" : 0
                     }
                 }
             },
@@ -214,7 +221,7 @@ class SetupEnvironment:
             if self.validate_hon_data(self.full_config['hon_data']):
                 return True
             else: return False
-    
+
     def create_logging_configuration_file(self):
         with open(str(self.config_file_logging), 'w') as config_file_logging:
             json.dump(self.get_default_logging_configuration(), config_file_logging, indent=4)

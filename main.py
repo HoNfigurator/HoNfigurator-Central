@@ -18,6 +18,7 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
+from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continously
 
 LOGGER = get_logger()
 CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
@@ -51,7 +52,10 @@ async def main():
     else:
         LOGGER.exception(f"{traceback.format_exc()}")
         raise ConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
-    
+
+    # run scheduler
+    stop_run_continously = run_continously()
+
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
     # TODO: Put this back to -1 when done
@@ -74,10 +78,10 @@ async def main():
             LOGGER.exception(f"{traceback.format_exc()}")
         except ServerConnectionError as e:
             LOGGER.exception(f"{traceback.format_exc()}")
-        api_task = await game_server_manager.start_api_server()
-        game_server_listener_task = game_server_manager.start_game_server_listener_task(host,game_server_to_mgr_port)
-        auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
-        
+        api_task = game_server_manager.start_api_server()
+        game_server_listener_task = game_server_manager.start_game_server_listener_task(host, game_server_to_mgr_port)
+        auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port, stop_event)
+
         start_task = game_server_manager.start_game_servers_task("all")
 
         stop_task = asyncio.create_task(stop_event.wait())
@@ -88,6 +92,10 @@ async def main():
             task.cancel()
     except asyncio.CancelledError:
         LOGGER.info("Tasks cancelled due to stop_event being set.")
+    finally:
+        LOGGER.info("Stopping background job for scheduler")
+        stop_run_continously.set()
+        LOGGER.info("Everything shut. Good bye!")
 
 
 if __name__ == "__main__":
