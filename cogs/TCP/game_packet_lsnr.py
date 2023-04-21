@@ -1,6 +1,7 @@
 import traceback
 import asyncio
 import inspect
+import struct
 import socket
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.handlers.events import stop_event
@@ -29,13 +30,13 @@ class ClientConnection:
         self.game_server = game_server
         self.id = game_server.id
 
-    async def receive_packet(self, timeout = 600):
+    async def receive_packet(self, timeout=600):
         try:
             # Try to read up to 2 bytes for the length field
-            length_bytes = await self.reader.read(2)
+            length_bytes = await asyncio.wait_for(self.reader.readexactly(2), timeout)
 
-            # If we didn't receive at least 2 bytes, return None
-            if len(length_bytes) < 2:
+            # If we didn't receive exactly 2 bytes, return None
+            if len(length_bytes) != 2:
                 LOGGER.warn(f"Client #{self.id} Incomplete packet length: {length_bytes} received.")
                 return None
 
@@ -61,7 +62,7 @@ class ClientConnection:
 
         except ValueError as e:
             LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-            return b"", b""
+            return None
 
     async def run(self, game_server):
         self.game_server = game_server
@@ -72,12 +73,17 @@ class ClientConnection:
                 if packet is None:
                     # Handle the case where the packet is incomplete
                     LOGGER.warn(f"Client #{self.id} Incomplete packet: {packet}. Closing connection..")
+                    await self.close()
                     return
             except TimeoutError as e:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 # Packet reception timed out
                 LOGGER.info(f"{self.id} Packet reception timed out")
                 continue
+            except asyncio.exceptions.IncompleteReadError:
+                LOGGER.warn(f"Client #{self.id} Incomplete packet received. Closing connection..")
+                await self.close()
+                return
             except Exception as e:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 # Handle other unexpected exceptions gracefully
@@ -90,11 +96,13 @@ class ClientConnection:
             await asyncio.sleep(0.01)
 
     async def send_packet(self, packet):
-        if not self.writer.is_closing():
-            data = bytes(packet)
-            self.writer.write(data)
-            await self.writer.drain()
-
+        try:
+            if not self.writer.is_closing():
+                data = bytes(packet)
+                self.writer.write(data)
+                await self.writer.drain()
+        except Exception as e:
+            LOGGER.exception(f"Client #{self.id} An error occurred while sending a packet: {traceback.format_exc()}")
 
     async def close(self):
         if not self.closed:
@@ -102,14 +110,13 @@ class ClientConnection:
             LOGGER.warn(f"Terminating client #{self.id}..")
             self.writer.close()
             await self.writer.wait_closed()
-            try:
-                if self.game_server is not None:
-                    self.game_server.save_gamestate_to_file()
-                    #self.game_server_manager.remove_game_server(self.game_server)
-                    await self.game_server_manager.remove_client_connection(self)
-            except Exception:
-                LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
+        try:
+            if self.game_server is not None:
+                self.game_server.save_gamestate_to_file()
+                await self.game_server_manager.remove_client_connection(self)
+        except Exception as e:
+            LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 async def handle_client_connection(client_reader, client_writer, game_server_manager):
     # Get the client address
     client_addr = client_writer.get_extra_info("peername")
@@ -135,19 +142,15 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
         # Process the server hello packet
         game_server_port = await GameManagerParser.server_announce(None,packets[1])
 
-        # Assign the correct game server by port
+        # Get or create the game server
         game_server = game_server_manager.get_game_server_by_port(game_server_port)
-
-        # TODO: What about when a game server connects and there's no reference to it in game server manager
+        if game_server is None:
+            game_server = game_server_manager.create_game_server(game_server_port)
 
         # register the client connection in the game server manager
         await game_server_manager.add_client_connection(client_connection,game_server_port)
 
         # register the game server in the client connection
-        if game_server is None:
-            game_server = game_server_manager.create_game_server(game_server_port)
-            # load current exe state into game_server because it's probably running
-            await game_server.get_running_server()
         client_connection.set_game_server(game_server)
 
         # Run the client connection coroutine
@@ -164,7 +167,7 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
         await client_connection.close()
 
 async def handle_clients(client_reader, client_writer, game_server_manager):
-    try:
-        await handle_client_connection(client_reader, client_writer, game_server_manager)
-    except Exception as e:
-        LOGGER.exception("An error occurred in the task: %s", e)
+     try:
+         await handle_client_connection(client_reader, client_writer, game_server_manager)
+     except Exception as e:
+         LOGGER.exception(f"An error occurred in the task for client {client_writer.get_extra_info('peername')}: {e}")
