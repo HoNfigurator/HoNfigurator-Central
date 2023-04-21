@@ -98,6 +98,8 @@ async def main():
         LOGGER.info("Stopping background job for scheduler")
         stop_run_continuously.set()
         LOGGER.info("Everything shut. Good bye!")
+        LOGGER.info("You can CTRL + C now..")
+        return
 
 
 if __name__ == "__main__":
