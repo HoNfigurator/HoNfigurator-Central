@@ -75,6 +75,7 @@ class ClientConnection:
                     LOGGER.warn(f"Client #{self.id} Incomplete packet: {packet}. Closing connection..")
                     await self.close()
                     return
+
             except TimeoutError as e:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 # Packet reception timed out
@@ -86,14 +87,13 @@ class ClientConnection:
                 return
             except Exception as e:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-                # Handle other unexpected exceptions gracefully
-                LOGGER.info(f"An unexpected error occurred: {e}")
                 break
 
             await self.game_server.game_manager_parser.handle_packet(packet,self.game_server)
 
             # Add a small delay to allow other clients to send packets
             await asyncio.sleep(0.01)
+        await self.close()
 
     async def send_packet(self, packet):
         try:

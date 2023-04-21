@@ -7,6 +7,7 @@ import traceback
 import pathlib
 import json
 from cogs.misc.logging import get_logger, get_home, get_misc
+from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.utilities import Misc
 from cogs.misc.hide_pass import getpass
 import copy
@@ -215,6 +216,17 @@ class SetupEnvironment:
             self.create_logging_configuration_file()
         if not os.path.exists(self.config_file_hon):
             return self.create_hon_configuration_file()
+        database = RolesDatabase()
+        if not database.add_default_data():
+            while True:
+                value = input("\tPlease provide your discord user ID. This is a 10 digit number:")
+                try:
+                    discord_id = int(value)
+                    database.add_default_data(discord_id=discord_id)
+                    break
+                except ValueError:
+                    print("Value must be a 10 digit number. Here is a guide to find your discord user ID. https://www.youtube.com/watch?v=ZPROrf4Fe3Q")
+
         else:
             self.hon_data = self.get_existing_configuration()
             self.full_config = self.merge_config()

@@ -421,7 +421,10 @@ class GameServerManager:
         """
         if port not in self.client_connections:
             self.client_connections[port] = client_connection
-            self.game_servers[port].status_received.set()
+            game_server = self.game_servers.get(port, None)
+            # this is in case game server doesn't exist (config change maybe)
+            if game_server:
+                game_server.status_received.set()
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
             await self.commands.initialise_commands()
             self.commands.subcommands_changed.set()
@@ -492,7 +495,10 @@ class GameServerManager:
         for key, value in self.client_connections.items():
             if value == client_connection:
                 del self.client_connections[key]
-                self.game_servers[key].reset_game_state()
+                game_server = self.game_servers.get(key, None)
+                #   This is in case game server doesn't exist intentionally (maybe config changed)
+                if game_server:
+                    game_server.reset_game_state()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
                 await self.commands.initialise_commands()
                 self.commands.subcommands_changed.set()
