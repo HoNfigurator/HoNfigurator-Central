@@ -173,49 +173,37 @@ class GameManagerParser:
                 string game mode
                 int 1 unknown
         """
-        self.log("debug",f"GameServer #{self.id} - Received lobby created packet")
+        self.log("debug", f"GameServer #{self.id} - Received lobby created packet")
 
-        # Extract the match ID from the packet bytes
         match_id_bytes = packet[1:5]
         match_id = sum([match_id_bytes[i] * (256 ** i) for i in range(len(match_id_bytes))])
 
-        # Extract the strings from the packet bytes
         strings = []
         current_index = 6
         while current_index < len(packet):
-            # Find the null byte that terminates the current string
-            null_byte_index = packet[current_index:].index(b'\x00')
-            # Extract the current string and append it to the list of strings
             try:
-                string_value = packet[current_index:current_index+null_byte_index].decode('utf-8')
-            except (UnicodeDecodeError, ValueError) as e:
-                self.log("exception",f"GameServer #{self.id}: An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet: {packet}")
-                string_value = ""
+                null_byte_index = packet[current_index:].index(b'\x00')
+            except ValueError:
+                self.log("exception", f"GameServer #{self.id}: Failed to find null byte in packet: {packet}")
                 return
+
+            string_value = packet[current_index:current_index+null_byte_index].decode('utf-8', errors='replace')
             strings.append(string_value)
-            # Update the current index to point to the next string
             current_index += null_byte_index + 1
 
-        # Extract the unknown string from the packet bytes
-        unknown = packet[28:32].decode('utf-8').rstrip('\x00')
-
-        # Create a dictionary containing the lobby information
         lobby_info = {
             'match_id': match_id,
             'map': strings[0],
             'name': strings[1],
             'mode': strings[2]
         }
-        game_server.game_state.update({'match_info':lobby_info})
+        game_server.game_state.update({'match_info': lobby_info})
 
-        # set the current match ID and reset the skipped frame sum
         if game_server.get_dict_value('current_match_id') != match_id:
-            game_server.update_dict_value('current_match_id',match_id)
+            game_server.update_dict_value('current_match_id', match_id)
             game_server.reset_skipped_frames()
 
-        # Print the lobby information
-        self.log("debug",f"GameServer #{self.id} - {lobby_info}")
-
+        self.log("debug", f"GameServer #{self.id} - {lobby_info}")
 
     async def lobby_closed(self,packet, game_server):
         """   0x45 Lobby closed
