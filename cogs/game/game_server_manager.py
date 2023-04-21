@@ -161,9 +161,9 @@ class GameServerManager:
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
-    async def start_autoping_listener_task(self, port, stop_event):
+    async def start_autoping_listener_task(self, port):
         LOGGER.info("Starting AutoPingListener...")
-        self.auto_ping_listener = AutoPingListener(self.global_config, port, stop_event)
+        self.auto_ping_listener = AutoPingListener(self.global_config, port)
         self.auto_ping_listener_task = asyncio.create_task(self.auto_ping_listener.start_listener())
         self.tasks.update({'autoping_listener':self.auto_ping_listener_task})
         return self.auto_ping_listener_task
@@ -425,6 +425,11 @@ class GameServerManager:
             # this is in case game server doesn't exist (config change maybe)
             if game_server:
                 game_server.status_received.set()
+            # TODO
+            # Create game server object here?
+            # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
+            # since the game server isn't actually off yet, it will keep creating a connection.
+
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
             await self.commands.initialise_commands()
             self.commands.subcommands_changed.set()

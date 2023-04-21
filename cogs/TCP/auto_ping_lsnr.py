@@ -2,7 +2,7 @@ import socket
 import asyncio
 import traceback
 from cogs.misc.logging import get_logger
-from cogs.handlers.events import EventBus
+from cogs.handlers.events import EventBus, stop_event
 
 LOGGER = get_logger()
 
@@ -29,13 +29,12 @@ class AutoPingListener(asyncio.DatagramProtocol):
         start_listener(): Coroutine to start the protocol and listen for incoming datagrams.
     """
 
-    def __init__(self, config, port, stop_event):
+    def __init__(self, config, port):
         self.config = config
         self.server_name = config["hon_data"]["svr_name"]
         self.port = port
         self.game_version = config["hon_data"]["svr_version"]
         self.server_address = '0.0.0.0'
-        self.stop_event = stop_event
         self.transport = None
         self.protocol = None
 
@@ -108,7 +107,9 @@ class AutoPingListener(asyncio.DatagramProtocol):
             local_addr=(self.server_address, self.port)
         )
 
-        while not self.stop_event.is_set():
+        while not stop_event.is_set():
+            # TODO
+            # Should we place a smaller sleep here? To stop "quit" command taking 10 sec
             await asyncio.sleep(10)
 
         self.transport.close()

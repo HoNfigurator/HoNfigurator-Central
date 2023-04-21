@@ -13,3 +13,4 @@ schedule==1.2.0
 tzlocal==4.3
 pytz==2023.3
 httpx==0.24.0
+schedule==1.2.0
