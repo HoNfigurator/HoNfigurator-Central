@@ -69,7 +69,7 @@ class MasterServerHandler:
                     data.add_field('file', replay_file, filename=file_name, content_type='application/octet-stream')
                     #LOGGER.debug(f"Request data: {data[:100]}... (truncated)")
                     #'FormData' object is not subscriptable
-                    async with session.post(f"https://{url}", data=data, headers=headers) as response:
+                    async with session.post(f"http://{url}", data=data, headers=headers) as response:
                         LOGGER.debug(f"Code: {response.status}, Text: response.text()")
                         return await response.text(), response.status
             except IOError:

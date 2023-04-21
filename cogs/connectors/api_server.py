@@ -1,9 +1,13 @@
-from fastapi import FastAPI, Response, Body, HTTPException
+from fastapi import FastAPI, Request, Response, Body, HTTPException, Depends
+from fastapi.security import OAuth2PasswordBearer
+import httpx
 from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
 from cogs.misc.logging import get_logger, get_misc, get_home
+from cogs.db.roles_db_connector import RolesDatabase
+from typing import Any, Dict, List, Tuple
 import logging
 from os.path import exists
 import json
@@ -15,6 +19,7 @@ app = FastAPI()
 LOGGER = get_logger()
 HOME_PATH = get_home()
 MISC = get_misc()
+roles_database = RolesDatabase()
 
 
 app = FastAPI(
@@ -25,100 +30,139 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+
 def get_config_item_by_key(k):
     for d in global_config.values():
         try: return d[k]
         except: pass
     return None
-class Credentials(BaseModel):
-    email: str
-    password: str
 
-@app.post("/api/authenticate")
-def authenticate_user(credentials: Credentials):
-    if credentials.email == "test@test.com" and credentials.password == "test":
-        return {"token": "sample_token"}
+"""!! SECURITY !!"""
+
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://discord.com/api/oauth2/token")
+
+async def verify_token(request: Request, token: str = Depends(oauth2_scheme)):
+    async with httpx.AsyncClient() as client:
+        response = await client.get("https://discord.com/api/users/@me", headers={"Authorization": f"Bearer {token}"})
+
+    if response.status_code == 200:
+        user_info = response.json()
+        return {"token": token, "user_info": user_info}
     else:
-        raise HTTPException(status_code=401, detail="Invalid email or password")
+        LOGGER.warn(f"API Request from: {request.client.host} - Discord user lookup failure. Discord API Response: {response.text}")
+        raise HTTPException(status_code=401, detail="Invalid OAuth token")
 
-# Define your API endpoints here
+def check_permission_factory(allowed_roles: List[str]):
+    async def check_permission(request: Request, token_and_user_info: dict = Depends(verify_token)):
+        user_info = token_and_user_info["user_info"]
 
-class DataResponse(BaseModel):
-    key: str
+        if not has_permission(user_info, allowed_roles):
+            LOGGER.warn(f"API Request from: {request.client.host} - Insufficient permissions")
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
 
-@app.get("/api/data", response_model=DataResponse)
-def get_data():
-    data = {"key": "value"}
-    return data
+        return token_and_user_info
 
+    return check_permission
+
+def has_permission(user_info: dict, allowed_roles: List[str]) -> bool:
+    user_id = user_info["id"]
+    user_roles = roles_database.get_user_roles_by_discord_id(user_id)
+
+    if not user_roles:
+        return False
+    
+    for r in range(0,len(user_roles)):
+        user_roles[r] = user_roles[r].lower()
+
+    return any(role.lower() in allowed_roles for role in user_roles)
+
+
+def check_permission(permission: str, token_and_user_info: dict = Depends(verify_token)):
+    user_info = token_and_user_info["user_info"]
+
+    if not has_permission(user_info, permission):
+        raise HTTPException(status_code=403, detail="Insufficient permissions")
+
+    return token_and_user_info
+
+"""
+API Endpoints below
+"""
+"""Protected Endpoints"""
+
+
+
+"""Config Types"""
 class GlobalConfigResponse(BaseModel):
     hon_data: Dict[str, Any]
 
 @app.get("/api/get_global_config", response_model=GlobalConfigResponse)
-def get_global_config():
+async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    # Replace this with your actual global_config data
+    global_config = {"example_key": "example_value"}
     return {"hon_data": global_config}
 
 class TotalServersResponse(BaseModel):
     total_servers: int
 
 @app.get("/api/get_total_servers", response_model=TotalServersResponse)
-def get_total_servers():
+def get_total_servers(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return {"total_servers": global_config['hon_data']['svr_total']}
 
 class TotalCpusResponse(BaseModel):
     total_cpus: int
 
 @app.get("/api/get_total_cpus", response_model=TotalCpusResponse)
-def get_total_cpus():
+def get_total_cpus(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return {"total_cpus": MISC.get_cpu_count()}
 
 class CpuNameResponse(BaseModel):
     cpu_name: str
 
 @app.get("/api/get_cpu_name", response_model=CpuNameResponse)
-def get_cpu_name():
+def get_cpu_name(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return {"cpu_name": MISC.get_cpu_name()}
 
 class CpuUsageResponse(BaseModel):
     cpu_usage: float
 
 @app.get("/api/get_cpu_usage", response_model=CpuUsageResponse)
-def get_cpu_usage():
+def get_cpu_usage(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return {"cpu_usage": MISC.get_cpu_load()}
 
 class MemoryUsageResponse(BaseModel):
     memory_usage: float
 
 @app.get("/api/get_memory_usage", response_model=MemoryUsageResponse)
-def get_memory_usage():
+def get_memory_usage(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return {"memory_usage": MISC.get_used_ram()}
 
 class MemoryTotalResponse(BaseModel):
     memory_total: float
 
 @app.get("/api/get_memory_total", response_model=MemoryTotalResponse)
-def get_memory_total():
+def get_memory_total(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return {"memory_total": MISC.get_total_ram()}
 
 class SvrIpResponse(BaseModel):
     svr_ip: str
 
 @app.get("/api/get_svr_ip", response_model=SvrIpResponse)
-def get_svr_ip():
+def get_svr_ip(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return {"svr_ip": global_config['hon_data']['svr_ip']}
 
 class TotalAllowedServersResponse(BaseModel):
     total_allowed_servers: int
 
 @app.get("/api/get_total_allowed_servers", response_model=TotalAllowedServersResponse)
-def get_total_allowed_servers():
+def get_total_allowed_servers(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return {"total_allowed_servers": MISC.get_total_allowed_servers(global_config['hon_data']['svr_total_per_core'])}
 
 class NumPlayersIngameResponse(BaseModel):
     num_players_ingame: int
 
 @app.get("/api/get_num_players_ingame", response_model=NumPlayersIngameResponse)
-def get_num_players_ingame():
+def get_num_players_ingame(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     num = 0
     for game_server in game_servers.values():
         num_clients = game_server.get_dict_value('num_clients')
@@ -126,19 +170,19 @@ def get_num_players_ingame():
             num += num_clients
     return {"num_players_ingame": num}
 
-class NumMatchesIngame(BaseModel):
+class NumMatchesIngameResponse(BaseModel):
     num_matches_ingame: int
 
-@app.get("/api/get_num_matches_ingame")
-def get_num_matches_ingame():
+@app.get("/api/get_num_matches_ingame", response_model=NumMatchesIngameResponse)
+def get_num_matches_ingame(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     num = 0
     for game_server in game_servers.values():
         if game_server.get_dict_value('match_started') == 1:
             num += 1
-    return str(num)
+    return {"num_matches_ingame": num}
 
-@app.get("/api/get_skipped_frame_data")
-def get_skipped_frame_data(port: str):
+@app.get("/api/get_skipped_frame_data/{port}")
+def get_skipped_frame_data(port: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     temp = {}
     if port != "all":
         game_server = game_servers.get(int(port),None)
@@ -154,7 +198,7 @@ class NumMatchesResponse(BaseModel):
     num: int
 
 @app.get("/api/get_num_matches_ingame", response_model=NumMatchesResponse, summary="Get number of matches in game")
-def get_num_matches_ingame():
+def get_num_matches_ingame(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Get the number of matches in game.
 
@@ -182,7 +226,7 @@ class SkippedFramesResponse(BaseModel):
     server_data: Dict[str, Any]
 
 @app.get("/api/get_skipped_frame_data", response_model=SkippedFramesResponse, summary="Get skipped frame data")
-def get_skipped_frame_data(port: str):
+def get_skipped_frame_data(port: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Get skipped frame data.
 
@@ -199,7 +243,7 @@ def get_skipped_frame_data(port: str):
             "server_data": {
                 "<server_name>": {
                     "<player_id>": {
-                        "skipped_frames": List[int],
+                        "skipped_frames": list[int],
                         "time_skipped": float
                     }
                 }
@@ -220,8 +264,8 @@ def get_skipped_frame_data(port: str):
     return {"server_data": temp}
 
 # Define the /api/get_server_config_item endpoint with OpenAPI documentation
-@app.get("/api/get_server_config_item", summary="Get server config item")
-def get_server_config_item(key: str):
+@app.get("/api/get_server_config_item/{key}", summary="Get server config item")
+def get_server_config_item(key: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Get a specific item from the server configuration.
 
@@ -234,7 +278,7 @@ def get_server_config_item(key: str):
     return str(get_config_item_by_key(key))
 
 @app.get("/api/get_server_config", summary="Get server config")
-def get_server_config():
+def get_server_config(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Get the server configuration.
 
@@ -252,12 +296,13 @@ def get_server_config():
     return temp
 
 @app.get("/api/get_num_reserved_cpus")
-def get_num_reserved_cpus():
+def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     return str(MISC.get_num_reserved_cpus())
 
 # Define the /api/get_instances_status endpoint with OpenAPI documentation
 @app.get("/api/get_instances_status", summary="Get instances status")
-def get_instances():
+#def get_instances(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+def get_instances(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Get the status of all game server instances.
 
@@ -269,14 +314,117 @@ def get_instances():
         temp[game_server.config.get_local_by_key('svr_name')] = game_server.get_pretty_status()
     return temp
 
+"""
+Roles & Perms
+"""
+@app.get("/api/roles/all", summary="Get all roles with associated permissions")
+# def get_all_roles(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+def get_all_roles(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    return roles_database.get_all_roles()
 
+@app.get("/api/roles", summary="Get specified role with associated permissions")
+# def get_role(role: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+def get_role(role: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    roles = roles_database.get_all_roles()
+    if role in roles:
+        return roles[role]
+    else: return {"error":"no such role."}
+
+@app.delete("/api/roles/delete/{role_name}", summary="Delete specified role")
+# def get_role(role: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+def delete_role(role_name: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    roles = roles_database.get_all_roles()
+    role_to_delete = [role for role in roles if role["name"] == role_name]
+    if role_to_delete:
+        roles_database.remove_role(role_to_delete[0])
+        return {"message": "User deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="Role not found")
+
+class AddRole(BaseModel):
+    name: str
+    permissions: list
+
+@app.post("/api/roles/add", summary="Add specified user with associated roles", response_model=AddRole)
+def add_role(role_form: AddRole, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    roles = roles_database.get_all_roles()
+    role_exists = [role for role in roles if role["name"] == role_form.name]
+    new_role = {
+        "name": role_form.name,
+        "permissions": role_form.permissions
+    }
+    if role_exists:
+        roles_database.edit_role(new_role)
+        return JSONResponse(status_code=200, content=new_role)
+    else:
+        roles_database.add_role(new_role)
+        return JSONResponse(status_code=201, content=new_role)
+
+@app.get("/api/users/all", summary="Get all users with associated roles")
+# def get_all_users(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+def get_all_users(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    return roles_database.get_all_users_with_roles()
+
+@app.get("/api/users", summary="Get specified user with associated roles")
+# def get_user(user: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+def get_user(user: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    users = roles_database.get_all_users()
+    if user in users:
+        return user
+    raise HTTPException(status_code=404, detail="User not found")
+
+@app.delete("/api/users/delete/{user_id}", summary="Delete specified user")
+def delete_user(user_id: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    users = roles_database.get_all_users()
+    user_to_delete = [user for user in users if user["discord_id"] == user_id]
+    if user_to_delete:
+        roles_database.remove_user(user_to_delete[0])
+        return {"message": "User deleted successfully"}
+    else:
+        raise HTTPException(status_code=404, detail="User not found")
+
+
+class AddUser(BaseModel):
+    nickname: str
+    discord_id: str
+    roles: list
+
+@app.post("/api/users/add", summary="Add specified user with associated roles", response_model=AddUser)
+def add_user(user_form: AddUser, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    users = roles_database.get_all_users()
+    user_exists = [user for user in users if user["discord_id"] == user_form.discord_id]
+    new_user = {
+        "discord_id": user_form.discord_id,
+        "nickname": user_form.nickname,
+        "roles": user_form.roles
+    }
+    if user_exists:
+        roles_database.edit_user(new_user)
+        return JSONResponse(status_code=200, content=new_user)
+    else:
+        roles_database.add_new_user(new_user)
+        return JSONResponse(status_code=201, content=new_user)
+
+
+@app.get("/api/permissions/all", summary="Get all API endpoints with associated permissions")
+def get_all_permissions(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+    endpoints = {}
+    openapi_schema = app.openapi()
+    paths = openapi_schema["paths"]
+    for path, methods in paths.items():
+        description = methods[list(methods.keys())[0]].get("description", "")
+        endpoints.update({path:description})
+    return endpoints
+
+
+"""Control Types"""
 # Define a Pydantic model for the /api/stop_server and /api/start_server endpoints
 class ServerPort(BaseModel):
     port: int
 
 # Define the /api/stop_server endpoint with OpenAPI documentation
 @app.post("/api/stop_server", summary="Stop a game server instance")
-async def stop_server(server_port_data: ServerPort):
+async def stop_server(server_port_data: ServerPort, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Stop a game server instance.
 
@@ -295,7 +443,7 @@ async def stop_server(server_port_data: ServerPort):
 
 # Define the /api/start_server endpoint with OpenAPI documentation
 @app.post("/api/start_server", summary="Start a game server instance")
-async def start_server(server_port_data: ServerPort):
+async def start_server(server_port_data: ServerPort, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Start a game server instance.
 
@@ -310,6 +458,10 @@ async def start_server(server_port_data: ServerPort):
 
     if game_server:
         await manager_event_bus.emit('start_game_servers', game_server)
+
+""" End API Calls """
+
+
 
 async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0", port=5000):
     global global_config, game_servers, manager_event_bus

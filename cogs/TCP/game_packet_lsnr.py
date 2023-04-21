@@ -72,22 +72,28 @@ class ClientConnection:
                 if packet is None:
                     # Handle the case where the packet is incomplete
                     LOGGER.warn(f"Client #{self.id} Incomplete packet: {packet}. Closing connection..")
-                    return
+                    break
             except TimeoutError as e:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 # Packet reception timed out
                 LOGGER.info(f"{self.id} Packet reception timed out")
                 continue
-            except Exception as e:
+            except ConnectionResetError as e:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-                # Handle other unexpected exceptions gracefully
-                LOGGER.info(f"An unexpected error occurred: {e}")
+
+                # Check if the writer object is not None before closing it
+                if self.writer != None:
+                    await self.writer.close()
+
+            except ValueError as e:
+                LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 break
 
             await self.game_server.game_manager_parser.handle_packet(packet,self.game_server)
 
             # Add a small delay to allow other clients to send packets
             await asyncio.sleep(0.01)
+        await self.close()
 
     async def send_packet(self, packet):
         if not self.writer.is_closing():

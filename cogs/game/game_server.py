@@ -221,7 +221,8 @@ class GameServer:
         self.reset_start_timer()
 
         if await self.get_running_server():
-            self.scheduled_shutdown = False
+            self.unschedule_shutdown()
+            self.enable_server()
             return True
 
         free_mem = psutil.virtual_memory().available
@@ -249,6 +250,9 @@ class GameServer:
         self._proc_owner =self._proc_hook.username()
         self.scheduled_shutdown = False
         self.game_state.update({'status':GameStatus.STARTING.value})
+
+        self.unschedule_shutdown()
+        self.enable_server()
 
         #self.tasks.update({'startup_monitor':asyncio.create_task(self.monitor_game_state_status())})
 

@@ -5,6 +5,7 @@ utilities/install-beats.ps1
 *profile*.dat
 GameServer*state*.json
 config.json
+logging.json
 .command_history
 logs/*
 *.pem
