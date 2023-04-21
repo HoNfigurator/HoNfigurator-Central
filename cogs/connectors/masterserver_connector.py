@@ -22,6 +22,7 @@ class MasterServerHandler:
             "Accept": "*/*",
             "Content-Type": "application/x-www-form-urlencoded"
         }
+        self.session = aiohttp.ClientSession()
         LOGGER.debug(f"Master server URL: {self.base_url}")
         LOGGER.debug(f"Headers: {self.headers}")
 
@@ -86,18 +87,15 @@ class MasterServerHandler:
 
     async def compare_upstream_patch(self):
         url = f"{self.base_url}/patcher/patcher.php"
-        headers = {
-            "User-Agent": f"S2 Games/Heroes of Newerth/{self.version}/was/x86_64",
-            "Accept": "*/*",
-            "Content-Type": "application/x-www-form-urlencoded"
-        }
         data = {"latest": "", "os": f"{self.was}", "arch": "x86_64"}
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.post(url, headers=headers, data=data) as response:
-                    if response.status == 200:
-                        return await response.text(), response.status
-                    else:
-                        return None
-            except aiohttp.ClientError:
-                LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+        try:
+            async with self.session.post(url, headers=self.headers, data=data) as response:
+                if response.status == 200:
+                    return await response.text(), response.status
+                else:
+                    return None
+        except aiohttp.ClientError:
+            LOGGER.exception(f"An error occurred while handling the compare_upstream_patch function: {traceback.format_exc()}")
+
+    async def close_session(self):
+        await self.session.close()

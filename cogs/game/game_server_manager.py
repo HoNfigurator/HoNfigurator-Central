@@ -207,6 +207,8 @@ class GameServerManager:
         self.game_server_lsnr.close()
         await self.game_server_lsnr.wait_closed()
 
+        await self.master_server_handler.close_session()
+
         LOGGER.info("Server stopped.")
 
     def update(self):
