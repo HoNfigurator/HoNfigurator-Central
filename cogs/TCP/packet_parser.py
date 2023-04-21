@@ -350,11 +350,11 @@ class ManagerChatParser:
         ip_addr,_,remaining_data = remaining_data.partition(b'\x00')
         port = int.from_bytes(remaining_data[0:2],byteorder='little')
 
-        username = username.decode('utf8')
-        region = region.decode('utf8')
-        server_name = server_name.decode('utf8')
-        version = version.decode('utf8')
-        ip_addr = ip_addr.decode('utf8')
+        username = username.decode('utf-8')
+        region = region.decode('utf-8')
+        server_name = server_name.decode('utf-8')
+        version = version.decode('utf-8')
+        ip_addr = ip_addr.decode('utf-8')
 
     async def mgr_sending_heartbeat(self,packet_data):
         self.log("debug",f"{self.print_prefix}Sending heartbeat..")
@@ -426,7 +426,7 @@ class GameChatParser:
         server_id = int.from_bytes(packet_data[2:6],byteorder='little')  # not the slave ID, the server ID given by master server
         session_id,_,remaining_data = packet_data[6:].partition(b'\x00')     # session ID is cookie given by master server
         chat_protocol = int.from_bytes(remaining_data,byteorder='little')   # unlikely to change
-        session_id = session_id.decode('utf8')
+        session_id = session_id.decode('utf-8')
         self.log("debug",f"{self.print_prefix}Logging in...\n\tServer ID: {server_id}\n\tSession ID: {session_id}")
 
     async def game_server_closed(self,packet_data):

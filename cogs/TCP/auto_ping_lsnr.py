@@ -2,6 +2,7 @@ import socket
 import asyncio
 import traceback
 from cogs.misc.logging import get_logger
+from cogs.handlers.events import EventBus
 
 LOGGER = get_logger()
 
@@ -28,12 +29,15 @@ class AutoPingListener(asyncio.DatagramProtocol):
         start_listener(): Coroutine to start the protocol and listen for incoming datagrams.
     """
 
-    def __init__(self, port, server_name, game_version):
+    def __init__(self, config, port, stop_event):
+        self.config = config
+        self.server_name = config["hon_data"]["svr_name"]
         self.port = port
-        self.game_version = game_version
-        self.server_name = server_name
+        self.game_version = config["hon_data"]["svr_version"]
         self.server_address = '0.0.0.0'
+        self.stop_event = stop_event
         self.transport = None
+        self.protocol = None
 
     def connection_made(self, transport):
         """
@@ -49,6 +53,9 @@ class AutoPingListener(asyncio.DatagramProtocol):
         LOGGER.info(f"[*] AutoPing Responder - Listening on {self.server_address}:{self.port} (REMOTE)")
 
     def datagram_received(self, data, addr):
+        asyncio.create_task(self.handle_datagram_received(data, addr))
+
+    async def handle_datagram_received(self, data, addr):
         """
         Called when a datagram is received by the protocol.
 
@@ -90,9 +97,9 @@ class AutoPingListener(asyncio.DatagramProtocol):
 
     async def start_listener(self):
         """
-        Coroutine to start the protocol and listen for incoming datagrams.
+            Coroutine to start the protocol and listen for incoming datagrams.
 
-        Returns:
+            Returns:
             None
         """
         loop = asyncio.get_event_loop()
@@ -100,3 +107,13 @@ class AutoPingListener(asyncio.DatagramProtocol):
             lambda: self,
             local_addr=(self.server_address, self.port)
         )
+
+        while not self.stop_event.is_set():
+            await asyncio.sleep(10)
+
+        self.transport.close()
+
+    async def stop_listener(self):
+        self.transport.close()
+        self.event_bus.unsubscribe('datagram_received', self.handle_datagram_received)
+
