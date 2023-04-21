@@ -84,11 +84,13 @@ async def main():
         start_task = game_server_manager.start_game_servers_task("all")
 
         stop_task = asyncio.create_task(stop_event.wait())
+        LOGGER.info("Received stop task")
 
         done, pending = await asyncio.wait(
             [auth_task, api_task, game_server_listener_task, auto_ping_listener_task, start_task, stop_task]
         )
         for task in pending:
+            LOGGER.warning(f"Task: {task} needs to be shut down by force..")
             task.cancel()
 
     except asyncio.CancelledError:
