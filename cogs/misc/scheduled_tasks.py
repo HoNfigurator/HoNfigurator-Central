@@ -12,7 +12,7 @@ from tinydb import TinyDB, Query
 
 # pip install: tinydb schedule tzlocal pytz
 
-def run_continously(interval=60):
+def run_continuously(interval=60):
     cease_continuous_run = threading.Event()
     class ScheduleThread(threading.Thread):
         @classmethod

@@ -144,10 +144,10 @@ class GameServer:
         self.game_state._state['performance']['now_ingame_skipped_frames'] = 0
 
     def increment_skipped_frames(self, frames, time):
-        if self.get_dict_value('match_started') == 1:
+        if self.get_dict_value('match_started') == 1: # Only log skipped frames when we're actually in a match.
             self.game_state._state['performance']['total_ingame_skipped_frames'] += frames
             self.game_state._state['performance']['now_ingame_skipped_frames'] += frames
-        self.game_state._state['skipped_frames_detailed'][time] = frames
+            self.game_state._state['skipped_frames_detailed'][time] = frames
 
     def get_pretty_status(self):
         def format_time(seconds):
@@ -277,6 +277,7 @@ class GameServer:
     async def schedule_shutdown_server(self, client_connection, packet_data):
         self.scheduled_shutdown = True
         # TODO: Schedule doesn't work while servers are still booting up. Example, setconfig hon_data svr_total <new val>
+        # I BELIEVE ABOVE IS FIXED, NEED TO TEST
         while True:
             num_clients = self.game_state["num_clients"]
             if num_clients is not None and num_clients > 0:
@@ -291,7 +292,7 @@ class GameServer:
             try:
                 await asyncio.sleep(1)
             except asyncio.CancelledError:
-                print(f"Task {asyncio.current_task().get_name()} is cancelled. Stopping the coroutine.")
+                print_formatted_text(f"Task {asyncio.current_task().get_name()} is cancelled. Stopping the coroutine.")
                 break
 
             self.increment_start_timer(1)
