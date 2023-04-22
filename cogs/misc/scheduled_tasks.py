@@ -64,6 +64,9 @@ class Stats(HonfiguratorSchedule):
     def __init__(self, config):
         super().__init__(config)
 
+    def count_replays_size(self):
+
+
     def count_replays(self):
         yesterday = time.time() - 24 * 60 * 60  # subtract 24 hours in seconds
         time_obj = time.gmtime(yesterday)
@@ -72,14 +75,16 @@ class Stats(HonfiguratorSchedule):
         day_str = time.strftime("%d", time_obj).lstrip("0")
         formatted_date_str = f"{year_str}-{month_str}-{day_str}"
 
+        size_in_mb = 0
         count = 0
         for filename in os.listdir(self.replay_dir):
             if filename.endswith(".honreplay"):
                 file_path = os.path.join(self.replay_dir, filename)
                 modified_time = os.path.getmtime(file_path)
                 if modified_time > yesterday:
+                    size_in_mb += Path(file_path).stat().st_size  / 1000
                     count += 1
-        self.replay_table.insert({"date" : formatted_date_str, "count" : count})
+        self.replay_table.insert({"date" : formatted_date_str, "count" : count, "size_in_mb" : size_in_mb})
 
 
 class ReplayCleaner(HonfiguratorSchedule):
