@@ -91,7 +91,7 @@ class SetupEnvironment:
                         "heartbeat_frequency": 10
                     },
                     "replay_cleaner" : {
-                        "active" : True,
+                        "active" : False,
                         "max_replay_age_days" : 0,
                         "max_temp_files_age_days" : 0,
                         "max_temp_folders_age_days" : 0,
