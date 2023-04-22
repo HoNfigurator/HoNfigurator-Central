@@ -55,6 +55,8 @@ async def main():
 
     # run scheduler
     stop_run_continously = run_continously()
+    jobs = HonfiguratorSchedule(global_config)
+    jobs.setup_tasks()
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
