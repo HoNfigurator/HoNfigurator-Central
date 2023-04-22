@@ -18,7 +18,7 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
 from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
-from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continously
+from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
 
 LOGGER = get_logger()
 CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
@@ -60,7 +60,6 @@ async def main():
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
-    # TODO: Put this back to -1 when done
     udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
 
     # instantiate the manager
@@ -81,7 +80,7 @@ async def main():
             LOGGER.exception(f"{traceback.format_exc()}")
         api_task = game_server_manager.start_api_server()
         game_server_listener_task = game_server_manager.start_game_server_listener_task(host, game_server_to_mgr_port)
-        auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port, stop_event)
+        auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
 
         start_task = game_server_manager.start_game_servers_task("all")
 
@@ -99,8 +98,10 @@ async def main():
         LOGGER.info("Tasks cancelled due to stop_event being set.")
     finally:
         LOGGER.info("Stopping background job for scheduler")
-        stop_run_continously.set()
+        stop_run_continuously.set()
         LOGGER.info("Everything shut. Good bye!")
+        LOGGER.info("You can CTRL + C now..")
+        return
 
 
 if __name__ == "__main__":
@@ -108,3 +109,4 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
+        stop_event.set()
