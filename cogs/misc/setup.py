@@ -318,12 +318,14 @@ class SetupEnvironment:
             executable = f"hon_x64"
             suffix = ".exe"
             file_name = f'{executable}{suffix}'
-        else:
+            architecture = "was-crIac6LASwoafrl8FrOa"
+        else: # this should be "linux"
             hon_artefacts_directory = Path(self.hon_data["hon_home_directory"])
             hon_replays_directory = hon_artefacts_directory / "replays"
             hon_logs_directory = hon_artefacts_directory / "logs"
             executable = "hon-x86_64-server"
             file_name = executable
+            architecture = 'las-crIac6LASwoafrl8FrOa'
 
         self.hon_data['hon_artefacts_directory'] = hon_artefacts_directory
         self.hon_data['hon_replays_directory'] = hon_replays_directory
@@ -331,6 +333,7 @@ class SetupEnvironment:
         self.hon_data['svr_ip'] = MISC.get_public_ip()
         self.hon_data['hon_executable_path'] = self.hon_data['hon_install_directory'] / file_name
         self.hon_data['svr_version'] = MISC.get_svr_version(self.hon_data['hon_executable_path'])
+        self.hon_data['architecture'] = architecture
 
     def add_miscellaneous_data(self):
         return (
