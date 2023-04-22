@@ -30,7 +30,7 @@ class HonfiguratorSchedule():
     def __init__(self, config):
         self.config = config
         self.replay_dir = config["hon_data"]["hon_replays_directory"]
-        self.db = TinyDB("stats.json")
+        self.db = TinyDB("cogs/db/stats.json")
         self.replay_table = self.db.table('stats_replay_count')
         self.file_deletion_table =  self.db.table('file_deletion_table')
 
@@ -44,7 +44,7 @@ class HonfiguratorSchedule():
     def setup_tasks(self):
         # schedule.every(1).minutes.do(self.get_replays) #TODO: to be removed
         self.cease_continuous_run = run_continously()
-        schedule.every().day.at("01:00", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
+        schedule.every().day.at("00:20", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
         schedule.every().day.at("01:10", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_files)
 
     def stop(self):
