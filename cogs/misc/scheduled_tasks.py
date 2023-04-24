@@ -43,7 +43,7 @@ class HonfiguratorSchedule():
 
     def setup_tasks(self):
         # schedule.every(1).minutes.do(self.get_replays) #TODO: to be removed
-        self.cease_continuous_run = run_continously()
+        self.cease_continuous_run = run_continuously()
         schedule.every().day.at("00:20", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
         schedule.every().day.at("01:10", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_files)
 
@@ -63,9 +63,6 @@ class HonfiguratorSchedule():
 class Stats(HonfiguratorSchedule):
     def __init__(self, config):
         super().__init__(config)
-
-    def count_replays_size(self):
-
 
     def count_replays(self):
         yesterday = time.time() - 24 * 60 * 60  # subtract 24 hours in seconds
