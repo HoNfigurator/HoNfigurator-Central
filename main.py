@@ -54,7 +54,7 @@ async def main():
         raise ConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
 
     # run scheduler
-    stop_run_continously = run_continously()
+    stop_run_continuously = run_continuously()
     jobs = HonfiguratorSchedule(global_config)
     jobs.setup_tasks()
 
