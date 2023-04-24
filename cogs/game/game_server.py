@@ -230,19 +230,32 @@ class GameServer:
         if free_mem < 1000000000:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
 
-        #   Server instances write files to location dependent on USERPROFILE and APPDATA variables
-        os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-        os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
 
-        DETACHED_PROCESS = 0x00000008
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.local['params'].items())
 
         if MISC.get_os_platform() == "win32":
+            # Server instances write files to location dependent on USERPROFILE and APPDATA variables
+            os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
+            os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
+
+            DETACHED_PROCESS = 0x00000008
+
             cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
         else:
-            cmdline_args = f'''{self.config.local['config']['file_path']} -dedicated -noconfig -execute '"{params}"' -masterserver {self.global_config['hon_data']['svr_masterServer']} -register 127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}'''
-            exe = subprocess.Popen(cmdline_args,close_fds=True, shell = True, start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            cmdline_args = [
+                self.config.local['config']['file_path'],
+                '-dedicated',
+                '-noconfig',
+                '-execute',
+                f'"{params}"',
+                '-masterserver',
+                self.global_config['hon_data']['svr_masterServer'],
+                '-register',
+                f'127.0.0.1:{self.global_config["hon_data"]["svr_managerPort"]}'
+            ]
+            exe = subprocess.Popen(cmdline_args, shell = False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
 
         self._pid = exe.pid
         self._proc = exe
@@ -360,7 +373,7 @@ class GameServer:
             self._pid = proc.pid
             self._proc = proc
             self._proc_hook = psutil.Process(pid=proc.pid)
-            self._proc_owner =proc.username()
+            self._proc_owner = proc.username()
             try:
                 # self.set_runtime_variables()
                 return True
@@ -372,23 +385,13 @@ class GameServer:
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.IDLE_PRIORITY_CLASS)
         else:
-            # TODO:
-            # Process spawning works a bit different in linux.
-            # Each server spawn command executes a shell, which
-            # spawns the actual server as its child.
-            # Until i got a better idea how to handle this, i
-            # gladly introduce the following workaround :-P
             self._proc_hook.nice(20)
-            for child in self._proc_hook.children(recursive=True):
-                child.nice(20)
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
     def set_server_priority_increase(self):
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
         else:
             self._proc_hook.nice(-19)
-            for child in self._proc_hook.children(recursive=True):
-                child.nice(-19)
         LOGGER.info(f"GameServer #{self.id} - Priority set to High.")
 
     async def monitor_process(self):
