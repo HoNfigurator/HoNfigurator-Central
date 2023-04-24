@@ -33,7 +33,7 @@ class ChatServerHandler:
         while attempts < retry_attempts:
             try:
                 # Set a timeout for the connection attempt
-                conn_task = asyncio.open_connection(self.chat_address, self.chat_port, timeout=connection_timeout)
+                conn_task = asyncio.open_connection(self.chat_address, self.chat_port)
                 self.reader, self.writer = await asyncio.wait_for(conn_task, timeout=connection_timeout)
 
                 # Send multiple packets at once if needed
@@ -51,7 +51,8 @@ class ChatServerHandler:
                 LOGGER.warn("Connection refused by the chat server. Retrying...")
             except OSError as e:
                 LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-
+            except Exception:
+                LOGGER.exception(f"An unexpected exception occured. {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
             attempts += 1
             await asyncio.sleep(retry_interval)
 

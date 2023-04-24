@@ -88,19 +88,23 @@ def check_permission(permission: str, token_and_user_info: dict = Depends(verify
 """
 API Endpoints below
 """
+"""Unprotected Endpoints"""
+class PingResponse(BaseModel):
+    status: str
+@app.get("/api/ping", response_model=PingResponse, description="Responds with the a simple pong to indicate server is alive.")
+async def ping():
+    return {"status":"OK"}
+
 """Protected Endpoints"""
-
-
 
 """Config Types"""
 class GlobalConfigResponse(BaseModel):
-    hon_data: Dict[str, Any]
+    global_config: Dict
 
-@app.get("/api/get_global_config", response_model=GlobalConfigResponse)
-async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+@app.get("/api/get_global_config")
+async def get_global_config():
     # Replace this with your actual global_config data
-    global_config = {"example_key": "example_value"}
-    return {"hon_data": global_config}
+    return global_config
 
 class TotalServersResponse(BaseModel):
     total_servers: int
@@ -302,7 +306,7 @@ def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_f
 # Define the /api/get_instances_status endpoint with OpenAPI documentation
 @app.get("/api/get_instances_status", summary="Get instances status")
 #def get_instances(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
-def get_instances(token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+def get_instances():
     """
     Get the status of all game server instances.
 
@@ -418,46 +422,44 @@ def get_all_permissions(token_and_user_info: dict = Depends(check_permission_fac
 
 
 """Control Types"""
-# Define a Pydantic model for the /api/stop_server and /api/start_server endpoints
-class ServerPort(BaseModel):
-    port: int
-
 # Define the /api/stop_server endpoint with OpenAPI documentation
-@app.post("/api/stop_server", summary="Stop a game server instance")
-async def stop_server(server_port_data: ServerPort, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+@app.post("/api/stop_server/{port}", summary="Stop a game server instance")
+async def stop_server(port: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Stop a game server instance.
 
     Args:
-        server_port_data (ServerPort): The port number of the game server to stop.
+        port (ServerPort): The port number of the game server to stop.
 
     Returns:
         None.
     """
-    server_port = server_port_data.port
-    game_server = game_servers.get(server_port, None)
-
-    if game_server:
+    if port != "all":
+        game_server = game_servers.get(int(port),None)
+        if game_server is None: return JSONResponse(status_code=404, content={"error":"Server not managed by manager."})
         await manager_event_bus.emit('cmd_shutdown_server', game_server)
+    else:
+        for game_server in game_servers.values():
+            await manager_event_bus.emit('cmd_shutdown_server', game_server)
 
-
-# Define the /api/start_server endpoint with OpenAPI documentation
-@app.post("/api/start_server", summary="Start a game server instance")
-async def start_server(server_port_data: ServerPort, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
+@app.post("/api/start_server/{port}", summary="Start a game server instance")
+async def start_server(port: str, token_and_user_info: dict = Depends(check_permission_factory(allowed_roles=["admin","superadmin"]))):
     """
     Start a game server instance.
 
     Args:
-        server_port_data (ServerPort): The port number of the game server to start.
+        port (ServerPort): The port number of the game server to start.
 
     Returns:
         None.
     """
-    server_port = server_port_data.port
-    game_server = game_servers.get(server_port, None)
-
-    if game_server:
+    if port != "all":
+        game_server = game_servers.get(int(port),None)
+        if game_server is None: return JSONResponse(status_code=404, content={"error":"Server not managed by manager."})
         await manager_event_bus.emit('start_game_servers', game_server)
+    else:
+        for game_server in game_servers.values():
+            await manager_event_bus.emit('start_game_servers', game_server)
 
 """ End API Calls """
 

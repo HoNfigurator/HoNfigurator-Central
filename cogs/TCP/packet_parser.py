@@ -344,6 +344,8 @@ class ManagerChatParser:
         version = version.decode('utf-8')
         ip_addr = ip_addr.decode('utf-8')
 
+        self.log("debug",f"{self.print_prefix}Sending server info:\n\tUsername: {username}\n\tRegion: {region}\n\tServer Name: {server_name}\n\tVersion: {version}\n\tIP Addr: {ip_addr}\n\tAutoping Port: {port}")
+
     async def mgr_sending_heartbeat(self,packet_data):
         self.log("debug",f"{self.print_prefix}Sending heartbeat..")
 
