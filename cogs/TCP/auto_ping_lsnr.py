@@ -84,7 +84,6 @@ class AutoPingListener(asyncio.DatagramProtocol):
             response[45] = data[45]
 
             # Send the response
-            LOGGER.warning(response)
             self.transport.sendto(response, addr)
 
         except Exception:
