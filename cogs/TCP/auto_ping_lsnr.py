@@ -37,6 +37,12 @@ class AutoPingListener(asyncio.DatagramProtocol):
         self.server_address = '0.0.0.0'
         self.transport = None
         self.protocol = None
+        self.message_size = 69 + len(self.server_name) + len(self.game_version)
+        self.prepared_response = bytearray(self.message_size)
+        self.prepared_response[42] = 0x01
+        self.prepared_response[43] = 0x66
+        self.prepared_response[46: 46 + len(self.server_name)] = self.server_name.encode()
+        self.prepared_response[50 + len(self.server_name): 50 + len(self.server_name) + len(self.game_version)] = self.game_version.encode()
 
     def connection_made(self, transport):
         """
@@ -69,27 +75,16 @@ class AutoPingListener(asyncio.DatagramProtocol):
             if len(data) != 46:
                 LOGGER.warn("Unknown message - wrong length")
                 return
-            elif data[43] != 0xCA:
+            if data[43] != 0xCA:
                 LOGGER.warn("Unknown message - 43")
                 return
-            else:
-                # Prepare the response
-                response = bytearray(46)
-                response[42] = 0x01  # unreliable flag
-                response[43] = 0x66  # pong message type
-                response.extend(self.server_name.encode())
-                for i in range(4):  # 4 zeroes between name and version
-                    response.append(0)
-                response.extend(self.game_version.encode())
-                for i in range(19):  # 19 zeroes after version
-                    response.append(0)
 
-                # Write the challenge. Set values in the response to something expected by the server.
-                response[44] = data[44]
-                response[45] = data[45]
+            response = self.prepared_response.copy()
+            response[44] = data[44]
+            response[45] = data[45]
 
-                # Send the response
-                self.transport.sendto(response, addr)
+            # Send the response
+            self.transport.sendto(response, addr)
 
         except Exception:
             LOGGER.exception(traceback.format_exc())

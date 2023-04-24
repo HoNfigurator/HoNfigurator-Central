@@ -23,7 +23,7 @@ class SetupEnvironment:
         self.PATH_KEYS_IN_CONFIG_FILE = ["hon_install_directory","hon_home_directory"]
         self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path']
         self.ALL_PATH_TYPES = self.PATH_KEYS_IN_CONFIG_FILE + self.PATH_KEYS_NOT_IN_CONFIG_FILE
-        self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip","svr_version","hon_executable"]
+        self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip","svr_version","hon_executable", 'architecture']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()
@@ -91,7 +91,7 @@ class SetupEnvironment:
                         "heartbeat_frequency": 10
                     },
                     "replay_cleaner" : {
-                        "active" : True,
+                        "active" : False,
                         "max_replay_age_days" : 0,
                         "max_temp_files_age_days" : 0,
                         "max_temp_folders_age_days" : 0,
@@ -318,12 +318,14 @@ class SetupEnvironment:
             executable = f"hon_x64"
             suffix = ".exe"
             file_name = f'{executable}{suffix}'
-        else:
+            architecture = "was-crIac6LASwoafrl8FrOa"
+        else: # this should be "linux"
             hon_artefacts_directory = Path(self.hon_data["hon_home_directory"])
             hon_replays_directory = hon_artefacts_directory / "replays"
             hon_logs_directory = hon_artefacts_directory / "logs"
             executable = "hon-x86_64-server"
             file_name = executable
+            architecture = 'las-crIac6LASwoafrl8FrOa'
 
         self.hon_data['hon_artefacts_directory'] = hon_artefacts_directory
         self.hon_data['hon_replays_directory'] = hon_replays_directory
@@ -331,6 +333,7 @@ class SetupEnvironment:
         self.hon_data['svr_ip'] = MISC.get_public_ip()
         self.hon_data['hon_executable_path'] = self.hon_data['hon_install_directory'] / file_name
         self.hon_data['svr_version'] = MISC.get_svr_version(self.hon_data['hon_executable_path'])
+        self.hon_data['architecture'] = architecture
 
     def add_miscellaneous_data(self):
         return (

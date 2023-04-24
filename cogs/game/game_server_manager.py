@@ -275,7 +275,7 @@ class GameServerManager:
             AuthenticationError: If the authentication fails.
         """
         # Initialize MasterServerHandler and send requests
-        self.master_server_handler = MasterServerHandler(master_server="api.kongor.online", version=self.global_config['hon_data']['svr_version'], was="was-crIac6LASwoafrl8FrOa", event_bus=self.event_bus)
+        self.master_server_handler = MasterServerHandler(master_server="api.kongor.online", version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
             LOGGER.error("Authentication to MasterServer failed.")

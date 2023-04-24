@@ -30,7 +30,7 @@ class HonfiguratorSchedule():
     def __init__(self, config):
         self.config = config
         self.replay_dir = config["hon_data"]["hon_replays_directory"]
-        self.db = TinyDB("stats.json")
+        self.db = TinyDB("cogs/db/stats.json")
         self.replay_table = self.db.table('stats_replay_count')
         self.file_deletion_table =  self.db.table('file_deletion_table')
 
@@ -43,8 +43,8 @@ class HonfiguratorSchedule():
 
     def setup_tasks(self):
         # schedule.every(1).minutes.do(self.get_replays) #TODO: to be removed
-        self.cease_continuous_run = run_continously()
-        schedule.every().day.at("01:00", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
+        self.cease_continuous_run = run_continuously()
+        schedule.every().day.at("00:20", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
         schedule.every().day.at("01:10", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_files)
 
     def stop(self):
@@ -72,14 +72,16 @@ class Stats(HonfiguratorSchedule):
         day_str = time.strftime("%d", time_obj).lstrip("0")
         formatted_date_str = f"{year_str}-{month_str}-{day_str}"
 
+        size_in_mb = 0
         count = 0
         for filename in os.listdir(self.replay_dir):
             if filename.endswith(".honreplay"):
                 file_path = os.path.join(self.replay_dir, filename)
                 modified_time = os.path.getmtime(file_path)
                 if modified_time > yesterday:
+                    size_in_mb += Path(file_path).stat().st_size  / 1000
                     count += 1
-        self.replay_table.insert({"date" : formatted_date_str, "count" : count})
+        self.replay_table.insert({"date" : formatted_date_str, "count" : count, "size_in_mb" : size_in_mb})
 
 
 class ReplayCleaner(HonfiguratorSchedule):
