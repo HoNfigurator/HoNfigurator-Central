@@ -33,7 +33,7 @@ class ChatServerHandler:
         while attempts < retry_attempts:
             try:
                 # Set a timeout for the connection attempt
-                conn_task = asyncio.open_connection(self.chat_address, self.chat_port)
+                conn_task = asyncio.open_connection(self.chat_address, self.chat_port, timeout=connection_timeout)
                 self.reader, self.writer = await asyncio.wait_for(conn_task, timeout=connection_timeout)
 
                 # Send multiple packets at once if needed
