@@ -170,6 +170,7 @@ class GameServer:
         temp = {
             'ID': self.id,
             'Port': self.port,
+            'Region':self.config.get_local_by_key('svr_location'),
             'Status': 'Unknown',
             'Game Phase': 'Unknown',
             'Connections': self.get_dict_value('num_clients'),
