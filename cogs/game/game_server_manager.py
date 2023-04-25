@@ -40,7 +40,7 @@ WAKE_BYTES = b'!'
 
 # Define a class for managing game servers
 class GameServerManager:
-    def __init__(self, global_config):
+    def __init__(self, global_config, setup):
         """
         Initializes a new GameServerManager object.
 
@@ -55,6 +55,10 @@ class GameServerManager:
         self.event_bus.subscribe('handle_replay_request', self.handle_replay_request)
         self.event_bus.subscribe('authenticate_to_chat_svr', self.authenticate_and_handle_chat_server)
         self.event_bus.subscribe('start_game_servers', self.start_game_servers)
+        self.event_bus.subscribe('add_game_servers', self.create_dynamic_game_server)
+        self.event_bus.subscribe('remove_game_servers', self.remove_dynamic_game_server)
+        self.event_bus.subscribe('remove_game_server', self.remove_game_server)
+        self.event_bus.subscribe('balance_game_server_count', self.balance_game_server_count)
         self.event_bus.subscribe('enable_game_server', self.enable_game_server)
         self.event_bus.subscribe('disable_game_server', self.disable_game_server)
         self.event_bus.subscribe('cmd_message_server', self.cmd_message_server)
@@ -71,6 +75,7 @@ class GameServerManager:
             'authentication_handler':'',
             'gameserver_startup':''
         }
+        self.setup = setup 
         #self.event_bus.subscribe('reset')
 
         # Initialize dictionaries to store game servers and client connections
@@ -90,9 +95,9 @@ class GameServerManager:
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus)
         self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
 
-    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0):
+    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False):
         try:
-            if game_server is None: return
+            if game_server is None: return False
             client_connection = self.client_connections.get(game_server.port, None)
             await asyncio.sleep(delay)
             if client_connection:
@@ -102,18 +107,22 @@ class GameServerManager:
                     client_connection.writer.write(SHUTDOWN_BYTES)
                     await client_connection.writer.drain()
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
+                    return True
                 else:
                     self.tasks.update({
                         'game_servers': {
-                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES)))}
+                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete))}
                         }
                     })
                     await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
+                    return True
             else:
                 # this server hasn't connected to the manager yet
                 await game_server.stop_server_exe()
                 game_server.reset_game_state()
+                return True
+            return False
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -341,8 +350,8 @@ class GameServerManager:
         Returns:
             int or None: the next available port, or None if no ports are available
         """
-        starting_game_port = self.global_config['hon_data']['svr_starting_gamePort']
-        total_allowed_servers = self.global_config['hon_data']['svr_total']
+        starting_game_port = self.global_config['hon_data']['svr_starting_gamePort'] + 1
+        total_allowed_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
 
         for i in range(total_allowed_servers):
             game_port = starting_game_port + i
@@ -351,21 +360,117 @@ class GameServerManager:
                 return game_port
 
         return None
-
-    def create_dynamic_game_server(self):
+    
+    async def balance_game_server_count(self, add_servers=0, remove_servers=0):
         """
-        Creates a new game server instance with the next available port
+        Ensures that the maximum number of game servers are running by creating new game servers
+        and removing existing game servers as needed.
 
         Returns:
             None
         """
-        game_port = self.find_next_available_ports()
+        max_servers = self.global_config['hon_data']['svr_total']
+        if add_servers == "all":
+            max_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
+        elif add_servers > 0:
+            max_servers += add_servers
+        
+        if remove_servers == "all":
+            max_servers = 0
+        elif remove_servers > 0:
+            max_servers -= remove_servers
+        
+        if max_servers < 0: max_servers = 0
+        self.global_config['hon_data']['svr_total'] = max_servers
 
-        if game_port is not None:
-            self.create_game_server(game_port)
-            LOGGER.info(f"Game server created at game_port: {game_port}")
-        else:
-            LOGGER.warn("No available ports for creating a new game server.")
+        self.setup.validate_hon_data(self.global_config['hon_data'])
+
+        running_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('match_started') != 1]
+
+        num_running_servers = len(running_servers)
+        num_servers_to_remove = max(num_running_servers - max_servers, 0)
+        num_servers_to_create = max(max_servers - num_running_servers, 0)
+
+        if num_servers_to_create > 0:
+            for i in range(num_servers_to_create):
+                game_port = self.find_next_available_ports()
+
+                if game_port is not None:
+                    game_server = self.create_game_server(game_port)
+                    asyncio.create_task(self.start_game_servers(game_server))
+                    LOGGER.info(f"Game server created at game_port: {game_port}")
+                else:
+                    LOGGER.warn("No available ports for creating a new game server.")
+
+        if num_servers_to_remove > 0:
+            servers_removed = 0
+            for game_server in running_servers:
+                if await self.cmd_shutdown_server(game_server):
+                    del self.game_servers[game_server.port]
+                    servers_removed += 1
+                    if servers_removed >= num_servers_to_remove:
+                        break
+
+            LOGGER.info(f"Removed {servers_removed} game servers. {max_servers} game servers are now running.")
+        elif num_servers_to_remove < 0:
+            LOGGER.warn("Number of running game servers is greater than the maximum number of game servers.")
+
+
+    async def create_dynamic_game_server(self):
+        """
+        Creates new game server instances with the next available ports until the maximum number of servers is reached
+
+        Returns:
+            None
+        """
+        max_servers = self.global_config['hon_data']['svr_total']
+        running_servers = [game_server for game_server in self.game_servers.values() if game_server.started]
+        num_servers_to_create = max_servers - len(running_servers)
+        if num_servers_to_create <= 0:
+            return
+
+        for i in range(num_servers_to_create):
+            game_port = self.find_next_available_ports()
+
+            if game_port is not None:
+                game_server = self.create_game_server(game_port)
+                asyncio.create_task(self.start_game_servers(game_server))
+                LOGGER.info(f"Game server created at game_port: {game_port}")
+            else:
+                LOGGER.warn("No available ports for creating a new game server.")
+
+    
+    async def remove_dynamic_game_server(self):
+        max_servers = self.global_config['hon_data']['svr_total']
+        running_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('match_started') != 0]
+        num_servers_to_remove = len(running_servers) - max_servers
+        if num_servers_to_remove <= 0:
+            return
+
+        servers_removed = 0
+        for game_server in running_servers:
+            if await self.cmd_shutdown_server(game_server):
+                del self.game_servers[game_server.port]
+                servers_removed += 1
+                if servers_removed >= num_servers_to_remove:
+                    break
+
+        LOGGER.info(f"Removed {servers_removed} game servers. {max_servers} game servers are now running.")
+
+        # count = 0
+        # for i in range(num):
+        #     removed = False
+        #     for port, game_server in self.game_servers.items():
+        #         if not game_server.started:
+        #             if self.remove_game_server(game_server):
+        #                 LOGGER.info(f"Removed game server {port}")
+        #                 count += 1
+        #                 removed = True
+        #                 break
+        #     if not removed:
+        #         LOGGER.info(f"No more running game servers found after removing {count} game servers.")
+        #         break
+        # LOGGER.info(f"Removed a total of {count} game servers.")
 
     def remove_game_server(self, game_server):
         """
@@ -378,7 +483,7 @@ class GameServerManager:
             None
         """
         for key, value in self.game_servers.items():
-            if value == game_server:
+            if value == game_server and not game_server.started:
                 game_server.cancel_tasks()
                 del self.game_servers[key]
                 return True

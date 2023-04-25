@@ -63,7 +63,7 @@ async def main():
     udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
 
     # instantiate the manager
-    game_server_manager = GameServerManager(global_config)
+    game_server_manager = GameServerManager(global_config, setup)
     # Print configuration overview
     print_formatted_text("\nConfiguration Overview")
     for key,value in global_config['hon_data'].items():

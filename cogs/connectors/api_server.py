@@ -461,6 +461,22 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
         for game_server in game_servers.values():
             await manager_event_bus.emit('start_game_servers', game_server)
 
+@app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
+async def add_all_servers(num: int):
+    await manager_event_bus.emit('balance_game_server_count',add_servers=num)
+
+@app.post("/api/add_all_servers", description="Add total number of possible servers.")
+async def add_servers():
+    await manager_event_bus.emit('balance_game_server_count',add_servers="all")
+
+@app.post("/api/remove_servers/{num}", description="Remove X number of game servers. Dynamically removes servers idle servers.")
+async def remove_servers(num: int):
+    await manager_event_bus.emit('balance_game_server_count',remove_servers=num)
+
+@app.post("/api/remove_all_servers", description="Remove all idle servers. Marks occupied servers as 'To be removed'.")
+async def remove_all_servers():
+    await manager_event_bus.emit('balance_game_server_count',remove_servers="all")
+
 """ End API Calls """
 
 

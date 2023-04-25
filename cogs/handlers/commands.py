@@ -207,8 +207,19 @@ class Commands:
         if self.setup.validate_hon_data(self.global_config['hon_data']):
             print_formatted_text(f"Value for key '{last_key}' changed from {old_value} to {value}")
             LOGGER.info("Saved local configuration")
+            # TODO: If command line arguments change, then schedule restart..
             LOGGER.info("Scheduling restart of servers to apply new configuration")
-            await self.cmd_shutdown_server("all")
+            #await self.cmd_shutdown_server("all") # else
+            if last_key == "svr_total":
+                await self.manager_event_bus.emit('balance_game_server_count')
+                # if int(value) > int(old_value):
+                #     # diff = int(value) - int(old_value)
+                #     await self.manager_event_bus.emit('add_game_servers')
+                # else:
+                #     # diff = int(old_value) - int(value)
+                #     # for i in range(value,old_value):
+                #     #     game_server = self.game_servers.get()
+                #     await self.manager_event_bus.emit('remove_game_servers')
 
     async def handle_input(self):
         self.subcommands_changed = asyncio.Event()
