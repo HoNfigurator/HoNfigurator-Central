@@ -291,6 +291,10 @@ class GameServer:
             # log_file.close()
             # END
 
+
+            # old:
+            # exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+
         self._pid = exe.pid
         self._proc = exe
         self._proc_hook = psutil.Process(pid=exe.pid)
