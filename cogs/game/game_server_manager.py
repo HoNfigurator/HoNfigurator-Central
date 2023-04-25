@@ -440,9 +440,9 @@ class GameServerManager:
             return False
 
     async def handle_replay_request(self, match_id, extension, account_id):
-        replay_file_name = f"M{match_id}.{extension}"
-        replay_file_path = (self.global_config['hon_data']['hon_replays_directory'] / replay_file_name)
-        file_exists = exists(replay_file_path)
+        replay_file_name = Path(f"M{match_id}.{extension}")
+        replay_file_path = (Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name)
+        file_exists = Path.exists(replay_file_path)
 
         LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
 
