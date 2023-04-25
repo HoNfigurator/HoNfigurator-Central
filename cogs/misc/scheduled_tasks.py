@@ -90,11 +90,9 @@ class ReplayCleaner(HonfiguratorSchedule):
 
     def delete(self, file_path, method):
         if method == "file":
-            #file_path.unlink()
-            pass
+            file_path.unlink()
         elif method == "folder":
-            #shutil.rmtree(file_path)
-            pass
+            shutil.rmtree(file_path)
         else:
             pass
 
