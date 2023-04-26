@@ -18,6 +18,7 @@ from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, HealthChecks, EventBus as ManagerEventBus
 from cogs.misc.logging import get_logger, get_misc, get_home
+from pathlib import Path
 from enum import Enum
 from os.path import exists
 
@@ -440,7 +441,7 @@ class GameServerManager:
             return False
 
     async def handle_replay_request(self, match_id, extension, account_id):
-        replay_file_name = Path(f"M{match_id}.{extension}")
+        replay_file_name = f"M{match_id}.{extension}"
         replay_file_path = (Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name)
         file_exists = Path.exists(replay_file_path)
 
