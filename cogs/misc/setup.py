@@ -169,6 +169,11 @@ class SetupEnvironment:
                             minor_issues.append(f"Resolved: Invalid boolean value for {key}: {value}")
                         except Exception:
                             major_issues.append(f"Invalid boolean value for {key}: {value}")
+                    elif value in ['0', '1']:
+                        if value == '0':
+                            self.hon_data[key] = False
+                        elif value == '1':
+                            self.hon_data[key] = True
                     else:
                         major_issues.append(f"Invalid boolean value for {key}: {value}")
 
@@ -227,12 +232,12 @@ class SetupEnvironment:
                 except ValueError:
                     print("Value must be a 10 digit number. Here is a guide to find your discord user ID. https://www.youtube.com/watch?v=ZPROrf4Fe3Q")
 
-        else:
-            self.hon_data = self.get_existing_configuration()
-            self.full_config = self.merge_config()
-            if self.validate_hon_data(self.full_config['hon_data']):
-                return True
-            else: return False
+        # else:
+        self.hon_data = self.get_existing_configuration()
+        self.full_config = self.merge_config()
+        if self.validate_hon_data(self.full_config['hon_data']):
+            return True
+        else: return False
 
     def create_logging_configuration_file(self):
         with open(str(self.config_file_logging), 'w') as config_file_logging:

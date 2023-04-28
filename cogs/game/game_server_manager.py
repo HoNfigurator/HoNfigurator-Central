@@ -66,6 +66,7 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
         self.event_bus.subscribe('update', self.update)
+        self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.tasks = {
             'game_servers':'',
             'cli_handler':'',
@@ -122,7 +123,6 @@ class GameServerManager:
                 await game_server.stop_server_exe()
                 game_server.reset_game_state()
                 return True
-            return False
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -386,7 +386,6 @@ class GameServerManager:
         self.setup.validate_hon_data(self.global_config['hon_data'])
 
         running_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('match_started') != 1]
-
         num_running_servers = len(running_servers)
         num_servers_to_remove = max(num_running_servers - max_servers, 0)
         num_servers_to_create = max(max_servers - num_running_servers, 0)
@@ -439,6 +438,11 @@ class GameServerManager:
             else:
                 LOGGER.warn("No available ports for creating a new game server.")
 
+    async def check_for_restart_required(self):
+        for game_server in self.game_servers.values():
+            if game_server.params_are_different():
+                await self.cmd_shutdown_server(game_server)
+                game_server.enable_server()
     
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']

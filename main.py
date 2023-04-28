@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 
 #   This must be first, to initialise logging which all other classes rely on.
-from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc
+from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
 HOME_PATH = Path(get_script_dir(__file__))
 set_home(HOME_PATH)
 set_logger()
@@ -14,14 +14,17 @@ from cogs.misc.utilities import Misc
 MISC = Misc()
 set_misc(MISC)
 
+from cogs.misc.setup import SetupEnvironment, PrepareDependencies
+CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
+setup = SetupEnvironment(CONFIG_FILE)
+set_setup(setup)
+
 from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
-from cogs.misc.setup import SetupEnvironment, PrepareDependencies
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
 
 LOGGER = get_logger()
-CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """
@@ -45,7 +48,6 @@ async def main():
     requirements_check = PrepareDependencies()
     requirements_check.update_dependencies()
 
-    setup = SetupEnvironment(CONFIG_FILE)
     config = setup.check_configuration()
     if config:
         global_config = setup.get_final_configuration()

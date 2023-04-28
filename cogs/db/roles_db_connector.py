@@ -14,6 +14,26 @@ class RolesDatabase:
     def __init__(self, database_path: str = str(DATABASE_PATH)):
         self.database_path = database_path
         self.create_tables()
+        # Insert default roles
+        self.default_users = [
+            {"nickname": "owner", "roles" : ["superadmin"]}
+        ]
+        self.default_roles = [
+            {"name": "superadmin", "permissions": ["monitor", "control", "configure"], "inherits": ["admin"]},
+            {"name": "admin", "permissions": ["monitor", "control"], "inherits": ["user"]},
+            {"name": "user", "permissions": ["monitor"], "inherits": []},
+        ]
+        self.default_permissions = [
+            {"name": "monitor"},
+            {"name": "control"},
+            {"name": "configure"}
+        ]
+    
+    def get_default_users(self):
+        return self.default_users
+
+    def get_default_roles(self):
+        return self.default_roles
 
     @contextmanager
     def get_conn(self):
@@ -24,6 +44,35 @@ class RolesDatabase:
         finally:
             conn.close()
 
+    def health_check_decorator(func):
+        def wrapper(*args, **kwargs):
+            # Assuming the first argument is always the instance of the class
+            instance = args[0]
+            instance.health_check()
+            return func(*args, **kwargs)
+        return wrapper
+    
+    def health_check(self) -> None:
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+
+            # Remove orphaned records from the user_roles table
+            cursor.execute("""
+                DELETE FROM user_roles
+                WHERE user_id NOT IN (SELECT id FROM users)
+                OR role_id NOT IN (SELECT id FROM roles)
+            """)
+
+            # Remove orphaned records from the role_permissions table
+            cursor.execute("""
+                DELETE FROM role_permissions
+                WHERE role_id NOT IN (SELECT id FROM roles)
+                OR permission_id NOT IN (SELECT id FROM permissions)
+            """)
+
+            conn.commit()
+
+
     def create_tables(self, discord_id = None):
         with self.get_conn() as conn:
             cursor = conn.cursor()
@@ -31,8 +80,25 @@ class RolesDatabase:
             cursor.execute("""
             CREATE TABLE IF NOT EXISTS roles (
                 id INTEGER PRIMARY KEY,
-                name TEXT UNIQUE,
-                permissions TEXT
+                name TEXT NOT NULL UNIQUE,
+                inherits TEXT
+            )
+            """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS permissions (
+                id INTEGER PRIMARY KEY,
+                name TEXT NOT NULL UNIQUE
+            )
+            """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS role_permissions (
+                role_id INTEGER,
+                permission_id INTEGER,
+                FOREIGN KEY (role_id) REFERENCES roles (id),
+                FOREIGN KEY (permission_id) REFERENCES permissions (id),
+                UNIQUE (role_id, permission_id)
             )
             """)
 
@@ -55,48 +121,58 @@ class RolesDatabase:
             """)
             conn.commit()
     
-    def add_default_data(self, discord_id = None):
+    def add_default_data(self, discord_id=None):
         with self.get_conn() as conn:
             cursor = conn.cursor()
+            
+            # Insert default permissions if the permissions table is empty
+            cursor.execute("SELECT COUNT(*) FROM permissions")
+            if cursor.fetchone()[0] == 0:
+                for permission in self.default_permissions:
+                    cursor.execute(
+                        "INSERT INTO permissions (name) VALUES (?)", (permission["name"],))
+
+                conn.commit()
+
             # Check if the roles table is empty
             cursor.execute("SELECT COUNT(*) FROM roles")
             if cursor.fetchone()[0] == 0:
                 if discord_id is None:  # Quit here, so we can recall function with the discord ID.
                     return False
-                # Insert default roles
-                default_roles = [
-                    {"name": "Admin", "permissions": {"read": True, "write": True, "delete": True}},
-                    {"name": "Member", "permissions": {"read": True, "write": True, "delete": False}},
-                ]
 
-                for role in default_roles:
-                    cursor.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)",
-                                (role["name"], json.dumps(role["permissions"])))
+                for role in self.default_roles:
+                    cursor.execute("INSERT INTO roles (name, inherits) VALUES (?, ?)",
+                                (role["name"], json.dumps(role["inherits"])))
+                    role_id = cursor.lastrowid
+
+                    for permission_name in role["permissions"]:
+                        cursor.execute("SELECT id FROM permissions WHERE name = ?", (permission_name,))
+                        permission_id = cursor.fetchone()[0]
+                        cursor.execute("INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)", (role_id, permission_id))
+
+                conn.commit()
 
             # Check if the users table is empty
             cursor.execute("SELECT COUNT(*) FROM users")
             if cursor.fetchone()[0] == 0:
                 if discord_id is None:  # Quit here, so we can recall function with the discord ID.
                     return False
-                # Insert a default user
-                default_user = {"discord_id": "197967989964800000", "nickname": "Owner"}
 
-                cursor.execute("INSERT INTO users (discord_id, nickname) VALUES (?, ?)",
-                            (default_user["discord_id"], default_user["nickname"]))
+                for default_user in self.default_users:
+                    cursor.execute("INSERT INTO users (discord_id, nickname) VALUES (?, ?)",
+                                (discord_id, default_user["nickname"]))
+                    user_id = cursor.lastrowid
 
-                # Get the ID of the inserted user and the "Admin" role
-                cursor.execute("SELECT id FROM users WHERE discord_id = ?", (default_user["discord_id"],))
-                user_id = cursor.fetchone()[0]
+                    for role_name in default_user["roles"]:
+                        cursor.execute("SELECT id FROM roles WHERE name = ?", (role_name,))
+                        role_id = cursor.fetchone()[0]
+                        cursor.execute("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", (user_id, role_id))
 
-                cursor.execute("SELECT id FROM roles WHERE name = ?", ("Admin",))
-                admin_role_id = cursor.fetchone()[0]
-
-                # Assign the default user to the "Admin" role using the `user_roles` table
-                cursor.execute("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", (user_id, admin_role_id))
+                conn.commit()
         return True
 
     # Other methods are updated to use the "self.get_conn()" context manager
-
+    @health_check_decorator
     def update_roles_and_users(self, roles: List[Dict[str, Any]], users: List[Dict[str, Any]]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
@@ -106,7 +182,7 @@ class RolesDatabase:
             cursor.execute("DELETE FROM users")
 
             for role in roles:
-                cursor.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)", (role["name"], json.dumps(role["permissions"])))
+                cursor.execute("INSERT INTO roles (name) VALUES (?)", (role["name"],))
 
             for user in users:
                 cursor.execute("INSERT INTO users (discord_id, nickname) VALUES (?, ?)", (user["discord_id"], user["nickname"]))
@@ -128,6 +204,7 @@ class RolesDatabase:
 
         return users
     
+    @health_check_decorator
     def get_all_users_with_roles(self):
         with self.get_conn() as conn:
             cursor = conn.cursor()
@@ -153,7 +230,41 @@ class RolesDatabase:
                 results.append(user)
 
             return results
+    
+    @health_check_decorator
+    def get_all_permissions(self):
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM permissions")
+            permissions = [dict(row) for row in cursor.fetchall()]
 
+        return permissions
+    
+    @health_check_decorator
+    def get_all_roles_with_permissions(self):
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+
+            cursor.execute("""
+                SELECT roles.id, roles.name, GROUP_CONCAT(permissions.name, ', ') AS permissions
+                FROM roles
+                LEFT JOIN role_permissions ON roles.id = role_permissions.role_id
+                LEFT JOIN permissions ON role_permissions.permission_id = permissions.id
+                GROUP BY roles.id;
+            """)
+
+            results = []
+            for row in cursor.fetchall():
+                role = {
+                    'id': row[0],
+                    'name': row[1],
+                    'permissions': row[2].split(', ') if row[2] else []
+                }
+                results.append(role)
+
+            return results
+
+    @health_check_decorator
     def get_all_roles(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         with self.get_conn() as conn:
             cursor = conn.cursor()
@@ -163,6 +274,19 @@ class RolesDatabase:
 
         return roles
 
+    @health_check_decorator
+    def get_role_by_name(self, role_name: str) -> Dict[str, Any]:
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM roles WHERE name = ?", (role_name,))
+            row = cursor.fetchone()
+
+        if row:
+            return dict(row)
+        else:
+            return {}
+      
+    @health_check_decorator  
     def get_user_roles_by_discord_id(self, discord_id: str) -> List[str]:
         with self.get_conn() as conn:
             cursor = conn.cursor()
@@ -178,8 +302,27 @@ class RolesDatabase:
             roles = [row["name"] for row in cursor.fetchall()]
 
         return roles
+    
+    @health_check_decorator
+    def get_user_permissions_by_discord_id(self, discord_id: str) -> List[str]:
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
 
+            cursor.execute("""
+                SELECT permissions.name
+                FROM permissions
+                JOIN role_permissions ON permissions.id = role_permissions.permission_id
+                JOIN roles ON roles.id = role_permissions.role_id
+                JOIN user_roles ON roles.id = user_roles.role_id
+                JOIN users ON users.id = user_roles.user_id
+                WHERE users.discord_id = ?
+            """, (discord_id,))
 
+            permissions = [row["name"] for row in cursor.fetchall()]
+
+        return permissions
+
+    @health_check_decorator
     def get_user_nickname_by_discord_id(self, discord_id: str) -> str:
         with self.get_conn() as conn:
             cursor = conn.cursor()
@@ -193,6 +336,7 @@ class RolesDatabase:
         else:
             return ""
 
+    @health_check_decorator
     def add_new_user(self, user: Dict[str, Any]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
@@ -206,25 +350,34 @@ class RolesDatabase:
 
             conn.commit()
     
+    @health_check_decorator
     def add_role_to_user(self, user_id: int, role_id: int) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", (user_id, role_id))
             conn.commit()
     
+    @health_check_decorator
     def remove_role_from_user(self, user_id: int, role_id: int) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM user_roles WHERE user_id = ? AND role_id = ?", (user_id, role_id))
             conn.commit()
 
-    def remove_user(self, discord_id: str) -> None:
+    @health_check_decorator
+    def remove_user(self, user: Dict[str, Any]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "DELETE FROM users WHERE discord_id = ?", (discord_id,))
+
+            cursor.execute("SELECT id FROM users WHERE discord_id = ?", (user["discord_id"],))
+            user_id = cursor.fetchone()[0]
+
+            cursor.execute("DELETE FROM user_roles WHERE user_id = ?", (user_id,))
+            cursor.execute("DELETE FROM users WHERE discord_id = ?", (user["discord_id"],))
+
             conn.commit()
 
+    @health_check_decorator
     def edit_user(self, user: Dict[str, Any]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
@@ -242,19 +395,42 @@ class RolesDatabase:
             conn.commit()
 
 
+    @health_check_decorator
     def add_new_role(self, role: Dict[str, Any]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("INSERT INTO roles (name, permissions) VALUES (?, ?)",
-                           (role["name"], json.dumps(role["permissions"])))
+            cursor.execute("INSERT INTO roles (name) VALUES (?)", (role["name"],))
+            role_id = cursor.lastrowid
+
+            for permission_name in role["permissions"]:
+                cursor.execute("SELECT id FROM permissions WHERE name = ?", (permission_name,))
+                permission_id = cursor.fetchone()[0]
+
+                cursor.execute("""
+                    SELECT * FROM role_permissions
+                    WHERE role_id = ? AND permission_id = ?
+                """, (role_id, permission_id))
+
+                if cursor.fetchone() is None:
+                    cursor.execute("INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)", (role_id, permission_id))
+
             conn.commit()
 
-    def remove_role(self, name: str) -> None:
+    @health_check_decorator
+    def remove_role(self, role: Dict[str, Any]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("DELETE FROM roles WHERE name = ?", (name,))
+
+            cursor.execute("SELECT id FROM roles WHERE name = ?", (role["name"],))
+            role_id = cursor.fetchone()[0]
+
+            cursor.execute("DELETE FROM role_permissions WHERE role_id = ?", (role_id,))
+            cursor.execute("DELETE FROM user_roles WHERE role_id = ?", (role_id,))
+            cursor.execute("DELETE FROM roles WHERE name = ?", (role["name"],))
+
             conn.commit()
 
+    @health_check_decorator
     def edit_role(self, role: Dict[str, Any]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()

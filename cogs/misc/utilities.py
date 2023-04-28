@@ -23,10 +23,12 @@ class Misc:
                 cmd_line = proc.cmdline()
                 if len(cmd_line) < 5:
                     continue
-                for item in cmd_line[4].split(";"):
-                    if "svr_slave" in item:
-                        if int(item.split(" ")[-1]) == slave_id:
-                            return [proc]
+                for i in range(len(cmd_line)):
+                    if cmd_line[i] == "-execute":
+                        for item in cmd_line[i+1].split(";"):
+                            if "svr_slave" in item:
+                                if int(item.split(" ")[-1]) == slave_id:
+                                    return [ proc ]
         return []
     def get_proc(proc_name, slave_id = ''):
         if sys.platform == "linux":
@@ -37,10 +39,12 @@ class Misc:
                 cmd_line = proc.cmdline()
                 if len(cmd_line) < 5:
                     continue
-                for item in cmd_line[4].split(";"):
-                    if "svr_slave" in item:
-                        if int(item.split(" ")[-1]) == slave_id:
-                            procs.append(proc)
+                for i in range(len(cmd_line)):
+                    if cmd_line[i] == "-execute":
+                        for item in cmd_line[i+1].split(";"):
+                            if "svr_slave" in item:
+                                if int(item.split(" ")[-1]) == slave_id:
+                                    procs.append(proc)
         return procs
     def check_port(port):
         command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)

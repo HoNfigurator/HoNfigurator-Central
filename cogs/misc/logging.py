@@ -69,6 +69,14 @@ def get_misc():
     global MISC
     return MISC
 
+def set_setup(setup_object):
+    global SETUP
+    SETUP = setup_object
+
+def get_setup():
+    global SETUP
+    return SETUP
+
 def set_home(script_home):
     global HOME_PATH
     HOME_PATH = script_home

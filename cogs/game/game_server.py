@@ -57,12 +57,17 @@ class GameServer:
     def cancel_tasks(self):
         for task in self.tasks.values():
             task.cancel()
+
     def reset_game_state(self):
         self.status_received.clear()
         self.game_state.clear()
 
-    def link_client_connection(self,client_connection):
-        self.client_connection = client_connection
+    def params_are_different(self):
+        current_params = self._proc_hook.cmdline()[4]
+        new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+        if current_params != new_params:
+            return True
+        return False
 
     async def on_game_state_change(self, key, value):
         # if not self.status_received.is_set():
@@ -235,16 +240,16 @@ class GameServer:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
 
 
-        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.local['params'].items())
+        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
 
         if MISC.get_os_platform() == "win32":
             # Server instances write files to location dependent on USERPROFILE and APPDATA variables
             os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
+            # os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
 
             DETACHED_PROCESS = 0x00000008
 
-            cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
+            cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
         else:
             cmdline_args = [
@@ -373,7 +378,7 @@ class GameServer:
                 if status == 3:
                     last_good_proc = proc
                 elif status is None:
-                    if not Misc.check_port(self.config.local['params']['svr_port']):
+                    if not Misc.check_port(self.config.get_local_configuration()['params']['svr_port']):
                         proc.terminate()
                         running_procs.remove(proc)
                     else:
