@@ -2,7 +2,10 @@
 This project is set up using a self installer.
 
 ## Windows
-<installer here>
+1. Ensure Python 3.10 + is installed.
+  1. CMD> python --version
+1. git clone https://github.com/frankthetank001/HoNfigurator-Central
+1. run ``HoNfigurator.exe``
 
 ## Linux
 <installer here>
