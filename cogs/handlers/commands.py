@@ -4,7 +4,7 @@ import traceback
 import asyncio
 import inspect
 import re
-from cogs.misc.logging import get_logger, get_script_dir, flatten_dict, print_formatted_text, get_home
+from cogs.misc.logger import get_logger, get_script_dir, flatten_dict, print_formatted_text, get_home
 from cogs.misc.setup import SetupEnvironment
 from cogs.handlers.events import stop_event
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory

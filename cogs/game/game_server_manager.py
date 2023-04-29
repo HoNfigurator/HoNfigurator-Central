@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 import inspect
-from cogs.misc.exceptions import ServerConnectionError, AuthenticationError
+from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, UnexpectedVersionError, HoNPatchError, InvalidServerBinaries
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
@@ -17,7 +17,8 @@ from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, HealthChecks, EventBus as ManagerEventBus
-from cogs.misc.logging import get_logger, get_misc, get_home
+from cogs.game.healthcheck_manager import HealthCheckManager
+from cogs.misc.logger import get_logger, get_misc, get_home
 from enum import Enum
 from os.path import exists
 
@@ -65,6 +66,7 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_shutdown_server', self.cmd_shutdown_server)
         self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
+        self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.tasks = {
@@ -76,8 +78,11 @@ class GameServerManager:
             'authentication_handler':'',
             'gameserver_startup':''
         }
-        self.setup = setup 
-        #self.event_bus.subscribe('reset')
+        # initialise the config validator in case we need it
+        self.setup = setup
+
+        # set the current state of patching
+        self.patching = False
 
         # Initialize dictionaries to store game servers and client connections
         self.server_start_semaphore = asyncio.Semaphore(self.global_config['hon_data']['svr_max_start_at_once'])  # 2 max servers starting at once
@@ -93,7 +98,10 @@ class GameServerManager:
         self.tasks.update({'cli_handler':asyncio.create_task(self.commands.handle_input())})
 
         # Start running health checks
-        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus)
+        
+        # Initialize MasterServerHandler and send requests
+        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
+        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.global_config)
         self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
 
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False):
@@ -169,6 +177,37 @@ class GameServerManager:
             LOGGER.info(f"Command - Message command sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+    
+    async def check_upstream_patch(self):
+        if self.patching:
+            LOGGER.info("Server patching is ongoing.. Please wait.")
+            return
+        
+        try:
+            local_svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
+        except UnexpectedVersionError:
+            raise InvalidServerBinaries("The version check on the hon_x64.exe failed, because it was not a supported server binary. Please ensure you have correctly followed the guide to set up the server.")
+
+        try:    
+            patch_information = await self.master_server_handler.compare_upstream_patch()
+            if not patch_information:
+                LOGGER.error("Checking the upstream patch version failed, as the upstream services were unavailable.")
+                return
+            if patch_information[1] != 200:
+                LOGGER.error(f"Checking the upstream patch version failed with: [{patch_information[1]}] {patch_information[0]}")
+                return
+            parsed_patch_information = phpserialize.loads(patch_information[0].encode('utf-8'))
+            parsed_patch_information = {key.decode() if isinstance(key, bytes) else key: (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_patch_information.items()}
+            self.latest_available_game_version = parsed_patch_information['latest']
+
+            if local_svr_version != self.latest_available_game_version:
+                LOGGER.info(f"A newer patch is available. Initiating server shutdown for patching.\n\tUpgrading from {local_svr_version} --> {parsed_patch_information['latest']}")
+                return True
+            
+            return False
+
+        except Exception:
+            LOGGER.error(f"{traceback.format_exc()}")
 
     async def start_autoping_listener_task(self, port):
         LOGGER.info("Starting AutoPingListener...")
@@ -283,8 +322,6 @@ class GameServerManager:
         Raises:
             AuthenticationError: If the authentication fails.
         """
-        # Initialize MasterServerHandler and send requests
-        self.master_server_handler = MasterServerHandler(master_server="api.kongor.online", version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
             LOGGER.error("Authentication to MasterServer failed.")
@@ -636,12 +673,23 @@ class GameServerManager:
 
         This function does not return anything, but can log errors or other information.
         """
+        if MISC.get_os_platform() == "win32" and await self.check_upstream_patch():
+            if await self.initialise_patching_procedure(soruce="startup"):
+                # patching was successful. Continue starting servers.
+                pass
+            else:
+                return False
+        else:
+            # Patch not required
+            pass
+
         async def start_game_server_with_semaphore(game_server, timeout):
             game_server.game_state.update({'status':GameStatus.QUEUED.value})
             async with self.server_start_semaphore:
                 started = await game_server.start_server(timeout=timeout)
                 if not started:
                     LOGGER.error(f"GameServer #{game_server.id} with port {game_server.port} failed to start.")
+                    await self.cmd_shutdown_server(game_server)
 
         if game_server == "all":
             start_tasks = []
@@ -656,6 +704,57 @@ class GameServerManager:
             await asyncio.gather(*start_tasks, *monitor_tasks)
         else:
             await start_game_server_with_semaphore(game_server, timeout)
+    
+    async def initialise_patching_procedure(self, timeout=300, source=None):
+        if self.patching:
+            LOGGER.warn("Patching is already in progress.")
+            return
+
+        for game_server in self.game_servers.values():
+            if game_server.started and game_server.enabled:
+                await self.cmd_message_server(game_server, "!! ANNOUNCEMENT !! This server will shutdown after the current match for patching.")
+            await self.cmd_shutdown_server(game_server)
+
+        if MISC.get_proc(self.global_config['hon_data']['hon_executable_path']):
+            return
+            
+        # begin patch
+        patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
+        # subprocess.run([patcher_exe, "-norun"])
+        try:
+            subprocess.run([patcher_exe, "-manager"], timeout=timeout)
+            # the hon_update_x64.exe will launch the default k2 server manager, indicating patching is complete. We don't need it so close it.
+            wait_for_temp_manager = 0
+            max = 5
+            while not MISC.find_process_by_cmdline_keyword("-manager"):
+                await asyncio.sleep(1)
+                wait_for_temp_manager +=1
+                if wait_for_temp_manager >= max:
+                    LOGGER.error(f"Patching failed as it exceeded {max} seconds waiting for patcher to open manager.")
+                    return False
+
+            temp_manager_proc = MISC.find_process_by_cmdline_keyword("-manager")
+            temp_manager_proc.terminate()
+
+            svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
+            if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:
+                LOGGER.error(f"Server patching failed. Current version: {svr_version}")
+                return False
+            
+            LOGGER.info("Patching successful!")
+            if source == "startup":
+                return True
+            elif source == "healthcheck":
+                await self.start_game_servers("all")
+
+        except subprocess.TimeoutExpired:
+            LOGGER.warn(f"Patching failed as it exceeded {timeout} seconds to patch resources.")
+            return False
+        except Exception:
+            LOGGER.error(f"An unexpected error occured while patching: {traceback.format_exc()}")
+        finally:
+            # patching is done. Whether it failed or otherwise.
+            self.patching = False
 
     async def disable_game_server(self, game_server):
         game_server.disable_server()
@@ -671,41 +770,3 @@ class GameServerManager:
 
     def create_hon_proxy_config():
         pass
-
-class HealthCheckManager:
-    def __init__(self, game_servers, event_bus):
-        self.game_servers = game_servers
-        self.event_bus = event_bus
-
-    async def public_ip_healthcheck(self):
-        while not stop_event.is_set():
-            for game_server in self.game_servers.values():
-                # Perform the public IP health check for each game server
-                # Example: self.perform_health_check(game_server, HealthChecks.public_ip_healthcheck)
-                pass
-            await asyncio.sleep(30)
-
-    async def general_healthcheck(self):
-        while not stop_event.is_set():
-            for game_server in self.game_servers.values():
-                # Perform the general health check for each game server
-                # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
-                pass
-            await asyncio.sleep(60)
-
-    async def lag_healthcheck(self):
-        while not stop_event.is_set():
-            for game_server in self.game_servers.values():
-                # Perform the lag health check for each game server
-                # Example: self.perform_health_check(game_server, HealthChecks.lag_healthcheck)
-                pass
-            await asyncio.sleep(120)
-
-    async def run_health_checks(self):
-        stop_task = asyncio.create_task(stop_event.wait())
-        done, pending = await asyncio.wait(
-            [self.public_ip_healthcheck(), self.general_healthcheck(), self.lag_healthcheck(), stop_task],
-            return_when=asyncio.FIRST_COMPLETED
-        )
-        for task in pending:
-            task.cancel()

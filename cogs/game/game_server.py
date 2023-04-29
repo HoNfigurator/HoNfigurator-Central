@@ -8,7 +8,7 @@ import json
 import math
 import sys
 import os
-from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
+from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
 from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
@@ -378,7 +378,7 @@ class GameServer:
                 if status == 3:
                     last_good_proc = proc
                 elif status is None:
-                    if not Misc.check_port(self.config.get_local_configuration()['params']['svr_port']):
+                    if not Misc.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
                         proc.terminate()
                         running_procs.remove(proc)
                     else:

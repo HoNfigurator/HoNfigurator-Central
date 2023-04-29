@@ -5,7 +5,7 @@ import asyncio
 from pathlib import Path
 
 #   This must be first, to initialise logging which all other classes rely on.
-from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
+from cogs.misc.logger import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
 HOME_PATH = Path(get_script_dir(__file__))
 set_home(HOME_PATH)
 set_logger()

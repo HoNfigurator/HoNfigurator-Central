@@ -1,7 +1,7 @@
 import sqlite3
 import json
 from typing import List, Dict, Any, Tuple
-from cogs.misc.logging import get_home, get_logger
+from cogs.misc.logger import get_home, get_logger
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 

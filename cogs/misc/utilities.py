@@ -5,7 +5,7 @@ from os.path import exists
 from pathlib import Path
 import sys
 import urllib
-from cogs.misc.logging import get_logger
+from cogs.misc.logger import get_logger
 from cogs.misc.exceptions import UnexpectedVersionError
 
 LOGGER = get_logger()
@@ -20,15 +20,18 @@ class Misc:
     def parse_linux_procs(proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():
-                cmd_line = proc.cmdline()
-                if len(cmd_line) < 5:
-                    continue
-                for i in range(len(cmd_line)):
-                    if cmd_line[i] == "-execute":
-                        for item in cmd_line[i+1].split(";"):
-                            if "svr_slave" in item:
-                                if int(item.split(" ")[-1]) == slave_id:
-                                    return [ proc ]
+                if slave_id == '':
+                    return [ proc ]
+                else:
+                    cmd_line = proc.cmdline()
+                    if len(cmd_line) < 5:
+                        continue
+                    for i in range(len(cmd_line)):
+                        if cmd_line[i] == "-execute":
+                            for item in cmd_line[i+1].split(";"):
+                                if "svr_slave" in item:
+                                    if int(item.split(" ")[-1]) == slave_id:
+                                        return [ proc ]
         return []
     def get_proc(proc_name, slave_id = ''):
         if sys.platform == "linux":
@@ -36,15 +39,18 @@ class Misc:
         procs = []
         for proc in psutil.process_iter():
             if proc_name == proc.name():
-                cmd_line = proc.cmdline()
-                if len(cmd_line) < 5:
-                    continue
-                for i in range(len(cmd_line)):
-                    if cmd_line[i] == "-execute":
-                        for item in cmd_line[i+1].split(";"):
-                            if "svr_slave" in item:
-                                if int(item.split(" ")[-1]) == slave_id:
-                                    procs.append(proc)
+                if slave_id == '':
+                    procs.append(proc)
+                else:
+                    cmd_line = proc.cmdline()
+                    if len(cmd_line) < 5:
+                        continue
+                    for i in range(len(cmd_line)):
+                        if cmd_line[i] == "-execute":
+                            for item in cmd_line[i+1].split(";"):
+                                if "svr_slave" in item:
+                                    if int(item.split(" ")[-1]) == slave_id:
+                                        procs.append(proc)
         return procs
     def check_port(port):
         command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)
@@ -146,6 +152,12 @@ class Misc:
         return external_ip
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"
+    def find_process_by_cmdline_keyword(self, keyword):
+        for process in psutil.process_iter(['cmdline']):
+            if process.info['cmdline']:
+                if any(keyword in arg.lower() for arg in process.info['cmdline']):
+                    return process
+        return None
     def get_svr_version(self,hon_exe):
         def validate_version_format(version):
             version_parts = version.split('.')

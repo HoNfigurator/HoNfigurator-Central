@@ -1,5 +1,5 @@
 import asyncio
-from cogs.misc.logging import get_logger
+from cogs.misc.logger import get_logger
 from enum import Enum
 
 LOGGER = get_logger()

@@ -1,3 +1,10 @@
+from cryptography import x509
+from cryptography.hazmat.backends import default_backend
+from cryptography.hazmat.primitives import serialization, hashes
+from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.x509.oid import NameOID
+import datetime
+import pathlib
 from fastapi import FastAPI, Request, Response, Body, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 import httpx
@@ -5,7 +12,7 @@ from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
-from cogs.misc.logging import get_logger, get_misc, get_home, get_setup
+from cogs.misc.logger import get_logger, get_misc, get_home, get_setup
 from cogs.misc.setup import SetupEnvironment
 from cogs.db.roles_db_connector import RolesDatabase
 from typing import Any, Dict, List, Tuple
@@ -53,7 +60,7 @@ async def verify_token(request: Request, token: str = Depends(oauth2_scheme)):
         return {"token": token, "user_info": user_info}
     else:
         LOGGER.warn(f"API Request from: {request.client.host} - Discord user lookup failure. Discord API Response: {response.text}")
-        raise HTTPException(status_code=401, content="Invalid OAuth token")
+        raise HTTPException(status_code=401, detail="Invalid OAuth token")
 
 def check_permission_factory(required_permission: str):
     async def check_permission(request: Request, token_and_user_info: dict = Depends(verify_token)):
@@ -61,7 +68,7 @@ def check_permission_factory(required_permission: str):
 
         if not has_permission(user_info, required_permission):
             LOGGER.warn(f"API Request from: {request.client.host} - Insufficient permissions")
-            raise HTTPException(status_code=403, content="Insufficient permissions")
+            raise HTTPException(status_code=403, detail="Insufficient permissions")
 
         return token_and_user_info
 
@@ -119,7 +126,7 @@ class GlobalConfigResponse(BaseModel):
     global_config: Dict
 
 @app.get("/api/get_global_config", description="Returns the global configuration of the manager")
-async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return global_config
 
 @app.post("/api/set_hon_data", description="Sets the 'hon_data' key within the global manager data dictionary")
@@ -421,7 +428,7 @@ def get_user(user: str, token_and_user_info: dict = Depends(check_permission_fac
     users = roles_database.get_all_users()
     if user in users:
         return user
-    raise HTTPException(status_code=404, content="User not found")
+    raise HTTPException(status_code=404, detail="User not found")
 
 @app.delete("/api/users/delete/{user_id}", summary="Delete specified user")
 def delete_user(user_id: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
@@ -431,7 +438,7 @@ def delete_user(user_id: str, token_and_user_info: dict = Depends(check_permissi
         roles_database.remove_user(user_to_delete[0])
         return {"message": "User deleted successfully"}
     else:
-        raise HTTPException(status_code=404, content="User not found")
+        raise HTTPException(status_code=404, detail="User not found")
 
 
 class AddUser(BaseModel):
@@ -543,6 +550,62 @@ async def remove_all_servers(token_and_user_info: dict = Depends(check_permissio
 
 """ End API Calls """
 
+def create_self_signed_certificate(ssl_certfile, ssl_keyfile):
+    # Generate a self-signed certificate with CN=localhost
+    key = rsa.generate_private_key(
+        public_exponent=65537,
+        key_size=2048,
+        backend=default_backend()
+    )
+
+    name = x509.Name([
+        x509.NameAttribute(NameOID.COMMON_NAME, "localhost")
+    ])
+
+    cert = (
+        x509.CertificateBuilder()
+        .subject_name(name)
+        .issuer_name(name)
+        .public_key(key.public_key())
+        .serial_number(x509.random_serial_number())
+        .not_valid_before(datetime.datetime.utcnow())
+        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
+        .add_extension(
+            x509.SubjectAlternativeName([x509.DNSName("localhost")]),
+            critical=False,
+        )
+        .sign(key, hashes.SHA256(), default_backend())
+    )
+
+    # Write the key and certificate to the respective files
+    with open(ssl_keyfile, "wb") as f:
+        f.write(key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.TraditionalOpenSSL,
+            encryption_algorithm=serialization.NoEncryption()
+        ))
+
+    with open(ssl_certfile, "wb") as f:
+        f.write(cert.public_bytes(serialization.Encoding.PEM))
+
+def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_expiration=30):
+    # Check if the SSL certificate is going to expire within the specified number of days.
+    # If it's going to expire, recreate the self-signed certificate.
+    try:
+        with open(ssl_certfile, "rb") as f:
+            cert_pem = f.read()
+
+        cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
+        now = datetime.datetime.utcnow()
+        time_remaining = cert.not_valid_after - now
+
+        if time_remaining < datetime.timedelta(days=days_before_expiration):
+            asyncio.run(create_self_signed_certificate(ssl_certfile, ssl_keyfile))
+            print("Self-signed certificate has been renewed.")
+        else:
+            print("Self-signed certificate is still valid. No renewal needed.")
+    except Exception as e:
+        print(f"Error checking certificate expiration: {e}")
 
 
 async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0", port=5000):
@@ -565,6 +628,12 @@ async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0",
             # Specify the path to the certificate and key files
             ssl_keyfile = HOME_PATH / "localhost.key"
             ssl_certfile = HOME_PATH / "localhost.crt"
+
+            if not exists(ssl_certfile) or not exists(ssl_keyfile):
+                create_self_signed_certificate(ssl_certfile, ssl_keyfile)
+            else:
+                check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile)
+
             if exists(ssl_keyfile) and exists(ssl_certfile):
                 return await uvicorn.run(
                     app,

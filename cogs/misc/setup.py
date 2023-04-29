@@ -6,7 +6,7 @@ import psutil
 import traceback
 import pathlib
 import json
-from cogs.misc.logging import get_logger, get_home, get_misc
+from cogs.misc.logger import get_logger, get_home, get_misc
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.utilities import Misc
 from cogs.misc.hide_pass import getpass
