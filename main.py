@@ -1,6 +1,15 @@
 #!/usr/bin/env python3
 import traceback, sys, os
-import threading
+
+def show_exception_and_exit(exc_type, exc_value, tb):
+    """
+        Exception hook to catch any errors and prevent the window from closing
+    """
+    traceback.print_exception(exc_type, exc_value, tb)
+    raw_input = input(f"Due to the above error, HoNfigurator has failed to launch.")
+    sys.exit()
+sys.excepthook = show_exception_and_exit
+
 import asyncio
 from pathlib import Path
 
@@ -10,11 +19,15 @@ HOME_PATH = Path(get_script_dir(__file__))
 set_home(HOME_PATH)
 set_logger()
 
+from cogs.misc.dependencies_check import PrepareDependencies
+requirements_check = PrepareDependencies()
+requirements_check.update_dependencies()
+
 from cogs.misc.utilities import Misc
 MISC = Misc()
 set_misc(MISC)
 
-from cogs.misc.setup import SetupEnvironment, PrepareDependencies
+from cogs.misc.setup import SetupEnvironment
 CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
 setup = SetupEnvironment(CONFIG_FILE)
 set_setup(setup)
@@ -26,15 +39,6 @@ from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
 
 LOGGER = get_logger()
 
-def show_exception_and_exit(exc_type, exc_value, tb):
-    """
-        Exception hook to catch any errors and prevent the window from closing
-    """
-    traceback.print_exception(exc_type, exc_value, tb)
-    raw_input = input(f"Due to the above error, HoNfigurator has failed to launch.")
-    sys.exit()
-sys.excepthook = show_exception_and_exit
-
 async def main():
 
     if sys.platform == "linux":
@@ -44,9 +48,6 @@ async def main():
             print("Reason is the priority setting on the game instances.")
             print("---- IMPORTANT ----")
             return
-
-    requirements_check = PrepareDependencies()
-    requirements_check.update_dependencies()
 
     config = setup.check_configuration()
     if config:
