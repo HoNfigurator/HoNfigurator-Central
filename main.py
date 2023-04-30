@@ -1,27 +1,6 @@
 #!/usr/bin/env python3
 import traceback, sys, os
-import threading
-import asyncio
 from pathlib import Path
-
-#   This must be first, to initialise logging which all other classes rely on.
-from cogs.misc.logging import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc
-HOME_PATH = Path(get_script_dir(__file__))
-set_home(HOME_PATH)
-set_logger()
-
-from cogs.misc.utilities import Misc
-MISC = Misc()
-set_misc(MISC)
-
-from cogs.handlers.events import stop_event
-from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
-from cogs.misc.setup import SetupEnvironment, PrepareDependencies
-from cogs.game.game_server_manager import GameServerManager
-from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
-
-LOGGER = get_logger()
-CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """
@@ -31,6 +10,43 @@ def show_exception_and_exit(exc_type, exc_value, tb):
     raw_input = input(f"Due to the above error, HoNfigurator has failed to launch.")
     sys.exit()
 sys.excepthook = show_exception_and_exit
+
+HOME_PATH = Path(os.path.dirname(os.path.abspath(__file__)))
+
+# set up dependencies first
+from cogs.misc.dependencies_check import PrepareDependencies
+requirements_check = PrepareDependencies(HOME_PATH)
+requirements_check.update_dependencies()
+
+import asyncio
+import argparse
+
+#   This must be first, to initialise logging which all other classes rely on.
+from cogs.misc.logger import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
+set_home(HOME_PATH)
+set_logger()
+
+from cogs.misc.utilities import Misc
+MISC = Misc()
+set_misc(MISC)
+
+from cogs.misc.setup import SetupEnvironment
+CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
+setup = SetupEnvironment(CONFIG_FILE)
+set_setup(setup)
+
+from cogs.handlers.events import stop_event
+from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
+from cogs.game.game_server_manager import GameServerManager
+from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
+
+LOGGER = get_logger()
+
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="HoNfigurator API and Server Manager")
+    parser.add_argument("-hondir", "--hon_install_directory", type=str, help="Path to the HoN install directory")
+    # Add other arguments here
+    return parser.parse_args()
 
 async def main():
 
@@ -42,11 +58,7 @@ async def main():
             print("---- IMPORTANT ----")
             return
 
-    requirements_check = PrepareDependencies()
-    requirements_check.update_dependencies()
-
-    setup = SetupEnvironment(CONFIG_FILE)
-    config = setup.check_configuration()
+    config = setup.check_configuration(args)
     if config:
         global_config = setup.get_final_configuration()
     else:
@@ -63,7 +75,7 @@ async def main():
     udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
 
     # instantiate the manager
-    game_server_manager = GameServerManager(global_config)
+    game_server_manager = GameServerManager(global_config, setup)
     # Print configuration overview
     print_formatted_text("\nConfiguration Overview")
     for key,value in global_config['hon_data'].items():
@@ -106,6 +118,7 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        args = parse_arguments()
         asyncio.run(main())
     except KeyboardInterrupt:
         LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")

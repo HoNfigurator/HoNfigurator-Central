@@ -2,7 +2,7 @@
 This project is set up using a self installer.
 
 ## Windows
-<installer here>
+[All-in-One Installer](https://honfigurator.app/honfigurator-manager-installer.bat)
 
 ## Linux
 <installer here>

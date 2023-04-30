@@ -6,7 +6,7 @@ import psutil
 import traceback
 import pathlib
 import json
-from cogs.misc.logging import get_logger, get_home, get_misc
+from cogs.misc.logger import get_logger, get_home, get_misc
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.utilities import Misc
 from cogs.misc.hide_pass import getpass
@@ -101,7 +101,7 @@ class SetupEnvironment:
             },
             "hon_data": {
                 "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - Kongor\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
-                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/game/"),
+                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/KONGOR/"),
                 "svr_masterServer": "api.kongor.online",
                 "svr_login": "",
                 "svr_password": "",
@@ -169,6 +169,11 @@ class SetupEnvironment:
                             minor_issues.append(f"Resolved: Invalid boolean value for {key}: {value}")
                         except Exception:
                             major_issues.append(f"Invalid boolean value for {key}: {value}")
+                    elif value in ['0', '1']:
+                        if value == '0':
+                            self.hon_data[key] = False
+                        elif value == '1':
+                            self.hon_data[key] = True
                     else:
                         major_issues.append(f"Invalid boolean value for {key}: {value}")
 
@@ -209,58 +214,65 @@ class SetupEnvironment:
 
         return True
 
-    def check_configuration(self):
+    def check_configuration(self, args):
         if not os.path.exists(pathlib.PurePath(self.config_file_hon).parent):
             os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
         if not os.path.exists(self.config_file_logging):
             self.create_logging_configuration_file()
         if not os.path.exists(self.config_file_hon):
-            return self.create_hon_configuration_file()
+            if args:
+                if args.hon_install_directory:
+                    self.hon_data["hon_install_directory"] = Path(args.hon_install_directory)
+            self.create_hon_configuration_file(detected="hon_install_directory")
         database = RolesDatabase()
         if not database.add_default_data():
             while True:
                 value = input("\tPlease provide your discord user ID. This is a 10 digit number:")
                 try:
                     discord_id = int(value)
+                    if len(str(discord_id)) < 10:
+                        raise ValueError
                     database.add_default_data(discord_id=discord_id)
                     break
                 except ValueError:
                     print("Value must be a 10 digit number. Here is a guide to find your discord user ID. https://www.youtube.com/watch?v=ZPROrf4Fe3Q")
-
-        else:
-            self.hon_data = self.get_existing_configuration()
-            self.full_config = self.merge_config()
-            if self.validate_hon_data(self.full_config['hon_data']):
-                return True
-            else: return False
+        # else:
+        self.hon_data = self.get_existing_configuration()
+        self.full_config = self.merge_config()
+        if self.validate_hon_data(self.full_config['hon_data']):
+            return True
+        else: return False
 
     def create_logging_configuration_file(self):
         with open(str(self.config_file_logging), 'w') as config_file_logging:
             json.dump(self.get_default_logging_configuration(), config_file_logging, indent=4)
 
-    def create_hon_configuration_file(self):
+    def create_hon_configuration_file(self,detected=None):
 
-        print("Configuration file not found. Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
+        print("\n\nConfiguration file not found. Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
 
         for key, value in self.hon_data.items():
             while True:
                 if key == "svr_password":
                     user_input = getpass(f"\tEnter the value for '{key}': ")
+                elif detected == key:
+                    user_input = input("\tEnter the value for '{}'{}: ".format(key, " (detected: {})".format(value) if value or value == False else ""))
                 else:
-                    user_input = input("\tEnter the value for '{}'{}: ".format(key, " (default: {})".format(value) if value else ""))
+                    user_input = input("\tEnter the value for '{}'{}: ".format(key, " (default: {})".format(value) if value or value == False else ""))
                 if user_input:
                     default_value_type = type(value)
+                    new_value_type = type(user_input)
 
-                    if default_value_type == int:
+                    if new_value_type == int:
                         try:
                             self.hon_data[key] = int(user_input)
                             break
                         except ValueError:
                             print(f"\tInvalid integer value entered for {key}. Using the default value: {value}")
-                    elif default_value_type == bool:
+                    elif new_value_type == bool:
                         self.hon_data[key] = user_input.lower() == 'true'
                         break
-                    elif default_value_type == str:
+                    elif new_value_type == str:
                         if key == "svr_location":
                             if user_input not in ALLOWED_REGIONS:
                                 print(f"\tIncorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
@@ -268,11 +280,19 @@ class SetupEnvironment:
                             else:
                                 self.hon_data[key] = user_input
                                 break
+                        elif key in self.PATH_KEYS_IN_CONFIG_FILE:
+                            try:
+                                user_input = user_input.replace("\"","")
+                                Path(user_input)
+                                self.hon_data[key] = user_input
+                                break
+                            except Exception:
+                                print(f"\tExpected valid file path. Please try again. Here is an example value: {self.hon_data[key]}")
                         else:
                             self.hon_data[key] = user_input
                             break
                     else:
-                        print("\tUnexpected value type for {key}. Skipping this key.")
+                        print(f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
                 else:
                     break
         if self.validate_hon_data():
@@ -313,8 +333,8 @@ class SetupEnvironment:
     def add_runtime_data(self):
         if MISC.get_os_platform() == "win32":
             hon_artefacts_directory = Path(self.hon_data['hon_home_directory']) / "Documents" / "Heroes of Newerth x64"
-            hon_replays_directory = hon_artefacts_directory / "game" / "replays"
-            hon_logs_directory = hon_artefacts_directory / "game" / "logs"
+            hon_replays_directory = hon_artefacts_directory / "KONGOR" / "replays"
+            hon_logs_directory = hon_artefacts_directory / "KONGOR" / "logs"
             executable = f"hon_x64"
             suffix = ".exe"
             file_name = f'{executable}{suffix}'
@@ -352,42 +372,4 @@ class SetupEnvironment:
         if self.validate_hon_data():
             return self.merge_config()
         else:
-            return False
-
-
-class PrepareDependencies:
-    def __init__(self):
-        pass
-    def get_required_packages(self):
-        try:
-            with open(pip_requirements) as f:
-                required_packages = f.read().splitlines()
-            return required_packages
-        except Exception:
-            LOGGER.error(traceback.format_exc())
-            return []
-
-    def update_dependencies(self):
-        try:
-            required = self.get_required_packages()
-            if len(required) == 0:
-                LOGGER.warn("Unable to get contents of requirements.txt file")
-                return False
-            installed_packages = sp.run(['pip', 'freeze'], stdout=sp.PIPE, text=True)
-            installed_packages_list = installed_packages.stdout.split('\n')
-            missing = set(required) - set(installed_packages_list)
-            python_path = sys.executable
-            if missing:
-                result = sp.run([python_path, '-m', 'pip', 'install', *missing])
-                if result.returncode == 0:
-                    LOGGER.info(f"SUCCESS, upgraded the following packages: {', '.join(missing)}")
-                    return result
-                else:
-                    LOGGER.error(f"Error updating packages: {missing}\n error {result.stderr}")
-                    return result
-            else:
-                LOGGER.info("Packages OK.")
-                return True
-        except Exception:
-            LOGGER.exception(traceback.format_exc())
             return False
