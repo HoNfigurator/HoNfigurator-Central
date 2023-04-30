@@ -8,6 +8,7 @@ import json
 import math
 import sys
 import os
+import datetime
 from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
 from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
 from cogs.TCP.packet_parser import GameManagerParser
@@ -150,10 +151,15 @@ class GameServer:
         self.game_state._state['performance']['now_ingame_skipped_frames'] = 0
 
     def increment_skipped_frames(self, frames, time):
-        if self.get_dict_value('match_started') == 1: # Only log skipped frames when we're actually in a match.
+        if self.get_dict_value('match_started') == 1:  # Only log skipped frames when we're actually in a match.
             self.game_state._state['performance']['total_ingame_skipped_frames'] += frames
             self.game_state._state['performance']['now_ingame_skipped_frames'] += frames
             self.game_state._state['skipped_frames_detailed'][time] = frames
+
+            # Remove entries older than one day
+            one_day_ago = time - datetime.timedelta(days=1).total_seconds()
+            self.game_state._state['skipped_frames_detailed'] = {key: value for key, value in self.game_state._state['skipped_frames_detailed'].items() if key >= one_day_ago}
+
 
     def get_pretty_status(self):
         def format_time(seconds):

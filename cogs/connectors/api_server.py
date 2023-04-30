@@ -422,13 +422,14 @@ def get_all_users(token_and_user_info: dict = Depends(check_permission_factory(r
 def get_default_users(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return roles_database.get_default_users()
 
-@app.get("/api/users", summary="Get specified user with associated roles")
+@app.get("/api/user", summary="Get specified user with associated roles")
 # def get_user(user: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-def get_user(user: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    users = roles_database.get_all_users()
-    if user in users:
-        return user
-    raise HTTPException(status_code=404, detail="User not found")
+def get_user(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    roles = roles_database.get_user_roles_by_discord_id(token_and_user_info['user_info']['id'])
+    perms = roles_database.get_user_permissions_by_discord_id(token_and_user_info['user_info']['id'])
+    if not roles or not perms:
+        return JSONResponse(status=404, content="The specified user information was not found.")
+    return {'roles':roles, 'perms':perms}
 
 @app.delete("/api/users/delete/{user_id}", summary="Delete specified user")
 def delete_user(user_id: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
