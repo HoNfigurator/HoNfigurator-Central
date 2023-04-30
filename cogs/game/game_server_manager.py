@@ -17,8 +17,9 @@ from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, HealthChecks, EventBus as ManagerEventBus
-from cogs.game.healthcheck_manager import HealthCheckManager
 from cogs.misc.logger import get_logger, get_misc, get_home
+from pathlib import Path
+from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
 
@@ -98,7 +99,7 @@ class GameServerManager:
         self.tasks.update({'cli_handler':asyncio.create_task(self.commands.handle_input())})
 
         # Start running health checks
-        
+
         # Initialize MasterServerHandler and send requests
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.global_config)
@@ -177,18 +178,18 @@ class GameServerManager:
             LOGGER.info(f"Command - Message command sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def check_upstream_patch(self):
         if self.patching:
             LOGGER.info("Server patching is ongoing.. Please wait.")
             return
-        
+
         try:
             local_svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
         except UnexpectedVersionError:
             raise InvalidServerBinaries("The version check on the hon_x64.exe failed, because it was not a supported server binary. Please ensure you have correctly followed the guide to set up the server.")
 
-        try:    
+        try:
             patch_information = await self.master_server_handler.compare_upstream_patch()
             if not patch_information:
                 LOGGER.error("Checking the upstream patch version failed, as the upstream services were unavailable.")
@@ -203,7 +204,7 @@ class GameServerManager:
             if local_svr_version != self.latest_available_game_version:
                 LOGGER.info(f"A newer patch is available. Initiating server shutdown for patching.\n\tUpgrading from {local_svr_version} --> {parsed_patch_information['latest']}")
                 return True
-            
+
             return False
 
         except Exception:
@@ -397,7 +398,7 @@ class GameServerManager:
                 return game_port
 
         return None
-    
+
     async def balance_game_server_count(self, add_servers=0, remove_servers=0):
         """
         Ensures that the maximum number of game servers are running by creating new game servers
@@ -411,12 +412,12 @@ class GameServerManager:
             max_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
         elif add_servers > 0:
             max_servers += add_servers
-        
+
         if remove_servers == "all":
             max_servers = 0
         elif remove_servers > 0:
             max_servers -= remove_servers
-        
+
         if max_servers < 0: max_servers = 0
         self.global_config['hon_data']['svr_total'] = max_servers
 
@@ -480,7 +481,7 @@ class GameServerManager:
             if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server)
                 game_server.enable_server()
-    
+
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
         running_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('match_started') != 0]
@@ -587,8 +588,8 @@ class GameServerManager:
 
     async def handle_replay_request(self, match_id, extension, account_id):
         replay_file_name = f"M{match_id}.{extension}"
-        replay_file_path = (self.global_config['hon_data']['hon_replays_directory'] / replay_file_name)
-        file_exists = exists(replay_file_path)
+        replay_file_path = (Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name)
+        file_exists = Path.exists(replay_file_path)
 
         LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
 
@@ -704,7 +705,7 @@ class GameServerManager:
             await asyncio.gather(*start_tasks, *monitor_tasks)
         else:
             await start_game_server_with_semaphore(game_server, timeout)
-    
+
     async def initialise_patching_procedure(self, timeout=300, source=None):
         if self.patching:
             LOGGER.warn("Patching is already in progress.")
@@ -717,7 +718,7 @@ class GameServerManager:
 
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_path']):
             return
-            
+
         # begin patch
         patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
         # subprocess.run([patcher_exe, "-norun"])
@@ -740,7 +741,7 @@ class GameServerManager:
             if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:
                 LOGGER.error(f"Server patching failed. Current version: {svr_version}")
                 return False
-            
+
             LOGGER.info("Patching successful!")
             if source == "startup":
                 return True

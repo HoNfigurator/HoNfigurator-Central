@@ -92,16 +92,16 @@ class SetupEnvironment:
                     },
                     "replay_cleaner" : {
                         "active" : False,
-                        "max_replay_age_days" : 0,
-                        "max_temp_files_age_days" : 0,
-                        "max_temp_folders_age_days" : 0,
+                        "max_replay_age_days" : 30,
+                        "max_temp_files_age_days" : 1,
+                        "max_temp_folders_age_days" : 1,
                         "max_clog_age_days" : 0
                     }
                 }
             },
             "hon_data": {
                 "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - Kongor\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
-                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/game/"),
+                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/KONGOR/"),
                 "svr_masterServer": "api.kongor.online",
                 "svr_login": "",
                 "svr_password": "",

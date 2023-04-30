@@ -1,9 +1,9 @@
 import cogs.handlers.data_handler as data_handler
 import subprocess
-import time
 import traceback
 import asyncio
 import psutil
+import time
 import json
 import math
 import sys
@@ -13,6 +13,10 @@ from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print
 from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
+
+
+import re
+import threading
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
@@ -257,11 +261,13 @@ class GameServer:
 
             cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
-        else:
+
+        else: # linux
             cmdline_args = [
                 self.config.local['config']['file_path'],
                 '-dedicated',
                 '-noconfig',
+                '-mod game;KONGOR',
                 '-execute',
                 f'"{params}"',
                 '-masterserver',
@@ -269,8 +275,41 @@ class GameServer:
                 '-register',
                 f'127.0.0.1:{self.global_config["hon_data"]["svr_managerPort"]}'
             ]
-            exe = subprocess.Popen(cmdline_args, shell = False, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
+            def parse_svr_id(cmdline):
+                for item in cmdline[4].split(";"):
+                    if "svr_slave" in item:
+                        return item.split(" ")[-1]
+
+            def remove_ansi_control_chars(s: str) -> str:
+                ansi_escape_pattern = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+                return ansi_escape_pattern.sub('', s)
+
+            def process_output(output_stream, log_file, stop_event):
+                for line in iter(output_stream.readline, b''):
+                    clean_line =line
+                    #clean_line = remove_ansi_control_chars(line)
+                    log_file.write(clean_line)
+                    log_file.flush()
+
+            # log_file_path = f'./logs/slave_{parse_svr_id(cmdline_args)}.log'
+            # stop_event = threading.Event()
+            # log_file = open(log_file_path, 'w', encoding='utf-8')
+            # exe = subprocess.Popen(cmdline_args, preexec_fn=os.setsid, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=10, text=True)
+            # output_thread = threading.Thread(target=process_output, args=(exe.stdout, log_file, stop_event))
+            # output_thread.start()
+
+
+            # #TODO: if the stop event comes we have to execute this:
+            # stop_event.set()
+            # output_thread.join()
+            # exe.stdout.close()
+            # log_file.close()
+            # END
+
+
+            # old:
+            exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         self._pid = exe.pid
         self._proc = exe
