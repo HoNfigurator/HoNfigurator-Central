@@ -335,7 +335,7 @@ def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_f
 # Define the /api/get_instances_status endpoint with OpenAPI documentation
 @app.get("/api/get_instances_status", summary="Get instances status")
 #def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-def get_instances():
+def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     """
     Get the status of all game server instances.
 
@@ -352,11 +352,11 @@ Roles & Perms
 """
 @app.get("/api/roles/all", summary="Get all roles with associated permissions")
 # def get_all_roles(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-def get_all_roles():
+def get_all_roles(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return roles_database.get_all_roles_with_permissions()
 
 @app.get("/api/roles/default", summary="Get all default roles")
-def get_default_roles():
+def get_default_roles(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return roles_database.get_default_roles()
 
 @app.get("/api/roles", summary="Get specified role with associated permissions")
@@ -415,11 +415,11 @@ def add_role(role_form: AddRole, token_and_user_info: dict = Depends(check_permi
 
 @app.get("/api/users/all", summary="Get all users with associated roles")
 # def get_all_users(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-def get_all_users():
+def get_all_users(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return roles_database.get_all_users_with_roles()
 
 @app.get("/api/users/default", summary="Get all default users")
-def get_default_users():
+def get_default_users(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return roles_database.get_default_users()
 
 @app.get("/api/users", summary="Get specified user with associated roles")
@@ -452,7 +452,7 @@ def add_user(user_form: AddUser, token_and_user_info: dict = Depends(check_permi
     user_exists = [user for user in users if user["discord_id"] == user_form.discord_id]
     new_user = {
         "discord_id": user_form.discord_id,
-        "nickname": user_form.nickname,
+        "nickname": user_form.nickname.lower(),
         "roles": user_form.roles
     }
     if user_exists:
