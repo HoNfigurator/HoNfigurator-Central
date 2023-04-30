@@ -101,7 +101,7 @@ class SetupEnvironment:
             },
             "hon_data": {
                 "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - Kongor\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
-                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/game/"),
+                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/KONGOR/"),
                 "svr_masterServer": "api.kongor.online",
                 "svr_login": "",
                 "svr_password": "",

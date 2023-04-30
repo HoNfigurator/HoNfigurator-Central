@@ -253,6 +253,7 @@ class GameServer:
                 self.config.local['config']['file_path'],
                 '-dedicated',
                 '-noconfig',
+                '-mod game;KONGOR',
                 '-execute',
                 f'"{params}"',
                 '-masterserver',
