@@ -1,6 +1,6 @@
 <img align="right" width="120" height="120" style="margin-top: -15px;margin-right:20px" src="https://i.ibb.co/YdSTNV9/Hon-Figurator-Icon1c.png">
 
-# HoNfigurator Server Manager & API
+# HoNfigurator Server Manager & API (early access)
 This project operates as the game server manager for hon game server instances.
 
 It negotiates TCP connections between game server instances and upstream HoN authentication services.
@@ -39,11 +39,27 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 
 </details>
 
-## Remote Management - Linking to Web UI
+## Remote Management - Web UI Front End
+### Linking your server
 > **Note** You require a discord account to use this service.
 1. Browse to https://management.honfigurator.app
 1. Log in with Discord
 1. Select ``Add server to manage``
 1. Provide the name, and address (DNS or IP) of your server.
 1. Select OK
-> **Warning** If it fails, please follow the steps in the warning message.
+> **Warning** If it fails, please follow the steps in the warning message. 
+
+### Managing your server
+Page Overview:
+- Home
+  - Central hub. View stats, skipped frame data.
+- Server Status
+  - See all configured server panels. Stop and Start commands.
+- Server Control
+  - Modify server configuration settings, add or remove servers from your server pool.
+- Users & Roles
+  - Manage allowed users. Delegate access or control to different people. Discord ID is mandatory for users you want to add.
+
+This project is an early release, and the website is the bare minimum for functionality. Many more features will be added.
+	
+Please submit any feature requests, or issues, via the [Issues](https://github.com/frankthetank001/HoNfigurator-Central/issues) page for this repository.
