@@ -333,8 +333,8 @@ class SetupEnvironment:
     def add_runtime_data(self):
         if MISC.get_os_platform() == "win32":
             hon_artefacts_directory = Path(self.hon_data['hon_home_directory']) / "Documents" / "Heroes of Newerth x64"
-            hon_replays_directory = hon_artefacts_directory / "game" / "replays"
-            hon_logs_directory = hon_artefacts_directory / "game" / "logs"
+            hon_replays_directory = hon_artefacts_directory / "KONGOR" / "replays"
+            hon_logs_directory = hon_artefacts_directory / "KONGOR" / "logs"
             executable = f"hon_x64"
             suffix = ".exe"
             file_name = f'{executable}{suffix}'
