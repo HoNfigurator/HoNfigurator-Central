@@ -674,7 +674,7 @@ class GameServerManager:
         This function does not return anything, but can log errors or other information.
         """
         if MISC.get_os_platform() == "win32" and await self.check_upstream_patch():
-            if await self.initialise_patching_procedure(soruce="startup"):
+            if await self.initialise_patching_procedure(source="startup"):
                 # patching was successful. Continue starting servers.
                 pass
             else:
