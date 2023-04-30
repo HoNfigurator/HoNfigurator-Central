@@ -5,7 +5,7 @@ import struct
 import socket
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.handlers.events import stop_event
-from cogs.misc.logging import get_logger
+from cogs.misc.logger import get_logger
 
 LOGGER = get_logger()
 

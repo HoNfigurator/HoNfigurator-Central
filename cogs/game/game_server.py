@@ -8,7 +8,8 @@ import json
 import math
 import sys
 import os
-from cogs.misc.logging import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
+import datetime
+from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
 from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
@@ -37,6 +38,7 @@ class GameServer:
         self._proc_owner = None
         self._proc_hook = None
         self.enabled = True # used to determine if the server should run
+        self.delete_me = False # used to mark a server for deletion after it's been shutdown
         self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
         self.game_manager_parser = GameManagerParser(self.id,LOGGER)
         """
@@ -60,12 +62,17 @@ class GameServer:
     def cancel_tasks(self):
         for task in self.tasks.values():
             task.cancel()
+
     def reset_game_state(self):
         self.status_received.clear()
         self.game_state.clear()
 
-    def link_client_connection(self,client_connection):
-        self.client_connection = client_connection
+    def params_are_different(self):
+        current_params = self._proc_hook.cmdline()[4]
+        new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+        if current_params != new_params:
+            return True
+        return False
 
     async def on_game_state_change(self, key, value):
         # if not self.status_received.is_set():
@@ -148,10 +155,15 @@ class GameServer:
         self.game_state._state['performance']['now_ingame_skipped_frames'] = 0
 
     def increment_skipped_frames(self, frames, time):
-        if self.get_dict_value('match_started') == 1: # Only log skipped frames when we're actually in a match.
+        if self.get_dict_value('match_started') == 1:  # Only log skipped frames when we're actually in a match.
             self.game_state._state['performance']['total_ingame_skipped_frames'] += frames
             self.game_state._state['performance']['now_ingame_skipped_frames'] += frames
             self.game_state._state['skipped_frames_detailed'][time] = frames
+
+            # Remove entries older than one day
+            one_day_ago = time - datetime.timedelta(days=1).total_seconds()
+            self.game_state._state['skipped_frames_detailed'] = {key: value for key, value in self.game_state._state['skipped_frames_detailed'].items() if key >= one_day_ago}
+
 
     def get_pretty_status(self):
         def format_time(seconds):
@@ -182,6 +194,7 @@ class GameServer:
             'Uptime': 'Unknown',
             'CPU Core': self.config.get_local_by_key('host_affinity'),
             'Scheduled Shutdown': 'Yes' if self.scheduled_shutdown else 'No',
+            'Marked for Deletion': 'Yes' if self.delete_me else 'No',
             'Performance (lag)': {
                 'total while in-game':f"{self.get_dict_value('total_ingame_skipped_frames')/1000} seconds",
                 'current game':f"{self.get_dict_value('now_ingame_skipped_frames')/1000} seconds"
@@ -228,6 +241,7 @@ class GameServer:
         if await self.get_running_server():
             self.unschedule_shutdown()
             self.enable_server()
+            self.started = True
             return True
 
         free_mem = psutil.virtual_memory().available
@@ -236,16 +250,16 @@ class GameServer:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
 
 
-        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.local['params'].items())
+        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
 
         if MISC.get_os_platform() == "win32":
             # Server instances write files to location dependent on USERPROFILE and APPDATA variables
             os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
+            # os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
 
             DETACHED_PROCESS = 0x00000008
 
-            cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
+            cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
         else: # linux
@@ -305,6 +319,7 @@ class GameServer:
 
         self.unschedule_shutdown()
         self.enable_server()
+        self.started = True
 
         #self.tasks.update({'startup_monitor':asyncio.create_task(self.monitor_game_state_status())})
 
@@ -326,8 +341,9 @@ class GameServer:
             self.schedule_shutdown()
             return False
 
-    async def schedule_shutdown_server(self, client_connection, packet_data):
+    async def schedule_shutdown_server(self, client_connection, packet_data, delete=False):
         self.scheduled_shutdown = True
+        self.delete_me = delete
         # TODO: Schedule doesn't work while servers are still booting up. Example, setconfig hon_data svr_total <new val>
         # I BELIEVE ABOVE IS FIXED, NEED TO TEST
         while True:
@@ -336,6 +352,8 @@ class GameServer:
                 await asyncio.sleep(10)
             else:
                 await self.stop_server_network(client_connection, packet_data)
+                if delete:
+                    self.manager_event_bus.emit('remove_game_server',self)
                 break
 
     async def monitor_game_state_status(self, timeout=60):
@@ -376,15 +394,19 @@ class GameServer:
         client_connection.writer.write(length_bytes)
         client_connection.writer.write(message_bytes)
         await client_connection.writer.drain()
+        self.started = False
         self.disable_server()
         self.unschedule_shutdown()
+        self.server_closed.set()
 
     async def stop_server_exe(self):
         if self._proc:
             self._proc.terminate()
+            self.started = False
             self.status_received.clear()
             self.disable_server()
             self.unschedule_shutdown()
+            self.server_closed.set()
 
     async def get_running_server(self):
         """
@@ -400,7 +422,7 @@ class GameServer:
                 if status == 3:
                     last_good_proc = proc
                 elif status is None:
-                    if not Misc.check_port(self.config.local['params']['svr_port']):
+                    if not Misc.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
                         proc.terminate()
                         running_procs.remove(proc)
                     else:
@@ -458,11 +480,13 @@ class GameServer:
     def disable_server(self):
         self.enabled = False
 
-    def schedule_shutdown(self):
+    def schedule_shutdown(self, delete=False):
         self.scheduled_shutdown = True
+        self.delete_me = True
 
     def unschedule_shutdown(self):
         self.scheduled_shutdown = False
+        self.delete_me = False
 
 class GameState:
     def __init__(self):

@@ -3,7 +3,7 @@ import asyncio
 import inspect
 import struct
 from enum import Enum
-from cogs.misc.logging import get_logger
+from cogs.misc.logger import get_logger
 from cogs.handlers.events import stop_event
 from cogs.TCP.packet_parser import ManagerChatParser
 

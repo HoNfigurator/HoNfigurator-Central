@@ -12,3 +12,9 @@ class ConfigError(Exception):
 
 class UnexpectedVersionError(Exception):
     """Raised when there is an issue with the hon files"""
+
+class HoNPatchError(Exception):
+    """Raised when there is an issue with patching"""
+
+class InvalidServerBinaries(Exception):
+    """There is an issue with the local server binaries. They are probably not from wasserver."""
