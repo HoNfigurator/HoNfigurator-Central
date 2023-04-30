@@ -272,16 +272,17 @@ class GameServer:
 
             def process_output(output_stream, log_file, stop_event):
                 for line in iter(output_stream.readline, b''):
-                    clean_line = remove_ansi_control_chars(line)
+                    clean_line =line
+                    #clean_line = remove_ansi_control_chars(line)
                     log_file.write(clean_line)
                     log_file.flush()
 
-            log_file_path = f'./logs/slave_{parse_svr_id(cmdline_args)}.log'
-            stop_event = threading.Event()
-            log_file = open(log_file_path, 'w', encoding='utf-8')
-            exe = subprocess.Popen(cmdline_args, preexec_fn=os.setsid, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=1, text=True)
-            output_thread = threading.Thread(target=process_output, args=(exe.stdout, log_file, stop_event))
-            output_thread.start()
+            # log_file_path = f'./logs/slave_{parse_svr_id(cmdline_args)}.log'
+            # stop_event = threading.Event()
+            # log_file = open(log_file_path, 'w', encoding='utf-8')
+            # exe = subprocess.Popen(cmdline_args, preexec_fn=os.setsid, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=10, text=True)
+            # output_thread = threading.Thread(target=process_output, args=(exe.stdout, log_file, stop_event))
+            # output_thread.start()
 
 
             # #TODO: if the stop event comes we have to execute this:
@@ -293,7 +294,7 @@ class GameServer:
 
 
             # old:
-            # exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         self._pid = exe.pid
         self._proc = exe

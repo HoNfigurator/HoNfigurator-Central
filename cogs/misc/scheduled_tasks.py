@@ -9,7 +9,9 @@ import sys
 import os
 from pathlib import Path
 from tinydb import TinyDB, Query
+from cogs.misc.logging import get_logger, get_misc, get_home
 
+LOGGER = get_logger()
 # pip install: tinydb schedule tzlocal pytz
 
 def run_continuously(interval=60):
@@ -39,13 +41,14 @@ class HonfiguratorSchedule():
         self.max_temp_files_age_days = self.config['application_data']['timers']['replay_cleaner']["max_temp_files_age_days"]
         self.max_temp_folders_age_days = self.config['application_data']['timers']['replay_cleaner']["max_temp_folders_age_days"]
         self.max_clog_age_days = self.config['application_data']['timers']['replay_cleaner']["max_clog_age_days"]
-        self.now = time.time()
 
     def setup_tasks(self):
         # schedule.every(1).minutes.do(self.get_replays) #TODO: to be removed
+        LOGGER.info("Setting up background jobs")
         self.cease_continuous_run = run_continuously()
         schedule.every().day.at("00:20", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
         schedule.every().day.at("01:10", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_files)
+        LOGGER.info("Success!")
 
     def stop(self):
         self.cease_continuous_run.set()
@@ -101,7 +104,7 @@ class ReplayCleaner(HonfiguratorSchedule):
         if self.max_replay_age_days == 0:
             return counter
         for file_path in self.path_to_replays.glob("**/*.honreplay"):
-            if self.now - file_path.stat().st_mtime > self.max_replay_age_days * 86400:
+            if time.time() - file_path.stat().st_mtime > self.max_replay_age_days * 86400:
                 counter += 1
                 self.delete(file_path, method = "file")
         return counter
@@ -111,7 +114,7 @@ class ReplayCleaner(HonfiguratorSchedule):
         if self.max_temp_files_age_days == 0:
             return counter
         for file_path in self.path_to_replays.glob("**/*.tmp"):
-            if self.now - file_path.stat().st_mtime > self.max_temp_files_age_days * 86400:
+            if time.time() - file_path.stat().st_mtime > self.max_temp_files_age_days * 86400:
                 counter += 1
                 self.delete(file_path, method = "file")
         return counter
@@ -121,7 +124,7 @@ class ReplayCleaner(HonfiguratorSchedule):
         if self.max_temp_folders_age_days == 0:
             return counter
         for folder_path in self.path_to_replays.glob("*/"):
-            if folder_path.is_dir() and self.now - folder_path.stat().st_mtime > self.max_temp_folders_age_days * 86400:
+            if folder_path.is_dir() and time.time() - folder_path.stat().st_mtime > self.max_temp_folders_age_days * 86400:
                 counter += 1
                 self.delete(folder_path, method = "folder")
         return counter
