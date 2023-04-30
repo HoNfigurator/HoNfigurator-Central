@@ -17,7 +17,7 @@ from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, HealthChecks, EventBus as ManagerEventBus
-from cogs.misc.logging import get_logger, get_misc, get_home
+from cogs.misc.logger import get_logger, get_misc, get_home
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum

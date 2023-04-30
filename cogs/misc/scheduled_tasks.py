@@ -9,7 +9,7 @@ import sys
 import os
 from pathlib import Path
 from tinydb import TinyDB, Query
-from cogs.misc.logging import get_logger, get_misc, get_home
+from cogs.misc.logger import get_logger, get_misc, get_home
 
 LOGGER = get_logger()
 # pip install: tinydb schedule tzlocal pytz
