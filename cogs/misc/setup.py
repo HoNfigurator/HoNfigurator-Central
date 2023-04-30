@@ -214,24 +214,28 @@ class SetupEnvironment:
 
         return True
 
-    def check_configuration(self):
+    def check_configuration(self, args):
         if not os.path.exists(pathlib.PurePath(self.config_file_hon).parent):
             os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
         if not os.path.exists(self.config_file_logging):
             self.create_logging_configuration_file()
         if not os.path.exists(self.config_file_hon):
-            return self.create_hon_configuration_file()
+            if args:
+                if args.hon_install_directory:
+                    self.hon_data["hon_install_directory"] = Path(args.hon_install_directory)
+            self.create_hon_configuration_file(detected="hon_install_directory")
         database = RolesDatabase()
         if not database.add_default_data():
             while True:
                 value = input("\tPlease provide your discord user ID. This is a 10 digit number:")
                 try:
                     discord_id = int(value)
+                    if len(str(discord_id)) < 10:
+                        raise ValueError
                     database.add_default_data(discord_id=discord_id)
                     break
                 except ValueError:
                     print("Value must be a 10 digit number. Here is a guide to find your discord user ID. https://www.youtube.com/watch?v=ZPROrf4Fe3Q")
-
         # else:
         self.hon_data = self.get_existing_configuration()
         self.full_config = self.merge_config()
@@ -243,29 +247,32 @@ class SetupEnvironment:
         with open(str(self.config_file_logging), 'w') as config_file_logging:
             json.dump(self.get_default_logging_configuration(), config_file_logging, indent=4)
 
-    def create_hon_configuration_file(self):
+    def create_hon_configuration_file(self,detected=None):
 
-        print("Configuration file not found. Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
+        print("\n\nConfiguration file not found. Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
 
         for key, value in self.hon_data.items():
             while True:
                 if key == "svr_password":
                     user_input = getpass(f"\tEnter the value for '{key}': ")
+                elif detected == key:
+                    user_input = input("\tEnter the value for '{}'{}: ".format(key, " (detected: {})".format(value) if value or value == False else ""))
                 else:
-                    user_input = input("\tEnter the value for '{}'{}: ".format(key, " (default: {})".format(value) if value else ""))
+                    user_input = input("\tEnter the value for '{}'{}: ".format(key, " (default: {})".format(value) if value or value == False else ""))
                 if user_input:
                     default_value_type = type(value)
+                    new_value_type = type(user_input)
 
-                    if default_value_type == int:
+                    if new_value_type == int:
                         try:
                             self.hon_data[key] = int(user_input)
                             break
                         except ValueError:
                             print(f"\tInvalid integer value entered for {key}. Using the default value: {value}")
-                    elif default_value_type == bool:
+                    elif new_value_type == bool:
                         self.hon_data[key] = user_input.lower() == 'true'
                         break
-                    elif default_value_type == str:
+                    elif new_value_type == str:
                         if key == "svr_location":
                             if user_input not in ALLOWED_REGIONS:
                                 print(f"\tIncorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
@@ -273,11 +280,19 @@ class SetupEnvironment:
                             else:
                                 self.hon_data[key] = user_input
                                 break
+                        elif key in self.PATH_KEYS_IN_CONFIG_FILE:
+                            try:
+                                user_input = user_input.replace("\"","")
+                                Path(user_input)
+                                self.hon_data[key] = user_input
+                                break
+                            except Exception:
+                                print(f"\tExpected valid file path. Please try again. Here is an example value: {self.hon_data[key]}")
                         else:
                             self.hon_data[key] = user_input
                             break
                     else:
-                        print("\tUnexpected value type for {key}. Skipping this key.")
+                        print(f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
                 else:
                     break
         if self.validate_hon_data():

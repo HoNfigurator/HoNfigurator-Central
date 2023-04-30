@@ -19,6 +19,7 @@ requirements_check = PrepareDependencies(HOME_PATH)
 requirements_check.update_dependencies()
 
 import asyncio
+import argparse
 
 #   This must be first, to initialise logging which all other classes rely on.
 from cogs.misc.logger import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
@@ -41,6 +42,12 @@ from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
 
 LOGGER = get_logger()
 
+def parse_arguments():
+    parser = argparse.ArgumentParser(description="HoNfigurator API and Server Manager")
+    parser.add_argument("-hondir", "--hon_install_directory", type=str, help="Path to the HoN install directory")
+    # Add other arguments here
+    return parser.parse_args()
+
 async def main():
 
     if sys.platform == "linux":
@@ -51,7 +58,7 @@ async def main():
             print("---- IMPORTANT ----")
             return
 
-    config = setup.check_configuration()
+    config = setup.check_configuration(args)
     if config:
         global_config = setup.get_final_configuration()
     else:
@@ -111,6 +118,7 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        args = parse_arguments()
         asyncio.run(main())
     except KeyboardInterrupt:
         LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
