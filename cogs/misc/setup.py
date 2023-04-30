@@ -198,7 +198,7 @@ class SetupEnvironment:
                 #if 'svr_total_per_core' not in self.hon_data:
                     #self.hon_data.update({'svr_total_per_core':1})
 
-                total_allowed = MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core'])
+                total_allowed = MISC.get_total_allowed_servers(int(self.hon_data['svr_total_per_core']))
                 if value > total_allowed:
                     self.hon_data[key] = int(total_allowed)
                     minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
