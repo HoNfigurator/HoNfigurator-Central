@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import traceback, sys, os
+from pathlib import Path
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """
@@ -10,18 +11,19 @@ def show_exception_and_exit(exc_type, exc_value, tb):
     sys.exit()
 sys.excepthook = show_exception_and_exit
 
+HOME_PATH = Path(os.path.dirname(os.path.abspath(__file__)))
+
+# set up dependencies first
+from cogs.misc.dependencies_check import PrepareDependencies
+requirements_check = PrepareDependencies(HOME_PATH)
+requirements_check.update_dependencies()
+
 import asyncio
-from pathlib import Path
 
 #   This must be first, to initialise logging which all other classes rely on.
 from cogs.misc.logger import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
-HOME_PATH = Path(get_script_dir(__file__))
 set_home(HOME_PATH)
 set_logger()
-
-from cogs.misc.dependencies_check import PrepareDependencies
-requirements_check = PrepareDependencies()
-requirements_check.update_dependencies()
 
 from cogs.misc.utilities import Misc
 MISC = Misc()
