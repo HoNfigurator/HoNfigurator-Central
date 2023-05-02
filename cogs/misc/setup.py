@@ -92,7 +92,7 @@ class SetupEnvironment:
                     },
                     "replay_cleaner" : {
                         "active" : False,
-                        "max_replay_age_days" : 30,
+                        "max_replay_age_days" : 60,
                         "max_temp_files_age_days" : 1,
                         "max_temp_folders_age_days" : 1,
                         "max_clog_age_days" : 0
