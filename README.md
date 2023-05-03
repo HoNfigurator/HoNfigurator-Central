@@ -9,6 +9,8 @@ There is a rest API built in, to allow interaction from external services.
 
 This guide provides steps for linking the configured HoNfigurator server to a front end management webui.
 
+[Join the discord channel](https://discord.gg/BT23GnBKkT) for more updates and to become more involved with this project.
+
 ## Installation
 <details>
 <summary>Windows</summary>
@@ -49,7 +51,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 1. Select OK
 > **Warning** If it fails, please follow the steps in the warning message. 
 
-#### Managing your server
+### Managing your server
 Page Overview:
 - Home
   - Central hub. View stats, skipped frame data.
