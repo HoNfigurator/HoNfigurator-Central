@@ -49,7 +49,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 1. Select OK
 > **Warning** If it fails, please follow the steps in the warning message. 
 
-### Managing your server
+#### Managing your server
 Page Overview:
 - Home
   - Central hub. View stats, skipped frame data.
