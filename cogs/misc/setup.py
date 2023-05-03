@@ -112,8 +112,8 @@ class SetupEnvironment:
                 "svr_total_per_core": 1,
                 "svr_enableProxy": False,
                 "svr_max_start_at_once": 5,
-                "svr_starting_gamePort": 10000,
-                "svr_starting_voicePort": 10060,
+                "svr_starting_gamePort": 10001,
+                "svr_starting_voicePort": 10061,
                 "svr_managerPort": 1135,
                 "svr_startup_timeout": 180
             }
@@ -160,6 +160,17 @@ class SetupEnvironment:
                         minor_issues.append(f"Resolved: Converted string integer to real integer for {key}: {value}")
                     except ValueError:
                         major_issues.append("Invalid integer value for {}: {}".format(key, value))
+                else:
+                    if key == "svr_starting_gamePort" and value < 10001:
+                        self.hon_data[key] = 10001
+                        minor_issues.append(f"Resolved: Starting game port reassigned to {self.hon_data[key]}. Must start from 10001 one onwards.")
+                    elif key == "svr_starting_voicePort":
+                        if value < 10061:
+                            self.hon_data[key] = 10061
+                            minor_issues.append(f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be greater than 10061.")
+                        if self.hon_data[key] - self.hon_data['svr_total'] < self.hon_data['svr_starting_gamePort']:
+                            self.hon_data[key] = self.hon_data['svr_starting_gamePort'] + self.hon_data['svr_total']
+                            minor_issues.append(f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be at least {self.hon_data['svr_total']} (svr_total) higher than the starting game port.")
 
             elif default_value_type == bool:
                 if not isinstance(value, bool):

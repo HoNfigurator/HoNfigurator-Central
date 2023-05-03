@@ -130,8 +130,8 @@ class Misc:
         server_id = int(server_id)
         affinity = []
 
-        if svr_total_per_core > 2:
-            raise Exception("You cannot specify more than 2 servers per core.")
+        if svr_total_per_core > 3:
+            raise Exception("You cannot specify more than 3 servers per core.")
         elif svr_total_per_core < 0:
             raise Exception("You cannot specify a number less than 1. Must be either 1 or 2.")
         if svr_total_per_core == 1:
