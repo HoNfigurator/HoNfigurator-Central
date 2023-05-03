@@ -365,7 +365,7 @@ class GameServerManager:
 
     def create_all_game_servers(self):
         for id in range (1,self.global_config['hon_data']['svr_total']+1):
-            port = self.global_config['hon_data']['svr_starting_gamePort'] + id
+            port = self.global_config['hon_data']['svr_starting_gamePort'] + id - 1
             self.create_game_server(port)
 
     def create_game_server(self, game_server_port):
@@ -379,7 +379,7 @@ class GameServerManager:
         Returns:
             None
         """
-        id = game_server_port - self.global_config['hon_data']['svr_starting_gamePort']
+        id = game_server_port - self.global_config['hon_data']['svr_starting_gamePort'] + 1
         game_server = GameServer(id, game_server_port, self.global_config, self.remove_game_server, self.event_bus)
         self.game_servers[game_server_port] = game_server
         return game_server
