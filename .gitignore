@@ -16,7 +16,7 @@ roles.db
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
-stats.json
+cogs/db/stats.json
 
 # C extensions
 *.so
