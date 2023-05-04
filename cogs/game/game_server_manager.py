@@ -753,14 +753,16 @@ class GameServerManager:
             # the hon_update_x64.exe will launch the default k2 server manager, indicating patching is complete. We don't need it so close it.
             wait_for_temp_manager = 0
             max = 5
-            while not MISC.find_process_by_cmdline_keyword("-manager", proc_name = self.global_config['hon_data']['hon_executable_name']):
+
+            temp_manager_proc = None
+            while not temp_manager_proc:
                 await asyncio.sleep(1)
+                temp_manager_proc = MISC.find_process_by_cmdline_keyword("-manager", proc_name = self.global_config['hon_data']['hon_executable_name'])
                 wait_for_temp_manager +=1
                 if wait_for_temp_manager >= max:
                     LOGGER.error(f"Patching failed as it exceeded {max} seconds waiting for patcher to open manager.")
                     return False
 
-            temp_manager_proc = MISC.find_process_by_cmdline_keyword("-manager")
             temp_manager_proc.terminate()
 
             svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
@@ -779,6 +781,7 @@ class GameServerManager:
             return False
         except Exception:
             LOGGER.error(f"An unexpected error occured while patching: {traceback.format_exc()}")
+            return False
         finally:
             # patching is done. Whether it failed or otherwise.
             self.patching = False
