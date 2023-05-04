@@ -330,7 +330,14 @@ def get_server_config(token_and_user_info: dict = Depends(check_permission_facto
 
 @app.get("/api/get_num_reserved_cpus")
 def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-    return str(MISC.get_num_reserved_cpus())
+    return MISC.get_num_reserved_cpus()
+
+@app.get("/api/get_honfigurator_log")
+def get_honfigurator_log(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    # return the contents of the current log file
+    with open(HOME_PATH / "logs" / "server.log") as f:
+        file_content = f.readlines()
+    return file_content[-1000:][::-1]
 
 # Define the /api/get_instances_status endpoint with OpenAPI documentation
 @app.get("/api/get_instances_status", summary="Get instances status")

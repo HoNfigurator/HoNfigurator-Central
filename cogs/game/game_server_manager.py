@@ -70,6 +70,7 @@ class GameServerManager:
         self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
+        self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.tasks = {
             'game_servers':'',
             'cli_handler':'',
@@ -333,6 +334,8 @@ class GameServerManager:
         LOGGER.info("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
+        self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
+        self.master_server_handler.set_cookie(parsed_mserver_auth_response['session'])
 
         return parsed_mserver_auth_response
 
@@ -362,6 +365,18 @@ class GameServerManager:
 
         # Start handling packets from the chat server
         await chat_server_handler.handle_packets()
+
+    async def resubmit_match_stats_to_masterserver(self, match_id, file_path):
+        mserver_stats_response = await self.master_server_handler.send_stats_file(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest(), match_id, file_path)
+        if mserver_stats_response[1] != 200 or mserver_stats_response[0] == '':
+            # .stats submission will not work until KONGOR implements accepting .stats from the custom written manager.
+            # TODO: Update below to .error once upstream is configured to accept our stats.
+            LOGGER.debug(f"[{mserver_stats_response[1]}] Stats submission failed. Response: {mserver_stats_response[0]}")
+            return
+        parsed_mserver_stats_response = phpserialize.loads(mserver_stats_response[0].encode('utf-8'))
+        parsed_mserver_stats_response = {key.decode() if isinstance(key, bytes) else key: (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_stats_response.items()}
+
+        return
 
     def create_all_game_servers(self):
         for id in range (1,self.global_config['hon_data']['svr_total']+1):
@@ -738,7 +753,7 @@ class GameServerManager:
             # the hon_update_x64.exe will launch the default k2 server manager, indicating patching is complete. We don't need it so close it.
             wait_for_temp_manager = 0
             max = 5
-            while not MISC.find_process_by_cmdline_keyword("-manager"):
+            while not MISC.find_process_by_cmdline_keyword("-manager", proc_name = self.global_config['hon_data']['hon_executable_name']):
                 await asyncio.sleep(1)
                 wait_for_temp_manager +=1
                 if wait_for_temp_manager >= max:

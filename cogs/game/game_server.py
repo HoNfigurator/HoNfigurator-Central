@@ -155,7 +155,7 @@ class GameServer:
         self.game_state._state['performance']['now_ingame_skipped_frames'] = 0
 
     def increment_skipped_frames(self, frames, time):
-        if self.get_dict_value('match_started') == 1:  # Only log skipped frames when we're actually in a match.
+        if self.get_dict_value('game_phase') == 6:  # Only log skipped frames when we're actually in a match.
             self.game_state._state['performance']['total_ingame_skipped_frames'] += frames
             self.game_state._state['performance']['now_ingame_skipped_frames'] += frames
             self.game_state._state['skipped_frames_detailed'][time] = frames

@@ -4,7 +4,8 @@ from cogs.misc.logger import get_logger, get_misc
 from cogs.misc.exceptions import HoNPatchError
 import asyncio
 import traceback
-import phpserialize
+import os
+import re
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -54,6 +55,22 @@ class HealthCheckManager:
     
     async def honfigurator_version_healthcheck(self):
         pass
+    
+    async def poll_for_game_stats(self):
+        while not stop_event.is_set():
+            await asyncio.sleep(20)
+            try:
+                for file_name in os.listdir(self.global_config['hon_data']['hon_logs_directory']):
+                    if file_name.endswith(".stats"):
+                        match_id = re.search(r'([0-9]+)', file_name) # Extract match_id from file name (M<match_id>.stats)
+                        match_id = match_id.group(0)
+                        file_path = os.path.join(self.global_config['hon_data']['hon_logs_directory'], file_name)
+                        await self.event_bus.emit('resubmit_match_stats_to_masterserver',match_id, file_path)
+                        print("removing now..")
+                        # os.remove(file_path)  # Remove the .stats file after processing
+            except Exception as e:
+                LOGGER.error(f"Error while polling stats directory: {e}")
+                traceback.print_exc()
 
     async def run_health_checks(self):
         """
@@ -62,6 +79,7 @@ class HealthCheckManager:
             If health check functions are not wrapped in try
         """
         stop_task = asyncio.create_task(stop_event.wait())
+        # TODO: implement the poll_for_game_stats function below, once upstream accepts our format.
         done, pending = await asyncio.wait(
             [self.public_ip_healthcheck(), self.general_healthcheck(), self.lag_healthcheck(), self.patch_version_healthcheck(), stop_task],
             return_when=asyncio.FIRST_COMPLETED

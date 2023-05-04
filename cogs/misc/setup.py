@@ -363,6 +363,7 @@ class SetupEnvironment:
         self.hon_data['hon_logs_directory'] = hon_logs_directory
         self.hon_data['svr_ip'] = MISC.get_public_ip()
         self.hon_data['hon_executable_path'] = self.hon_data['hon_install_directory'] / file_name
+        self.hon_data['hon_executable_name'] = file_name
         self.hon_data['svr_version'] = MISC.get_svr_version(self.hon_data['hon_executable_path'])
         self.hon_data['architecture'] = architecture
 

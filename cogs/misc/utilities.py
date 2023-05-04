@@ -152,11 +152,15 @@ class Misc:
         return external_ip
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"
-    def find_process_by_cmdline_keyword(self, keyword):
+    def find_process_by_cmdline_keyword(self, keyword, proc_name=None):
         for process in psutil.process_iter(['cmdline']):
             if process.info['cmdline']:
                 if any(keyword in arg.lower() for arg in process.info['cmdline']):
-                    return process
+                    if proc_name:
+                        if proc_name == process.name():
+                            return process
+                    else:
+                        return process
         return None
     def get_svr_version(self,hon_exe):
         def validate_version_format(version):
