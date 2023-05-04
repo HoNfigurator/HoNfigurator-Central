@@ -34,7 +34,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 <summary>Linux (coming soon)</summary>
 <installer here>
 # Install Server <br>
-1. curl https://eco.superbjorn.de/install-server.py | sudo python -<br>
+1. curl https://eco.superbjorn.de/install-server.py | sudo python3 -<br>
 2. Install Launcher (this repo)
 
 </details>
