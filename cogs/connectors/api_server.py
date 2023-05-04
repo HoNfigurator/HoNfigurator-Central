@@ -609,7 +609,7 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
         print(f"Error checking certificate expiration: {e}")
 
 
-async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0", port=5000):
+async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0", port='svr_apiServerPort'):
     global global_config, game_servers, manager_event_bus
     global_config = config
     game_servers = game_servers_dict
