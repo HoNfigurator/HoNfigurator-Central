@@ -9,6 +9,8 @@ There is a rest API built in, to allow interaction from external services.
 
 This guide provides steps for linking the configured HoNfigurator server to a front end management webui.
 
+[Join the discord channel](https://discord.gg/BT23GnBKkT) for more updates and to become more involved with this project.
+
 ## Installation
 <details>
 <summary>Windows</summary>

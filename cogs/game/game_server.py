@@ -256,7 +256,6 @@ class GameServer:
             # Server instances write files to location dependent on USERPROFILE and APPDATA variables
             os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
             # os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
-
             DETACHED_PROCESS = 0x00000008
 
             cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]

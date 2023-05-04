@@ -85,6 +85,9 @@ class GameServerManager:
         # set the current state of patching
         self.patching = False
 
+        # preserve the current system path. We need it for a silly fix.
+        self.preserved_path = os.environ["PATH"]
+
         # Initialize dictionaries to store game servers and client connections
         self.server_start_semaphore = asyncio.Semaphore(self.global_config['hon_data']['svr_max_start_at_once'])  # 2 max servers starting at once
         self.game_servers = {}
@@ -362,7 +365,7 @@ class GameServerManager:
 
     def create_all_game_servers(self):
         for id in range (1,self.global_config['hon_data']['svr_total']+1):
-            port = self.global_config['hon_data']['svr_starting_gamePort'] + id
+            port = self.global_config['hon_data']['svr_starting_gamePort'] + id - 1
             self.create_game_server(port)
 
     def create_game_server(self, game_server_port):
@@ -376,7 +379,7 @@ class GameServerManager:
         Returns:
             None
         """
-        id = game_server_port - self.global_config['hon_data']['svr_starting_gamePort']
+        id = game_server_port - self.global_config['hon_data']['svr_starting_gamePort'] + 1
         game_server = GameServer(id, game_server_port, self.global_config, self.remove_game_server, self.event_bus)
         self.game_servers[game_server_port] = game_server
         return game_server
@@ -674,12 +677,20 @@ class GameServerManager:
 
         This function does not return anything, but can log errors or other information.
         """
+        if MISC.get_os_platform() == "win32":
+            # this is an atrocious fix until I find a better solution.
+            # on some systems, the compiled honfigurator.exe file, which is just launcher.py from cogs.misc causes issues for the opened hon_x64.exe. The exe is unable to locate one of the game dll resources.
+            # I wasted a lot of time trying to troubleshoot it, launching main.py directly works fine. This is my solution until a better one comes around. It's set within the scope of the script, and doesn't modify the systems environment.
+            path_list = os.environ["PATH"].split(os.pathsep)
+            if self.global_config['hon_data']['hon_install_directory'] not in path_list:
+                os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
         if MISC.get_os_platform() == "win32" and await self.check_upstream_patch():
             if await self.initialise_patching_procedure(source="startup"):
                 # patching was successful. Continue starting servers.
                 pass
             else:
                 return False
+
         else:
             # Patch not required
             pass
