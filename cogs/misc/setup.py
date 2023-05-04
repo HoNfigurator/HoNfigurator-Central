@@ -206,9 +206,6 @@ class SetupEnvironment:
                     major_issues.append(f"Unexpected key and value type for {key}: {value}")
 
             if key == "svr_total":
-                #if 'svr_total_per_core' not in self.hon_data:
-                    #self.hon_data.update({'svr_total_per_core':1})
-
                 total_allowed = MISC.get_total_allowed_servers(int(self.hon_data['svr_total_per_core']))
                 if value > total_allowed:
                     self.hon_data[key] = int(total_allowed)
@@ -380,8 +377,8 @@ class SetupEnvironment:
         )
 
     def get_final_configuration(self):
-        self.add_runtime_data()
         if self.validate_hon_data():
+            self.add_runtime_data()
             return self.merge_config()
         else:
             return False
