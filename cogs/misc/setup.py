@@ -21,7 +21,7 @@ pip_requirements = HOME_PATH / 'requirements.txt'
 class SetupEnvironment:
     def __init__(self,config_file_hon):
         self.PATH_KEYS_IN_CONFIG_FILE = ["hon_install_directory","hon_home_directory"]
-        self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path']
+        self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path', 'hon_executable_name']
         self.ALL_PATH_TYPES = self.PATH_KEYS_IN_CONFIG_FILE + self.PATH_KEYS_NOT_IN_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip","svr_version","hon_executable", 'architecture']
         self.config_file_hon = config_file_hon
@@ -92,7 +92,7 @@ class SetupEnvironment:
                     },
                     "replay_cleaner" : {
                         "active" : False,
-                        "max_replay_age_days" : 60,
+                        "max_replay_age_days" : 30,
                         "max_temp_files_age_days" : 1,
                         "max_temp_folders_age_days" : 1,
                         "max_clog_age_days" : 0
@@ -377,8 +377,8 @@ class SetupEnvironment:
         )
 
     def get_final_configuration(self):
+        self.add_runtime_data()
         if self.validate_hon_data():
-            self.add_runtime_data()
             return self.merge_config()
         else:
             return False

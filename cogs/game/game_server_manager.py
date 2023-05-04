@@ -700,10 +700,7 @@ class GameServerManager:
             if self.global_config['hon_data']['hon_install_directory'] not in path_list:
                 os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
         if MISC.get_os_platform() == "win32" and await self.check_upstream_patch():
-            if await self.initialise_patching_procedure(source="startup"):
-                # patching was successful. Continue starting servers.
-                pass
-            else:
+            if not await self.initialise_patching_procedure(source="startup"):
                 return False
 
         else:
