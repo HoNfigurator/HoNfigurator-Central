@@ -340,21 +340,28 @@ class RolesDatabase:
     def add_new_user(self, user: Dict[str, Any]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
-            try:
-                cursor.execute("INSERT INTO users (discord_id, nickname) VALUES (?, ?)", (user["discord_id"], user["nickname"]))
-                user_id = cursor.lastrowid
-            except sqlite3.IntegrityError:
-                # User already exists, try to update instead
-                cursor.execute("UPDATE users SET nickname = ? WHERE discord_id = ?", (user["nickname"], user["discord_id"]))
-                cursor.execute("SELECT id FROM users WHERE discord_id = ?", (user["discord_id"],))
-                user_id = cursor.fetchone()["id"]
+
+            cursor.execute("""
+                INSERT OR REPLACE INTO users (discord_id, nickname)
+                VALUES (?, ?)
+            """, (user["discord_id"], user["nickname"]))
+
+            cursor.execute("SELECT id FROM users WHERE discord_id = ?", (user["discord_id"],))
+            user_id = cursor.fetchone()["id"]
 
             for role_name in user["roles"]:
-                cursor.execute("SELECT id FROM roles WHERE name = ?", (role_name,))
-                role_id = cursor.fetchone()["id"]
-                cursor.execute("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", (user_id, role_id))
+                self.insert_or_update_role(cursor, user_id, role_name)
 
             conn.commit()
+
+    def insert_or_update_role(self, cursor, user_id, role_name):
+        cursor.execute("SELECT id FROM roles WHERE name = ?", (role_name,))
+        role_id = cursor.fetchone()["id"]
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO user_roles (user_id, role_id)
+            VALUES (?, ?)
+        """, (user_id, role_id))
 
     @health_check_decorator
     def add_role_to_user(self, user_id: int, role_id: int) -> None:
@@ -405,29 +412,30 @@ class RolesDatabase:
     def add_new_role(self, role: Dict[str, Any]) -> None:
         with self.get_conn() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT id FROM roles WHERE name = ?", (role["name"],))
-            result = cursor.fetchone()
 
-            if result is None:
-                cursor.execute("INSERT INTO roles (name) VALUES (?)", (role["name"],))
-                role_id = cursor.lastrowid
-            else:
-                role_id = result[0]
-                cursor.execute("DELETE FROM role_permissions WHERE role_id = ?", (role_id,))
+            cursor.execute("""
+                INSERT OR REPLACE INTO roles (name)
+                VALUES (?)
+            """, (role["name"],))
+
+            cursor.execute("SELECT id FROM roles WHERE name = ?", (role["name"],))
+            role_id = cursor.fetchone()[0]
+
+            cursor.execute("DELETE FROM role_permissions WHERE role_id = ?", (role_id,))
 
             for permission_name in role["permissions"]:
-                cursor.execute("SELECT id FROM permissions WHERE name = ?", (permission_name,))
-                permission_id = cursor.fetchone()[0]
-
-                cursor.execute("""
-                    SELECT * FROM role_permissions
-                    WHERE role_id = ? AND permission_id = ?
-                """, (role_id, permission_id))
-
-                if cursor.fetchone() is None:
-                    cursor.execute("INSERT INTO role_permissions (role_id, permission_id) VALUES (?, ?)", (role_id, permission_id))
+                self.insert_or_update_permission(cursor, role_id, permission_name)
 
             conn.commit()
+
+    def insert_or_update_permission(self, cursor, role_id, permission_name):
+        cursor.execute("SELECT id FROM permissions WHERE name = ?", (permission_name,))
+        permission_id = cursor.fetchone()[0]
+
+        cursor.execute("""
+            INSERT OR REPLACE INTO role_permissions (role_id, permission_id)
+            VALUES (?, ?)
+        """, (role_id, permission_id))
 
 
     @health_check_decorator

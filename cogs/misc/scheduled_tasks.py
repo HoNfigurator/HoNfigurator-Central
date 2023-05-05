@@ -1,4 +1,5 @@
 import threading
+import functools
 import schedule
 import datetime
 import tzlocal
@@ -12,6 +13,7 @@ from tinydb import TinyDB, Query
 from cogs.misc.logger import get_logger, get_misc, get_home
 
 LOGGER = get_logger()
+HOME_PATH = get_home()
 # pip install: tinydb schedule tzlocal pytz
 
 def run_continuously(interval=60):
@@ -28,11 +30,26 @@ def run_continuously(interval=60):
     return cease_continuous_run
 
 
+def catch_exceptions(cancel_on_failure=False):
+    def catch_exceptions_decorator(job_func):
+        @functools.wraps(job_func)
+        def wrapper(*args, **kwargs):
+            try:
+                return job_func(*args, **kwargs)
+            except:
+                import traceback
+                LOGGER.error(traceback.format_exc())
+                if cancel_on_failure:
+                    return schedule.CancelJob
+        return wrapper
+    return catch_exceptions_decorator
+
+
 class HonfiguratorSchedule():
     def __init__(self, config):
         self.config = config
         self.replay_dir = config["hon_data"]["hon_replays_directory"]
-        self.db = TinyDB("cogs/db/stats.json")
+        self.db = TinyDB(HOME_PATH / "cogs" / "db" / "stats.json")
         self.replay_table = self.db.table('stats_replay_count')
         self.file_deletion_table =  self.db.table('file_deletion_table')
 
@@ -51,12 +68,15 @@ class HonfiguratorSchedule():
         LOGGER.info("Success!")
 
     def stop(self):
+        LOGGER.info("Stop signal for background jobs received")
         self.cease_continuous_run.set()
 
+    @catch_exceptions()
     def get_replays(self):
         instance = Stats(self.config)
         instance.count_replays()
 
+    @catch_exceptions()
     def delete_files(self):
         #if replay_config.get("active") == True:
         instance = ReplayCleaner(self.config)

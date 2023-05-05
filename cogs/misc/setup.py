@@ -21,7 +21,7 @@ pip_requirements = HOME_PATH / 'requirements.txt'
 class SetupEnvironment:
     def __init__(self,config_file_hon):
         self.PATH_KEYS_IN_CONFIG_FILE = ["hon_install_directory","hon_home_directory"]
-        self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path']
+        self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path', 'hon_executable_name']
         self.ALL_PATH_TYPES = self.PATH_KEYS_IN_CONFIG_FILE + self.PATH_KEYS_NOT_IN_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip","svr_version","hon_executable", 'architecture']
         self.config_file_hon = config_file_hon
@@ -116,7 +116,7 @@ class SetupEnvironment:
                 "svr_starting_voicePort": 10061,
                 "svr_managerPort": 1135,
                 "svr_startup_timeout": 180,
-                "svr_api_port":5000,
+                "svr_api_port": 5000
             }
         }
 
@@ -207,9 +207,6 @@ class SetupEnvironment:
                     major_issues.append(f"Unexpected key and value type for {key}: {value}")
 
             if key == "svr_total":
-                #if 'svr_total_per_core' not in self.hon_data:
-                    #self.hon_data.update({'svr_total_per_core':1})
-
                 total_allowed = MISC.get_total_allowed_servers(int(self.hon_data['svr_total_per_core']))
                 if value > total_allowed:
                     self.hon_data[key] = int(total_allowed)
@@ -227,6 +224,8 @@ class SetupEnvironment:
         return True
 
     def check_configuration(self, args):
+        if not os.path.exists(Path('game_states')):
+            os.makedirs(Path('game_states'))
         if not os.path.exists(pathlib.PurePath(self.config_file_hon).parent):
             os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
         if not os.path.exists(self.config_file_logging):
@@ -364,6 +363,7 @@ class SetupEnvironment:
         self.hon_data['hon_logs_directory'] = hon_logs_directory
         self.hon_data['svr_ip'] = MISC.get_public_ip()
         self.hon_data['hon_executable_path'] = self.hon_data['hon_install_directory'] / file_name
+        self.hon_data['hon_executable_name'] = file_name
         self.hon_data['svr_version'] = MISC.get_svr_version(self.hon_data['hon_executable_path'])
         self.hon_data['architecture'] = architecture
 

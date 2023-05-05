@@ -1,9 +1,11 @@
 import traceback
 import aiohttp
-import inspect
+import os
+import urllib.parse
 from cogs.misc.logger import get_logger
 from cogs.handlers.events import stop_event
 import phpserialize
+import hashlib
 
 LOGGER = get_logger()
 
@@ -23,8 +25,16 @@ class MasterServerHandler:
             "Content-Type": "application/x-www-form-urlencoded"
         }
         self.session = aiohttp.ClientSession()
+        self.server_id = None
+        self.cookie = None
         LOGGER.debug(f"Master server URL: {self.base_url}")
         LOGGER.debug(f"Headers: {self.headers}")
+    
+    def set_server_id(self, server_id):
+        self.server_id = server_id
+
+    def set_cookie(self, cookie):
+        self.cookie = cookie
 
     async def send_replay_auth(self, login, password):
         url = f"{self.base_url}/server_requester.php?f=replay_auth"
@@ -84,6 +94,51 @@ class MasterServerHandler:
         async with aiohttp.ClientSession() as session:
             async with session.post(url, data=data, headers=self.headers) as response:
                 return await response.text(), response.status
+    
+    async def send_stats_file(self, username, password, match_id, file_path):
+        def generate_resubmission_key(match_id, session_cookie):
+            sha1 = hashlib.sha1()
+            sha1.update(f"{match_id}{session_cookie}".encode('utf-8'))
+            resubmission_key = sha1.hexdigest()
+            return resubmission_key
+
+        if not self.cookie:
+            LOGGER.error("Unable to resubmit stats, as there is no stored session cookie. Indicating the server is not authenticated with the master server.")
+            return
+        elif not self.server_id:
+            LOGGER.error("Unable to resubmit stats, as there is no stored server id. The particular time this error occured, indicates there may have been an issue assigning the server id.")
+            return
+
+        url = f"{self.base_url}/stats_requester.php"
+
+        headers = self.headers.copy()
+        headers["Content-Type"] = "application/x-www-form-urlencoded"
+
+        params = {
+            'svr_login': username,
+            'pass': password,
+            'resubmission_key': generate_resubmission_key(match_id, self.cookie),
+            'server_id': self.server_id
+        }
+
+        try:
+            # Read the file content as a string with specified encoding
+            with open(file_path, 'r', encoding='utf-16-le') as f:
+                file_content = f.read().lstrip('\ufeff')
+
+            # Manually construct the request payload
+            payload = "f=resubmit_stats"
+            for key, value in params.items():
+                payload += f"&{key}={value}"
+            payload += f"&{file_content}"
+
+            headers["Content-Length"] = str(len(payload))
+
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, headers=headers, data=payload) as response:
+                    return await response.text(), response.status
+        except Exception:
+            print(traceback.format_exc())
 
     async def compare_upstream_patch(self):
         url = f"{self.base_url}/patcher/patcher.php"
