@@ -116,7 +116,7 @@ class SetupEnvironment:
                 "svr_starting_voicePort": 10061,
                 "svr_managerPort": 1135,
                 "svr_startup_timeout": 180,
-                "svr_apiServerPort":5000,
+                "svr_api_port":5000,
             }
         }
 
