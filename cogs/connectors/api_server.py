@@ -331,14 +331,14 @@ def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_f
     return MISC.get_num_reserved_cpus()
 
 @app.get("/api/get_honfigurator_log_entries/{num}", description="Returns the specified number of log entries from the honfigurator log file.")
-def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
     # return the contents of the current log file
     with open(HOME_PATH / "logs" / "server.log", 'r') as f:
         file_content = f.readlines()
     return file_content[-num:][::-1]
 
 @app.get("/api/get_honfigurator_log_file", description="Returns the HoNfigurator log file completely, for download.")
-def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
     with open(HOME_PATH / "logs" / "server.log", "r") as file:
         log_file_content = file.readlines()
     return log_file_content
