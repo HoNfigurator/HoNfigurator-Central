@@ -223,6 +223,8 @@ class SetupEnvironment:
         return True
 
     def check_configuration(self, args):
+        if not os.path.exists(Path('game_states')):
+            os.makedirs(Path('game_states'))
         if not os.path.exists(pathlib.PurePath(self.config_file_hon).parent):
             os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
         if not os.path.exists(self.config_file_logging):
