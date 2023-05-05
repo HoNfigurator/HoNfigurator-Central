@@ -4,23 +4,21 @@ from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 import datetime
-import pathlib
 from fastapi import FastAPI, Request, Response, Body, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 import httpx
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, PlainTextResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
 from cogs.misc.logger import get_logger, get_misc, get_home, get_setup
-from cogs.misc.setup import SetupEnvironment
 from cogs.db.roles_db_connector import RolesDatabase
 from typing import Any, Dict, List, Tuple
 import logging
 from os.path import exists
 import json
 from pydantic import BaseModel
-import ssl
+import os
 import traceback
 
 app = FastAPI()
@@ -332,17 +330,23 @@ def get_server_config(token_and_user_info: dict = Depends(check_permission_facto
 def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return MISC.get_num_reserved_cpus()
 
-@app.get("/api/get_honfigurator_log")
-def get_honfigurator_log(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+@app.get("/api/get_honfigurator_log_entries/{num}", description="Returns the specified number of log entries from the honfigurator log file.")
+def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     # return the contents of the current log file
-    with open(HOME_PATH / "logs" / "server.log") as f:
+    with open(HOME_PATH / "logs" / "server.log", 'r') as f:
         file_content = f.readlines()
-    return file_content[-1000:][::-1]
+    return file_content[-num:][::-1]
+
+@app.get("/api/get_honfigurator_log_file", description="Returns the HoNfigurator log file completely, for download.")
+def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    with open(HOME_PATH / "logs" / "server.log", "r") as file:
+        log_file_content = file.readlines()
+    return log_file_content
 
 # Define the /api/get_instances_status endpoint with OpenAPI documentation
 @app.get("/api/get_instances_status", summary="Get instances status")
 #def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
     """
     Get the status of all game server instances.
 
