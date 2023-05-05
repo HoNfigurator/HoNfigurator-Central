@@ -226,7 +226,7 @@ class GameServerManager:
         return task
 
     async def start_api_server(self):
-        task = await start_api_server(self.global_config, self.game_servers, self.event_bus)
+        task = await start_api_server(self.global_config, self.game_servers, self.event_bus, port=self.global_config['hon_data']['svr_api_port'])
         self.tasks.update({'api_server':task})
         return task
 
