@@ -1,9 +1,12 @@
 import os
+from os.path import exists
 import platform
 import subprocess
 import sys
+from pathlib import Path
+import shutil
 
-version = "0.23.2"
+version = "0.24.3"
 system = platform.system()
 
 def run_command(cmd, shell=False):
@@ -15,11 +18,18 @@ def run_command(cmd, shell=False):
 
 def install_step_cli():
     if system == "Windows":
+        download_location = Path(os.environ['TEMP']) / "step_windows.zip"
+        install_location = Path(os.environ['PROGRAMDATA'])
+        step_location = install_location / "step"
+
         print("Downloading and installing step CLI for Windows...")
-        url = f"https://github.com/smallstep/cli/releases/download/v{version}/step_windows_{version}.zip"
-        run_command(["powershell.exe", "Invoke-WebRequest", f"\"{url}\"", "-outFile", "step_windows.zip"])
-        run_command(["powershell.exe", "Expand-Archive", "step_windows.zip", "-DestinationPath", "."])
-        os.environ["PATH"] = os.path.abspath("step_windows") + os.pathsep + os.environ["PATH"]
+        url = f"https://github.com/smallstep/cli/releases/download/v{version}/step_windows_{version}_amd64.zip"
+        run_command(["powershell.exe", "Invoke-WebRequest", f"\"{url}\"", "-outFile", str(download_location)])
+        run_command(["powershell.exe", "Expand-Archive", download_location, "-DestinationPath", install_location])
+        if exists(step_location): shutil.rmtree(step_location)
+        os.rename(install_location / f"step_{version}", step_location)
+        os.remove(download_location)
+        os.environ["PATH"] = os.path.abspath(step_location / "bin") + os.pathsep + os.environ["PATH"]
     elif system == "Linux":
         print("Downloading and installing step CLI for Linux...")
         url = "https://github.com/smallstep/cli/releases/download/v0.17.0/step_linux_0.17.0_amd64.tar.gz"
@@ -36,18 +46,21 @@ def install_step_cli():
 def bootstrap_ca():
     print("Bootstrapping the CA...")
     ca_url = "https://hon-elk.honfigurator.app"
+    root_ca_download_location = Path(os.environ['TEMP']) / "root_ca.crt"
     root_ca_location = "root_ca.crt"
     
     if system == "Windows":
-        run_command(["powershell.exe", "Invoke-WebRequest", f"\"{ca_url}/roots.pem\"", "-OutFile", root_ca_location])
+        run_command(["powershell.exe", "Invoke-WebRequest", f"\"{ca_url}/roots.pem\"", "-OutFile", root_ca_download_location])
     elif system == "Linux":
-        run_command(["curl", "-LO", f"{ca_url}/roots.pem", root_ca_location])
+        run_command(["curl", "-LO", f"{ca_url}/roots.pem", root_ca_download_location])
     else:
         print(f"Unsupported system: {system}")
         sys.exit(1)
 
     ca_fingerprint = run_command(["step","certificate","fingerprint",root_ca_location])
-    run_command(["step", "ca", "bootstrap", "--ca-url", ca_url, "--fingerprint", ca_fingerprint])
+    os.remove(root_ca_download_location)
+    p = subprocess.Popen(["step", "ca", "bootstrap", "--ca-url", ca_url, "--fingerprint", ca_fingerprint], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+    p.communicate()
 
 def request_certificate(provisioner_name, provisioner_password_file):
     print("Requesting a certificate...")

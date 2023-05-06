@@ -214,7 +214,7 @@ class GameServerManager:
         except Exception:
             LOGGER.error(f"{traceback.format_exc()}")
 
-    async def start_autoping_listener_task(self, port):
+    def start_autoping_listener_task(self, port):
         LOGGER.info("Starting AutoPingListener...")
         self.auto_ping_listener = AutoPingListener(self.global_config, port)
         self.auto_ping_listener_task = asyncio.create_task(self.auto_ping_listener.start_listener())
@@ -226,8 +226,8 @@ class GameServerManager:
         self.tasks.update({'gameserver_listener':task})
         return task
 
-    async def start_api_server(self):
-        task = await start_api_server(self.global_config, self.game_servers, self.event_bus)
+    def start_api_server(self):
+        task = asyncio.create_task(start_api_server(self.global_config, self.game_servers, self.event_bus, port=self.global_config['hon_data']['svr_api_port']))
         self.tasks.update({'api_server':task})
         return task
 
@@ -310,7 +310,10 @@ class GameServerManager:
                 # Connect to the chat server and authenticate
                 await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
 
-            except (AuthenticationError, ConnectionResetError) as e:
+            except (AuthenticationError, ConnectionResetError, ) as e:
+                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
+                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
+            except Exception:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
 

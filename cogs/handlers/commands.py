@@ -224,6 +224,12 @@ class Commands:
     async def handle_input(self):
         self.subcommands_changed = asyncio.Event()
         await self.initialise_commands()
+        print_formatted_text("""    __  __      _   _______                        __            
+   / / / /___  / | / / __(_)___ ___  ___________ _/ /_____  _____
+  / /_/ / __ \/  |/ / /_/ / __ `/ / / / ___/ __ `/ __/ __ \/ ___/
+ / __  / /_/ / /|  / __/ / /_/ / /_/ / /  / /_/ / /_/ /_/ / /    
+/_/ /_/\____/_/ |_/_/ /_/\__, /\__,_/_/   \__,_/\__/\____/_/     
+                        /____/                                   """)
         await self.help()
 
         self.command_completer = CustomCommandCompleter(command_handlers=self.commands)
