@@ -409,7 +409,7 @@ class GameServerManager:
         Returns:
             int or None: the next available port, or None if no ports are available
         """
-        starting_game_port = self.global_config['hon_data']['svr_starting_gamePort'] + 1
+        starting_game_port = self.global_config['hon_data']['svr_starting_gamePort']
         total_allowed_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
 
         for i in range(total_allowed_servers):
