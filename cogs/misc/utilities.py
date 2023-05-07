@@ -201,7 +201,7 @@ class Misc:
         elif self.get_os_platform() == "linux":
             with open(Path(hon_exe).parent / "version.txt", 'r') as f:
                 return f.readline().rstrip('\n')
-    def update_github_repository():
+    def update_github_repository(self):
         try:
             # Change the current working directory to the HOME_PATH
             os.chdir(HOME_PATH)
