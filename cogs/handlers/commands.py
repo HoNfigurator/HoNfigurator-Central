@@ -220,9 +220,11 @@ class Commands:
             LOGGER.info("Scheduling restart of servers to apply new configuration")
             if last_key == "svr_total":
                 await self.manager_event_bus.emit('balance_game_server_count')
-    async def update_and_change_branch(self, branch_name, *cmd_args):
-        MISC.change_branch(branch_name)
-        MISC.update_github_repository()
+    async def update_and_change_branch(self, branch_name=None, *cmd_args):
+        if branch_name:
+            MISC.change_branch(branch_name)
+        else:
+            MISC.update_github_repository()
 
     async def handle_input(self):
         self.subcommands_changed = asyncio.Event()

@@ -4,6 +4,7 @@ import os
 from os.path import exists
 from pathlib import Path
 import sys
+import traceback
 import urllib
 from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
@@ -210,7 +211,11 @@ class Misc:
 
             # Run the git pull command
             LOGGER.info("Checking for upstream HoNfigurator updates.")
-            result = subprocess.run(["git", "pull"], check=True, text=True, capture_output=True)
+            result = subprocess.run(["git", "pull"], text=True, capture_output=True)
+
+            # Log any errors encountered
+            if result.stderr:
+                LOGGER.error(f"Error encountered while updating: {result.stderr}")
 
             # Check if the update was successful
             if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
@@ -222,45 +227,49 @@ class Misc:
                 LOGGER.info("HoNfigurator already up to date. No need to relaunch.")
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error updating the code: {e}")
+
     def get_current_branch_name(self):
         try:
             os.chdir(HOME_PATH)
             branch_name = subprocess.check_output(
                 ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
-                stderr=subprocess.DEVNULL,
                 universal_newlines=True
             ).strip()
             return branch_name
-        except subprocess.CalledProcessError:
-            LOGGER.error(f"{HOME_PATH} Not a git repository")
+        except subprocess.CalledProcessError as e:
+            LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
+
     def get_all_branch_names(self):
         try:
             os.chdir(HOME_PATH)
             branch_names = subprocess.check_output(
                 ['git', 'branch', '--list'],
-                stderr=subprocess.DEVNULL,
                 universal_newlines=True
             ).strip()
             return [branch.strip('* ') for branch in branch_names.split('\n')]
-        except subprocess.CalledProcessError:
-            LOGGER.error(f"{HOME_PATH} Not a git repository")
+        except subprocess.CalledProcessError as e:
+            LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
+
     def change_branch(self, target_branch):
         try:
             os.chdir(HOME_PATH)
             current_branch = self.get_current_branch_name()
 
             if current_branch == target_branch:
-                LOGGER.info(f"Already on branch target branch '{target_branch}'")
+                LOGGER.info(f"Already on target branch '{target_branch}'")
                 return
 
-            subprocess.check_output(
-                ['git', 'checkout', target_branch],
-                stderr=subprocess.DEVNULL,
-                universal_newlines=True
-            )
+            result = subprocess.run(['git', 'checkout', target_branch], text=True, capture_output=True)
+
+            # Log any errors encountered
+            if result.stderr:
+                LOGGER.error(f"Error encountered while switching branches: {result.stderr}")
+                return
 
             LOGGER.info(f"Switched to branch '{target_branch}'")
-        except subprocess.CalledProcessError:
-            LOGGER.error(f"Error: Could not switch to branch '{target_branch}', make sure it exists")
+            LOGGER.info("Relaunching code into new branch.")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except subprocess.CalledProcessError as e:
+            LOGGER.error(f"Error: Could not switch to branch '{target_branch}', make sure it exists: {e.output}")
