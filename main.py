@@ -36,7 +36,7 @@ setup = SetupEnvironment(CONFIG_FILE)
 set_setup(setup)
 
 from cogs.handlers.events import stop_event
-from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
+from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
 
@@ -63,7 +63,7 @@ async def main():
         global_config = setup.get_final_configuration()
     else:
         LOGGER.exception(f"{traceback.format_exc()}")
-        raise ConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
+        raise HoNConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
 
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
@@ -86,9 +86,9 @@ async def main():
     try:
         try:
             auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
-        except AuthenticationError as e:
+        except HoNAuthenticationError as e:
             LOGGER.exception(f"{traceback.format_exc()}")
-        except ServerConnectionError as e:
+        except HoNServerConnectionError as e:
             LOGGER.exception(f"{traceback.format_exc()}")
         api_task = game_server_manager.start_api_server()
         game_server_listener_task = game_server_manager.start_game_server_listener_task(host, game_server_to_mgr_port)

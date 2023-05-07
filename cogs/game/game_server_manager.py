@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 import inspect
-from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, UnexpectedVersionError, HoNPatchError, InvalidServerBinaries
+from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNUnexpectedVersionError, HoNPatchError, HoNInvalidServerBinaries
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
@@ -190,8 +190,8 @@ class GameServerManager:
 
         try:
             local_svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
-        except UnexpectedVersionError:
-            raise InvalidServerBinaries("The version check on the hon_x64.exe failed, because it was not a supported server binary. Please ensure you have correctly followed the guide to set up the server.")
+        except HoNUnexpectedVersionError:
+            raise HoNInvalidServerBinaries("The version check on the hon_x64.exe failed, because it was not a supported server binary. Please ensure you have correctly followed the guide to set up the server.")
 
         try:
             patch_information = await self.master_server_handler.compare_upstream_patch()
@@ -310,7 +310,7 @@ class GameServerManager:
                 # Connect to the chat server and authenticate
                 await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
 
-            except (AuthenticationError, ConnectionResetError, ) as e:
+            except (HoNAuthenticationError, ConnectionResetError ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
             except Exception:
@@ -328,12 +328,12 @@ class GameServerManager:
             dict: A dictionary containing the parsed response from the master server.
 
         Raises:
-            AuthenticationError: If the authentication fails.
+            HoNAuthenticationError: If the authentication fails.
         """
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
-            LOGGER.error("Authentication to MasterServer failed.")
-            raise AuthenticationError(f"[{mserver_auth_response[1]}] Authentication error")
+            LOGGER.error(f"[{mserver_auth_response[1]}] Authentication to MasterServer failed. {mserver_auth_response[0]}")
+            raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error. {mserver_auth_response[0]}")
         LOGGER.info("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
@@ -362,7 +362,7 @@ class GameServerManager:
         chat_auth_response = await chat_server_handler.connect()
 
         if not chat_auth_response:
-            raise AuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
+            raise HoNAuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
 
         LOGGER.info("Authenticated to ChatServer.")
 
@@ -725,7 +725,7 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 already_running = await game_server.get_running_server()
                 if already_running:
-                    LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} already running.")
+                    LOGGER.info(f"GameServer-{game_server.id} with port {game_server.port} already running.")
                 else:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
             await asyncio.gather(*start_tasks, *monitor_tasks)

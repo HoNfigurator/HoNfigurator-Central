@@ -8,15 +8,16 @@ import json
 import math
 import sys
 import os
+from os.path import exists
 import datetime
 from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
 from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
+from cogs.misc.exceptions import HoNCompatibilityError
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 
 
 import re
-import threading
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
@@ -37,6 +38,8 @@ class GameServer:
         self._proc = None
         self._proc_owner = None
         self._proc_hook = None
+        self.proxy_running = False
+        self.proxy_process = None
         self.enabled = True # used to determine if the server should run
         self.delete_me = False # used to mark a server for deletion after it's been shutdown
         self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
@@ -113,7 +116,7 @@ class GameServer:
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
     def load_gamestate_from_file(self,match_only):
-        if os.path.exists(self.data_file):
+        if exists(self.data_file):
             with open(self.data_file, "r") as f:
                 performance_data = json.load(f)
             if not match_only:
@@ -123,7 +126,7 @@ class GameServer:
     def save_gamestate_to_file(self):
         current_match_id = str(self.game_state._state['current_match_id'])
 
-        if os.path.exists(self.data_file):
+        if exists(self.data_file):
             with open(self.data_file, "r") as f:
                 performance_data = json.load(f)
 
@@ -248,7 +251,19 @@ class GameServer:
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
         if free_mem < 1000000000:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
-
+        
+        try:
+            if self.config.local['params']['svr_enableProxy']:
+                if MISC.get_os_platform() == "win32":
+                    self.tasks.update({'proxy_task':asyncio.create_task(self.start_proxy())})
+                elif MISC.get_os_platform() == "unix":
+                    raise HoNCompatibilityError("Using the proxy is currently not supported on Linux.")
+                else:
+                    raise HoNCompatibilityError(f"Unknown OS: {MISC.get_os_platform()}. We cannot run the proxy.")
+        except HoNCompatibilityError:
+            LOGGER.warn(traceback.format_exc())
+            LOGGER.warn("Setting the proxy to OFF.")
+            self.config.local['params']['svr_enableProxy'] = False
 
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
 
@@ -397,6 +412,7 @@ class GameServer:
         self.started = False
         self.disable_server()
         self.unschedule_shutdown()
+        self.stop_proxy()
         self.server_closed.set()
 
     async def stop_server_exe(self):
@@ -406,6 +422,7 @@ class GameServer:
             self.status_received.clear()
             self.disable_server()
             self.unschedule_shutdown()
+            self.stop_proxy()
             self.server_closed.set()
 
     async def get_running_server(self):
@@ -414,7 +431,6 @@ class GameServer:
         """
         running_procs = Misc.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
         last_good_proc = None
-
         while len(running_procs) > 0:
             last_good_proc = None
             for proc in running_procs[:]:
@@ -424,19 +440,23 @@ class GameServer:
                 elif status is None:
                     if not Misc.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
                         proc.terminate()
+                        LOGGER.debug(f"Terminated GameServer-{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
                     else:
                         last_good_proc = proc
             if last_good_proc is not None:
                 break
+
         if last_good_proc:
             #   update the process information with the healthy instance PID. Healthy playercount is either -3 (off) or >= 0 (alive)
             self._pid = proc.pid
             self._proc = proc
             self._proc_hook = psutil.Process(pid=proc.pid)
             self._proc_owner = proc.username()
+            LOGGER.debug(f"Found process ({self._pid}) for GameServer-{self.id}.")
             try:
                 # self.set_runtime_variables()
+                asyncio.create_task(self.start_proxy())
                 return True
             except Exception:
                 LOGGER.exception(f"{traceback.format_exc()}")
@@ -453,7 +473,96 @@ class GameServer:
             self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
         else:
             self._proc_hook.nice(-19)
-        LOGGER.info(f"GameServer #{self.id} - Priority set to High.")
+        LOGGER.info(f"GameServer #{self.id} - Priority set to High.")        
+
+    def create_proxy_config(self):
+        config_filename = f"Config{self.id}"
+        config_file_path = os.path.join(self.global_config['hon_data']['hon_artefacts_directory'] / "HoNProxyManager", config_filename)
+
+        config_data = f"""redirectIP=127.0.0.1
+publicip={self.config.local['params']['svr_ip']}
+publicPort={self.config.local['params']['svr_proxyPort']}
+redirectPort={self.config.local['params']['svr_port']}
+voiceRedirectPort={self.config.local['params']['svr_proxyLocalVoicePort']}
+voicePublicPort={self.config.local['params']['svr_proxyRemoteVoicePort']}
+region=naeu
+"""
+        if exists(config_file_path):
+            with open(config_file_path, 'r') as existing_config_file:
+                existing_config = existing_config_file.read()
+            if existing_config == config_data:
+                return config_file_path, True
+        
+        os.makedirs(os.path.dirname(config_file_path), exist_ok=True)
+        with open(config_file_path, "w") as config_file:
+            config_file.write(config_data)
+        return config_file_path, False
+
+    async def start_proxy(self):
+        proxy_config_path, matches_existing = self.create_proxy_config()
+
+        if not matches_existing:
+            # the config file has changed.
+            if self.proxy_process:
+                self.proxy_process.terminate()
+                self.proxy_process = None
+
+        if exists(f"{proxy_config_path}.pid"):
+            with open(f"{proxy_config_path}.pid", 'r') as proxy_pid_file:
+                proxy_pid = proxy_pid_file.read()
+            try:
+                proxy_pid = int(proxy_pid)
+                process = psutil.Process(proxy_pid)
+                # Check if the process command line matches the one you're using to start the proxy
+                if proxy_config_path in " ".join(process.cmdline()):
+                    self.proxy_process = process
+                    LOGGER.debug(f"Proxy process found: {self.proxy_process}")
+                else:
+                    self.proxy_process = None
+            except psutil.NoSuchProcess:
+                LOGGER.debug(f"Previous proxy process with PID {proxy_pid} was not found.")
+                self.proxy_process = None
+            except Exception:
+                LOGGER.error(f"An error occurred while loading the PID from the last saved value: {proxy_pid}. {traceback.format_exc()}")
+                self.proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path))
+                # LOGGER.warn("Disabling the proxy until the issues above are resolved.")
+
+        while self.enabled:
+            if not self.proxy_process:
+                if MISC.get_os_platform() == "win32":
+                    self.proxy_process = await asyncio.create_subprocess_exec(
+                        self.global_config['hon_data']['hon_install_directory'] / "proxy.exe",
+                        proxy_config_path,
+                        stdout=asyncio.subprocess.PIPE,
+                        stderr=asyncio.subprocess.PIPE,
+                        creationflags=subprocess.DETACHED_PROCESS,  # Detach the process from the console on Windows
+                    )
+                elif MISC.get_os_platform() == "unix":
+                    self.proxy_process = await asyncio.create_subprocess_exec(
+                    self.global_config['hon_data']['hon_install_directory'] / "proxy.exe",
+                    proxy_config_path,
+                    stdout=asyncio.subprocess.PIPE,
+                    stderr=asyncio.subprocess.PIPE,
+                    preexec_fn=os.setsid,  # Detach the process on Unix-based systems
+                )
+                else: raise HoNCompatibilityError(f"The OS is unsupported for running honfigurator. OS: {MISC.get_os_platform()}")
+
+                with open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
+                    proxy_pid_file.write(str(self.proxy_process.pid))
+
+                self.proxy_process = psutil.Process(self.proxy_process.pid)
+
+            # Monitor the process with psutil
+            while self.proxy_process.is_running() and self.enabled:
+                await asyncio.sleep(1)  # Check every second
+
+            if self.enabled:
+                LOGGER.warn(f"proxy.exe (GameServer-{self.id}) crashed. Restarting...")
+                self.proxy_process = None
+
+    def stop_proxy(self):
+        if self.proxy_process:
+            self.proxy_process.terminate()
 
     async def monitor_process(self):
         while not stop_event.is_set():

@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 import urllib
 from cogs.misc.logger import get_logger
-from cogs.misc.exceptions import UnexpectedVersionError
+from cogs.misc.exceptions import HoNUnexpectedVersionError
 
 LOGGER = get_logger()
 
@@ -33,25 +33,29 @@ class Misc:
                                     if int(item.split(" ")[-1]) == slave_id:
                                         return [ proc ]
         return []
-    def get_proc(proc_name, slave_id = ''):
+    def get_proc(proc_name, slave_id=''):
         if sys.platform == "linux":
             return Misc.parse_linux_procs(proc_name, slave_id)
         procs = []
         for proc in psutil.process_iter():
-            if proc_name == proc.name():
-                if slave_id == '':
-                    procs.append(proc)
-                else:
-                    cmd_line = proc.cmdline()
-                    if len(cmd_line) < 5:
-                        continue
-                    for i in range(len(cmd_line)):
-                        if cmd_line[i] == "-execute":
-                            for item in cmd_line[i+1].split(";"):
-                                if "svr_slave" in item:
-                                    if int(item.split(" ")[-1]) == slave_id:
-                                        procs.append(proc)
+            try:
+                if proc_name == proc.name():
+                    if slave_id == '':
+                        procs.append(proc)
+                    else:
+                        cmd_line = proc.cmdline()
+                        if len(cmd_line) < 5:
+                            continue
+                        for i in range(len(cmd_line)):
+                            if cmd_line[i] == "-execute":
+                                for item in cmd_line[i+1].split(";"):
+                                    if "svr_slave" in item:
+                                        if int(item.split(" ")[-1]) == slave_id:
+                                            procs.append(proc)
+            except psutil.NoSuchProcess:
+                pass
         return procs
+
     def check_port(port):
         command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)
         result = command.stdout.read()
@@ -190,7 +194,7 @@ class Misc:
                 version = ''.join(part.decode('utf-8') for part in split_bytes if part)
 
             if not validate_version_format(version):
-                raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
+                raise HoNUnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
             else:
                 return version
         elif self.get_os_platform() == "linux":
