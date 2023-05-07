@@ -43,6 +43,7 @@ WAKE_BYTES = b'!'
 # Define a class for managing game servers
 class GameServerManager:
     def __init__(self, global_config, setup):
+        self.update()
         """
         Initializes a new GameServerManager object.
 
@@ -108,7 +109,7 @@ class GameServerManager:
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.global_config)
         self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
-
+        
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False):
         try:
             if game_server is None: return False
@@ -130,7 +131,7 @@ class GameServerManager:
                     })
                     await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
-                    return True
+                    # return True
             else:
                 # this server hasn't connected to the manager yet
                 await game_server.stop_server_exe()
@@ -181,8 +182,8 @@ class GameServerManager:
             await client_connection.writer.drain()
             LOGGER.info(f"Command - Message command sent to GameServer #{game_server.id}.")
         except Exception:
-            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")         
+        
     async def check_upstream_patch(self):
         if self.patching:
             LOGGER.info("Server patching is ongoing.. Please wait.")
@@ -265,23 +266,7 @@ class GameServerManager:
         LOGGER.info("Server stopped.")
 
     def update(self):
-        try:
-            # Change the current working directory to the HOME_PATH
-            os.chdir(HOME_PATH)
-
-            # Run the git pull command
-            result = subprocess.run(["git", "pull"], check=True, text=True, capture_output=True)
-
-            # Check if the update was successful
-            if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
-                LOGGER.info("Update successful. Relaunching the code...")
-
-                # Relaunch the code
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-            else:
-                LOGGER.info("Already up to date. No need to relaunch.")
-        except subprocess.CalledProcessError as e:
-            LOGGER.error(f"Error updating the code: {e}")
+        MISC.update_github_repository()
 
     def create_handle_connections_task(self, *args):
         task = asyncio.create_task(self.manage_upstream_connections(*args))
@@ -463,7 +448,7 @@ class GameServerManager:
         if num_servers_to_remove > 0:
             servers_removed = 0
             for game_server in running_servers:
-                if await self.cmd_shutdown_server(game_server):
+                if await self.cmd_shutdown_server(game_server, delete=True):
                     del self.game_servers[game_server.port]
                     servers_removed += 1
                     if servers_removed >= num_servers_to_remove:

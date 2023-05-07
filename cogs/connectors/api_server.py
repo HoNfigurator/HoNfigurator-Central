@@ -200,7 +200,6 @@ def get_num_players_ingame(token_and_user_info: dict = Depends(check_permission_
         if num_clients is not None:
             num += num_clients
     return {"num_players_ingame": num}
-
 class NumMatchesIngameResponse(BaseModel):
     num_matches_ingame: int
 
@@ -355,7 +354,7 @@ def get_instances(token_and_user_info: dict = Depends(check_permission_factory(r
     """
     temp = {}
     for game_server in game_servers.values():
-        temp[game_server.config.get_local_by_key('svr_name')] = game_server.get_pretty_status()
+        temp[game_server.config.get_local_by_key('svr_name')] = game_server.get_pretty_status_for_webui()
     return temp
 
 """

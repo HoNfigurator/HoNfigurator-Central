@@ -98,7 +98,7 @@ async def main():
 
         stop_task = asyncio.create_task(stop_event.wait())
         done, pending = await asyncio.wait(
-            [auth_task, api_task, game_server_listener_task, auto_ping_listener_task, start_task, stop_task]
+            [auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task, stop_task]
         )
         for task in pending:
             LOGGER.warning(f"Task: {task} needs to be shut down by force..")

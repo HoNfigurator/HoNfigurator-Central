@@ -5,10 +5,11 @@ from os.path import exists
 from pathlib import Path
 import sys
 import urllib
-from cogs.misc.logger import get_logger
+from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
 
 LOGGER = get_logger()
+HOME_PATH = get_home()
 
 class Misc:
     def __init__(self):
@@ -200,3 +201,21 @@ class Misc:
         elif self.get_os_platform() == "linux":
             with open(Path(hon_exe).parent / "version.txt", 'r') as f:
                 return f.readline().rstrip('\n')
+    def update_github_repository():
+        try:
+            # Change the current working directory to the HOME_PATH
+            os.chdir(HOME_PATH)
+
+            # Run the git pull command
+            result = subprocess.run(["git", "pull"], check=True, text=True, capture_output=True)
+
+            # Check if the update was successful
+            if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
+                LOGGER.info("Update successful. Relaunching the code...")
+
+                # Relaunch the code
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                LOGGER.info("Already up to date. No need to relaunch.")
+        except subprocess.CalledProcessError as e:
+            LOGGER.error(f"Error updating the code: {e}")

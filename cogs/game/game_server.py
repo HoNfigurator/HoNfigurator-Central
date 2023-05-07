@@ -32,7 +32,6 @@ class GameServer:
         self.global_config = global_config
         self.remove_self_callback = remove_self_callback
         self.set_configuration()
-        # self.set_controller()
         self.started = None
         self._pid = None
         self._proc = None
@@ -65,6 +64,18 @@ class GameServer:
     def cancel_tasks(self):
         for task in self.tasks.values():
             task.cancel()
+    
+    def get_public_game_port(self):
+        if self.config.local['params']['svr_enableProxy']:
+            return self.config.local['params']['svr_proxyPort']
+        else:
+            return self.config.local['params']['svr_port']
+    
+    def get_public_voice_port(self):
+        if self.config.local['params']['svr_enableProxy']:
+            return self.config.local['params']['svr_proxyRemoteVoicePort']
+        else:
+            return self.config.local['params']['svr_proxyLocalVoicePort']
 
     def reset_game_state(self):
         self.status_received.clear()
@@ -167,7 +178,6 @@ class GameServer:
             one_day_ago = time - datetime.timedelta(days=1).total_seconds()
             self.game_state._state['skipped_frames_detailed'] = {key: value for key, value in self.game_state._state['skipped_frames_detailed'].items() if key >= one_day_ago}
 
-
     def get_pretty_status(self):
         def format_time(seconds):
             minutes, seconds = divmod(seconds, 60)
@@ -188,7 +198,10 @@ class GameServer:
 
         temp = {
             'ID': self.id,
-            'Port': self.port,
+            'Match ID': self.get_dict_value('current_match_id',None),
+            'Local Game Port': self.port,
+            'Public Game Port': self.get_public_game_port(),
+            'Public Voice Port': self.get_public_voice_port(),
             'Region':self.config.get_local_by_key('svr_location'),
             'Status': 'Unknown',
             'Game Phase': 'Unknown',
@@ -200,6 +213,72 @@ class GameServer:
             'Marked for Deletion': 'Yes' if self.delete_me else 'No',
             'Performance (lag)': {
                 'total while in-game':f"{self.get_dict_value('total_ingame_skipped_frames')/1000} seconds",
+                'current game':f"{self.get_dict_value('now_ingame_skipped_frames')/1000} seconds"
+            },
+        }
+        if self.get_dict_value('status') == GameStatus.SLEEPING.value:
+            temp['Status'] = 'Sleeping'
+        elif self.get_dict_value('status') == GameStatus.READY.value:
+            temp['Status'] = 'Ready'
+        elif self.get_dict_value('status') == GameStatus.OCCUPIED.value:
+            temp['Status'] = 'Occupied'
+        elif self.get_dict_value('status') == GameStatus.STARTING.value:
+            temp['Status'] = 'Starting'
+        elif self.get_dict_value('status') == GameStatus.QUEUED.value:
+            temp['Status'] = 'Queued'
+
+        game_phase_mapping = {
+            0: '',
+            1: 'In-Lobby',
+            2: 'Picking Phase',
+            3: 'Picking Phase',
+            4: 'Loading into match..',
+            5: 'Preparation Phase',
+            6: 'Match Started',
+        }
+        player_names = [player['name'] for player in self.game_state._state['players']] if 'players' in self.game_state._state else []
+        temp['Game Phase'] = game_phase_mapping.get(self.get_dict_value('game_phase'), 'Unknown')
+        temp['Players'] = ', '.join(player_names)
+        temp['Uptime'] = format_time(self.get_dict_value('uptime') / 1000) if self.get_dict_value('uptime') is not None else 'Unknown'
+
+        return (temp)
+    
+    def get_pretty_status_for_webui(self):
+        def format_time(seconds):
+            minutes, seconds = divmod(seconds, 60)
+            hours, minutes = divmod(minutes, 60)
+            days, hours = divmod(hours, 24)
+
+            time_str = ""
+            if days > 0:
+                time_str += f"{days}d "
+            if hours > 0:
+                time_str += f"{hours}h "
+            if minutes > 0:
+                time_str += f"{math.ceil(minutes)}m "
+            if seconds > 0:
+                time_str += f"{math.ceil(seconds)}s"
+
+            return time_str.strip()
+
+        temp = {
+            'ID': self.id,
+            'Match ID': self.get_dict_value('current_match_id',None),
+            'Local Game Port': self.port,
+            'Local Voice Port': self.config.local['params']['svr_proxyLocalVoicePort'],
+            'Public Game Port': self.get_public_game_port(),
+            'Public Voice Port': self.get_public_voice_port(),
+            'Region':self.config.get_local_by_key('svr_location'),
+            'Status': 'Unknown',
+            'Game Phase': 'Unknown',
+            'Connections': self.get_dict_value('num_clients'),
+            'Players': 'Unknown',
+            'Uptime': 'Unknown',
+            'CPU Core': self.config.get_local_by_key('host_affinity'),
+            'Scheduled Shutdown': 'Yes' if self.scheduled_shutdown else 'No',
+            'Marked for Deletion': 'Yes' if self.delete_me else 'No',
+            'Proxy Enabled': 'Yes' if self.config.local['params']['svr_enableProxy'] else 'No',
+            'Performance (lag)': {
                 'current game':f"{self.get_dict_value('now_ingame_skipped_frames')/1000} seconds"
             },
         }
@@ -368,7 +447,7 @@ class GameServer:
             else:
                 await self.stop_server_network(client_connection, packet_data)
                 if delete:
-                    self.manager_event_bus.emit('remove_game_server',self)
+                    await self.manager_event_bus.emit('remove_game_server',self)
                 break
 
     async def monitor_game_state_status(self, timeout=60):
