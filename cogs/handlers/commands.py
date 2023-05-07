@@ -4,7 +4,7 @@ import traceback
 import asyncio
 import inspect
 import re
-from cogs.misc.logger import get_logger, get_script_dir, flatten_dict, print_formatted_text, get_home
+from cogs.misc.logger import get_logger, get_script_dir, flatten_dict, print_formatted_text, get_home, get_misc
 from cogs.misc.setup import SetupEnvironment
 from cogs.handlers.events import stop_event
 from prompt_toolkit.auto_suggest import AutoSuggestFromHistory
@@ -15,6 +15,7 @@ from columnar import columnar
 
 script_dir = get_script_dir(__file__)
 LOGGER = get_logger()
+MISC = get_misc()
 HOME_PATH = get_home()
 CONFIG_FILE = HOME_PATH / "config" / "config.json"
 
@@ -109,6 +110,14 @@ class Commands:
     async def startup_servers_subcommands(self):
         return self.generate_subcommands(self.startup_servers)
 
+    async def update_subcommands(self):
+        branch_names = MISC.get_all_branch_names()
+        sub_commands = {}
+        for branch in branch_names:
+            sub_commands[branch] = (lambda br: (lambda *cmd_args: asyncio.create_task(self.update_and_change_branch(br, *cmd_args))))(branch)
+        return sub_commands
+
+
     async def config_commands(self):
         return self.generate_config_subcommands(self.global_config, self.set_config)
 
@@ -133,7 +142,7 @@ class Commands:
             "setconfig": Command("setconfig", description="Set a configuration value for the server", usage="set config <config key> <config value>", function=None, sub_commands=await self.config_commands(),args=["force"]),
             "quit": Command("quit", description="Exit this program. Servers may terminate when they are no longer in a game.", usage="quit", function=self.quit),
             "help": Command("help", description="Show this help text", usage="help", function=self.help, sub_commands={}),
-            "update": Command("update", description="Update this program from the upstream git repository.", usage="update", function=self.update, sub_commands={})
+            "update": Command("update", description="Update this program from the upstream git repository.", usage="update", function=self.update, sub_commands=await self.update_subcommands()),
         }
     def generate_subcommands(self, command_coro):
         command_type = command_coro.__name__
@@ -209,17 +218,11 @@ class Commands:
             LOGGER.info("Saved local configuration")
             # TODO: If command line arguments change, then schedule restart..
             LOGGER.info("Scheduling restart of servers to apply new configuration")
-            #await self.cmd_shutdown_server("all") # else
             if last_key == "svr_total":
                 await self.manager_event_bus.emit('balance_game_server_count')
-                # if int(value) > int(old_value):
-                #     # diff = int(value) - int(old_value)
-                #     await self.manager_event_bus.emit('add_game_servers')
-                # else:
-                #     # diff = int(old_value) - int(value)
-                #     # for i in range(value,old_value):
-                #     #     game_server = self.game_servers.get()
-                #     await self.manager_event_bus.emit('remove_game_servers')
+    async def update_and_change_branch(self, branch_name, *cmd_args):
+        MISC.change_branch(branch_name)
+        MISC.update_github_repository()
 
     async def handle_input(self):
         self.subcommands_changed = asyncio.Event()

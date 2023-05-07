@@ -21,9 +21,9 @@ pip_requirements = HOME_PATH / 'requirements.txt'
 class SetupEnvironment:
     def __init__(self,config_file_hon):
         self.PATH_KEYS_IN_CONFIG_FILE = ["hon_install_directory","hon_home_directory"]
-        self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path', 'hon_executable_name']
+        self.PATH_KEYS_NOT_IN_CONFIG_FILE = ['hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path']
         self.ALL_PATH_TYPES = self.PATH_KEYS_IN_CONFIG_FILE + self.PATH_KEYS_NOT_IN_CONFIG_FILE
-        self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip","svr_version","hon_executable", 'architecture']
+        self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip","svr_version","hon_executable", 'architecture','hon_executable_name']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()

@@ -54,7 +54,12 @@ class HealthCheckManager:
                 print(traceback.format_exc())
     
     async def honfigurator_version_healthcheck(self):
-        pass
+        while not stop_event.is_set():
+            await asyncio.sleep(120)
+            try:
+                await self.event_bus.emit('update')
+            except Exception:
+                LOGGER.error(traceback.format_exc())
     
     async def poll_for_game_stats(self):
         while not stop_event.is_set():

@@ -18,6 +18,8 @@ class Misc:
         self.total_ram = psutil.virtual_memory().total
         self.os_platform = sys.platform
         self.total_allowed_servers = None
+        self.github_branch_all = self.get_all_branch_names()
+        self.github_branch = self.get_current_branch_name()
     def parse_linux_procs(proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():
@@ -207,6 +209,7 @@ class Misc:
             os.chdir(HOME_PATH)
 
             # Run the git pull command
+            LOGGER.info("Checking for upstream HoNfigurator updates.")
             result = subprocess.run(["git", "pull"], check=True, text=True, capture_output=True)
 
             # Check if the update was successful
@@ -216,6 +219,48 @@ class Misc:
                 # Relaunch the code
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             else:
-                LOGGER.info("Already up to date. No need to relaunch.")
+                LOGGER.info("HoNfigurator already up to date. No need to relaunch.")
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error updating the code: {e}")
+    def get_current_branch_name(self):
+        try:
+            os.chdir(HOME_PATH)
+            branch_name = subprocess.check_output(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                stderr=subprocess.DEVNULL,
+                universal_newlines=True
+            ).strip()
+            return branch_name
+        except subprocess.CalledProcessError:
+            LOGGER.error(f"{HOME_PATH} Not a git repository")
+            return None
+    def get_all_branch_names(self):
+        try:
+            os.chdir(HOME_PATH)
+            branch_names = subprocess.check_output(
+                ['git', 'branch', '--list'],
+                stderr=subprocess.DEVNULL,
+                universal_newlines=True
+            ).strip()
+            return [branch.strip('* ') for branch in branch_names.split('\n')]
+        except subprocess.CalledProcessError:
+            LOGGER.error(f"{HOME_PATH} Not a git repository")
+            return None
+    def change_branch(self, target_branch):
+        try:
+            os.chdir(HOME_PATH)
+            current_branch = self.get_current_branch_name()
+
+            if current_branch == target_branch:
+                LOGGER.info(f"Already on branch target branch '{target_branch}'")
+                return
+
+            subprocess.check_output(
+                ['git', 'checkout', target_branch],
+                stderr=subprocess.DEVNULL,
+                universal_newlines=True
+            )
+
+            LOGGER.info(f"Switched to branch '{target_branch}'")
+        except subprocess.CalledProcessError:
+            LOGGER.error(f"Error: Could not switch to branch '{target_branch}', make sure it exists")
