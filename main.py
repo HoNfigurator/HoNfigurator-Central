@@ -17,11 +17,11 @@ def show_exception_and_exit(exc_type, exc_value, tb):
             with open(HOME_PATH / "logs" / ".last_working_branch", 'r') as f:
                 last_working_branch = f.read()
             if MISC.get_current_branch_name() != last_working_branch:
-                LOGGER.warn(f"Reverting back to last known working branch ({last_working_branch}).")
+                LOGGER.warning(f"Reverting back to last known working branch ({last_working_branch}).")
                 MISC.change_branch(last_working_branch)
             else:
                 while True:
-                    LOGGER.warn("Attempting to update current repository to a newer version.")
+                    LOGGER.warning("Attempting to update current repository to a newer version.")
                     # LOGGER.warn("If this has happened without warning, then @FrankTheGodDamnMotherFuckenTank#8426 has probably released a bad update and it will be reverted automatically shortly. Standby.")
                     MISC.update_github_repository()
                     time.sleep(30)
