@@ -66,13 +66,13 @@ class GameServer:
             task.cancel()
     
     def get_public_game_port(self):
-        if self.config.local['params']['svr_enableProxy']:
+        if self.config.local['params']['man_enableProxy']:
             return self.config.local['params']['svr_proxyPort']
         else:
             return self.config.local['params']['svr_port']
     
     def get_public_voice_port(self):
-        if self.config.local['params']['svr_enableProxy']:
+        if self.config.local['params']['man_enableProxy']:
             return self.config.local['params']['svr_proxyRemoteVoicePort']
         else:
             return self.config.local['params']['svr_proxyLocalVoicePort']
@@ -276,7 +276,7 @@ class GameServer:
             'CPU Core': self.config.get_local_by_key('host_affinity'),
             'Scheduled Shutdown': 'Yes' if self.scheduled_shutdown else 'No',
             'Marked for Deletion': 'Yes' if self.delete_me else 'No',
-            'Proxy Enabled': 'Yes' if self.config.local['params']['svr_enableProxy'] else 'No',
+            'Proxy Enabled': 'Yes' if self.config.local['params']['man_enableProxy'] else 'No',
             'Performance (lag)': {
                 'current game':f"{self.get_dict_value('now_ingame_skipped_frames')/1000} seconds"
             },
@@ -331,7 +331,7 @@ class GameServer:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
         
         try:
-            if self.config.local['params']['svr_enableProxy']:
+            if self.config.local['params']['man_enableProxy']:
                 if MISC.get_os_platform() == "win32":
                     self.tasks.update({'proxy_task':asyncio.create_task(self.start_proxy())})
                 elif MISC.get_os_platform() == "unix":
@@ -341,7 +341,7 @@ class GameServer:
         except HoNCompatibilityError:
             LOGGER.warn(traceback.format_exc())
             LOGGER.warn("Setting the proxy to OFF.")
-            self.config.local['params']['svr_enableProxy'] = False
+            self.config.local['params']['man_enableProxy'] = False
 
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
 
