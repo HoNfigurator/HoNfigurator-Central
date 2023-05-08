@@ -271,8 +271,10 @@ class Commands:
                             command_obj = self.commands[self.cmd_name]
 
                             if cmd_args and cmd_args[0] in command_obj.sub_commands:
-                                if self.cmd_name in ["message","setconfig"]:
+                                if self.cmd_name == "setconfig":
                                     handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:-1])
+                                elif self.cmd_name == "message":
+                                    handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:])
                                 else:
                                     handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args)
                             else:

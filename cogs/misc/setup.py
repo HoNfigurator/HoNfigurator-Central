@@ -114,7 +114,7 @@ class SetupEnvironment:
                 "svr_max_start_at_once": 5,
                 "svr_starting_gamePort": 10001,
                 "svr_starting_voicePort": 10061,
-                "svr_managerPort": 1135,
+                "svr_managerPort": 1134,
                 "svr_startup_timeout": 180,
                 "svr_api_port": 5000
             }

@@ -140,6 +140,23 @@ class TotalServersResponse(BaseModel):
 def get_total_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"total_servers": global_config['hon_data']['svr_total']}
 
+class CurrentGithubBranch(BaseModel):
+    branch: str
+@app.get("/api/get_current_github_branch", response_model=CurrentGithubBranch)
+def get_current_github_branch(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"branch":MISC.get_current_branch_name()}
+
+class AllGithubBranch(BaseModel):
+    all_branches: list
+@app.get("/api/get_all_github_branches", response_model=AllGithubBranch)
+def get_all_github_branches(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"all_branches":MISC.get_all_branch_names()}
+
+class GithubSwitchBranch(BaseModel):
+    result: dict
+@app.post("/api/switch_github_branch/{branch}", response_model=GithubSwitchBranch)
+def switch_github_branch(branch: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
+    return {"result": MISC.change_branch(branch)}
 class TotalCpusResponse(BaseModel):
     total_cpus: int
 
@@ -153,6 +170,8 @@ class CpuNameResponse(BaseModel):
 @app.get("/api/get_cpu_name", response_model=CpuNameResponse)
 def get_cpu_name(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"cpu_name": MISC.get_cpu_name()}
+
+
 
 class CpuUsageResponse(BaseModel):
     cpu_usage: float
@@ -330,14 +349,14 @@ def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_f
     return MISC.get_num_reserved_cpus()
 
 @app.get("/api/get_honfigurator_log_entries/{num}", description="Returns the specified number of log entries from the honfigurator log file.")
-def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
+def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     # return the contents of the current log file
     with open(HOME_PATH / "logs" / "server.log", 'r') as f:
         file_content = f.readlines()
     return file_content[-num:][::-1]
 
 @app.get("/api/get_honfigurator_log_file", description="Returns the HoNfigurator log file completely, for download.")
-def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
+def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     with open(HOME_PATH / "logs" / "server.log", "r") as file:
         log_file_content = file.readlines()
     return log_file_content
@@ -345,7 +364,7 @@ def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permissi
 # Define the /api/get_instances_status endpoint with OpenAPI documentation
 @app.get("/api/get_instances_status", summary="Get instances status")
 #def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
+def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     """
     Get the status of all game server instances.
 

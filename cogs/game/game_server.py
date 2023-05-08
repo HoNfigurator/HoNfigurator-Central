@@ -199,7 +199,6 @@ class GameServer:
         temp = {
             'ID': self.id,
             'Match ID': self.get_dict_value('current_match_id',None),
-            'Local Game Port': self.port,
             'Public Game Port': self.get_public_game_port(),
             'Public Voice Port': self.get_public_voice_port(),
             'Region':self.config.get_local_by_key('svr_location'),

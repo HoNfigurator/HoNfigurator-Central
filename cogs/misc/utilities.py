@@ -5,6 +5,7 @@ from os.path import exists
 from pathlib import Path
 import sys
 import traceback
+from cpuinfo import get_cpu_info
 import urllib
 from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
@@ -15,7 +16,7 @@ HOME_PATH = get_home()
 class Misc:
     def __init__(self):
         self.cpu_count = psutil.cpu_count(logical=True)
-        self.cpu_name = platform.processor()
+        self.cpu_name = get_cpu_info().get('brand_raw', 'Unknown CPU')
         self.total_ram = psutil.virtual_memory().total
         self.os_platform = sys.platform
         self.total_allowed_servers = None
@@ -59,7 +60,15 @@ class Misc:
             except psutil.NoSuchProcess:
                 pass
         return procs
-
+    def get_process_by_port(self,port):
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.status == 'LISTEN' and conn.laddr.port == port:
+                try:
+                    process = psutil.Process(conn.pid)
+                    return process
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        return None
     def check_port(port):
         command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)
         result = command.stdout.read()
@@ -259,14 +268,14 @@ class Misc:
 
             if current_branch == target_branch:
                 LOGGER.info(f"Already on target branch '{target_branch}'")
-                return
+                return "Already on target branch"
 
             result = subprocess.run(['git', 'checkout', target_branch], text=True, capture_output=True)
 
             # Log any errors encountered
             if result.stderr:
                 LOGGER.error(f"Error encountered while switching branches: {result.stderr}")
-                return
+                return result.stderr
 
             LOGGER.info(f"Switched to branch '{target_branch}'")
             LOGGER.info("Relaunching code into new branch.")
