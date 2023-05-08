@@ -55,7 +55,7 @@ class ConfigManagement():
                 'svr_proxyLocalVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
                 'svr_proxyRemoteVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id+10000 - 1,
                 'svr_voicePortStart':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
-                'svr_enableProxy':self.get_global_by_key('svr_enableProxy'),
+                'man_enableProxy':self.get_global_by_key('svr_enableProxy'),
                 'svr_location':self.get_global_by_key('svr_location'),
                 'svr_broadcast':True,
                 'upd_checkForUpdates':False,

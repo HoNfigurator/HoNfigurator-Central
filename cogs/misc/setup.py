@@ -45,24 +45,29 @@ class SetupEnvironment:
             "handlers": {
                 "file": {
                     "class": "logging.handlers.RotatingFileHandler",
-                    "filename": "logs/server.log",
                     "maxBytes": 10485760,
                     "backupCount": 5,
-                    "formatter": "default"
+                    "formatter": "default",
+                    "level": "INFO"
                 },
                 "console": {
                     "class": "logging.StreamHandler",
-                    "formatter": "simple"
+                    "formatter": "simple",
+                    "level": "INFO"
                 }
             },
             "loggers": {
                 "Server": {
-                    "handlers": ["file", "console"],
-                    "level": "INFO",
-                    "propagate": False
+                    "handlers": [
+                        "file",
+                        "console"
+                    ],
+                    "propagate": False,
+                    "level": "INFO"
                 }
             }
         }
+
 
 
     def get_default_hon_configuration(self):
