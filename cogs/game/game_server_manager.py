@@ -681,6 +681,7 @@ class GameServerManager:
         return task
 
     async def start_game_servers(self, game_server, timeout=120):
+        timeout = self.global_config['hon_data']['svr_startup_timeout']
         """
         Start all game servers.
 
