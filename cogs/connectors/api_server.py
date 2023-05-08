@@ -152,11 +152,10 @@ class AllGithubBranch(BaseModel):
 def get_all_github_branches(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"all_branches":MISC.get_all_branch_names()}
 
-class GithubSwitchBranch(BaseModel):
-    result: dict
-@app.post("/api/switch_github_branch/{branch}", response_model=GithubSwitchBranch)
+@app.post("/api/switch_github_branch/{branch}")
 def switch_github_branch(branch: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    return {"result": MISC.change_branch(branch)}
+    result = MISC.change_branch(branch)
+    return JSONResponse(status_code=501, content=result)
 class TotalCpusResponse(BaseModel):
     total_cpus: int
 
