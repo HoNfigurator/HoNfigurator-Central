@@ -86,7 +86,7 @@ class HealthCheckManager:
         stop_task = asyncio.create_task(stop_event.wait())
         # TODO: implement the poll_for_game_stats function below, once upstream accepts our format.
         done, pending = await asyncio.wait(
-            [self.public_ip_healthcheck(), self.general_healthcheck(), self.lag_healthcheck(), self.patch_version_healthcheck(), stop_task],
+            [self.public_ip_healthcheck(), self.general_healthcheck(), self.lag_healthcheck(), self.patch_version_healthcheck(), self.honfigurator_version_healthcheck(), stop_task],
             return_when=asyncio.FIRST_COMPLETED
         )
 
