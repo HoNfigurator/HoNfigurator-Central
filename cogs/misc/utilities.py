@@ -223,7 +223,7 @@ class Misc:
             result = subprocess.run(["git", "pull"], text=True, capture_output=True)
 
             # Log any errors encountered
-            if result.stderr:
+            if result.stderr and result.returncode != 0:
                 LOGGER.error(f"Error encountered while updating: {result.stderr}")
 
             # Check if the update was successful
@@ -277,7 +277,7 @@ class Misc:
             result = subprocess.run(['git', 'checkout', target_branch], text=True, capture_output=True)
 
             # Log any errors encountered
-            if result.stderr and "switched to branch" not in result.stderr.lower():
+            if result.stderr and result.returncode != 0:
                 LOGGER.error(f"Error encountered while switching branches: {result.stderr}")
                 return result.stderr
 
