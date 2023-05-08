@@ -209,7 +209,7 @@ class SetupEnvironment:
                 if key in self.PATH_KEYS_NOT_IN_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
                     pass
                 else:
-                    if key == "svr_enableProxy":
+                    if key == "svr_enableProxy": # this is here to revert an issue I created when I mispelt the proxy setting.
                         self.hon_data["man_enableProxy"] = self.hon_data[key]
                         del self.hon_data[key]
                     else:

@@ -274,7 +274,7 @@ class Commands:
                                 if self.cmd_name == "setconfig":
                                     handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:-1])
                                 elif self.cmd_name == "message":
-                                    handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:])
+                                    handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:1])
                                 else:
                                     handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args)
                             else:
