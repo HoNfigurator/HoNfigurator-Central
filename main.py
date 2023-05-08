@@ -1,14 +1,33 @@
 #!/usr/bin/env python3
 import traceback, sys, os
+import time
+from os.path import isfile
 from pathlib import Path
+
+MISC = None
+HOME_PATH = None
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """
         Exception hook to catch any errors and prevent the window from closing
     """
     traceback.print_exception(exc_type, exc_value, tb)
+    if MISC and HOME_PATH:
+        if isfile(HOME_PATH / "logs" / ".last_working_branch"):
+            with open(HOME_PATH / "logs" / ".last_working_branch", 'r') as f:
+                last_working_branch = f.read()
+            if MISC.get_current_branch_name() != last_working_branch:
+                LOGGER.warn(f"Reverting back to last known working branch ({last_working_branch}).")
+                MISC.change_branch(last_working_branch)
+            else:
+                while True:
+                    LOGGER.warn("Attempting to update current repository to a newer version.")
+                    # LOGGER.warn("If this has happened without warning, then @FrankTheGodDamnMotherFuckenTank#8426 has probably released a bad update and it will be reverted automatically shortly. Standby.")
+                    MISC.update_github_repository()
+                    time.sleep(30)
     raw_input = input(f"Due to the above error, HoNfigurator has failed to launch.")
     sys.exit()
+
 sys.excepthook = show_exception_and_exit
 
 HOME_PATH = Path(os.path.dirname(os.path.abspath(__file__)))

@@ -236,6 +236,10 @@ class Misc:
                 LOGGER.info("HoNfigurator already up to date. No need to relaunch.")
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error updating the code: {e}")
+    
+    def save_last_working_branch(self):
+        with open(HOME_PATH / "logs" / ".last_working_branch", "w") as f:
+            f.write(self.get_current_branch_name())
 
     def get_current_branch_name(self):
         try:

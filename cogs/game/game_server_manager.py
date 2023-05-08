@@ -267,6 +267,7 @@ class GameServerManager:
 
     def update(self):
         MISC.update_github_repository()
+        MISC.save_last_working_branch()
 
     def create_handle_connections_task(self, *args):
         task = asyncio.create_task(self.manage_upstream_connections(*args))

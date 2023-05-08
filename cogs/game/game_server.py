@@ -12,7 +12,7 @@ from os.path import exists
 import datetime
 from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
 from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
-from cogs.misc.exceptions import HoNCompatibilityError
+from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 
@@ -577,6 +577,8 @@ region=naeu
         return config_file_path, False
 
     async def start_proxy(self):
+        if not exists(self.global_config['hon_data']['hon_install_directory'] / "proxy.exe"):
+            raise HoNInvalidServerBinaries(f"Missing proxy.exe. Please obtain proxy.exe from the wasserver package and copy it into {self.global_config['hon_data']['hon_install_directory']}. https://github.com/wasserver/wasserver")
         proxy_config_path, matches_existing = self.create_proxy_config()
 
         if not matches_existing:
