@@ -273,7 +273,7 @@ class Misc:
             result = subprocess.run(['git', 'checkout', target_branch], text=True, capture_output=True)
 
             # Log any errors encountered
-            if result.stderr:
+            if result.stderr and result.stderr != f"Switched to branch '{target_branch}'":
                 LOGGER.error(f"Error encountered while switching branches: {result.stderr}")
                 return result.stderr
 
