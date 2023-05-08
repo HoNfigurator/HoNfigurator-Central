@@ -219,7 +219,7 @@ class Misc:
             os.chdir(HOME_PATH)
 
             # Run the git pull command
-            LOGGER.info("Checking for upstream HoNfigurator updates.")
+            LOGGER.debug("Checking for upstream HoNfigurator updates.")
             result = subprocess.run(["git", "pull"], text=True, capture_output=True)
 
             # Log any errors encountered
@@ -233,7 +233,7 @@ class Misc:
                 # Relaunch the code
                 os.execv(sys.executable, [sys.executable] + sys.argv)
             else:
-                LOGGER.info("HoNfigurator already up to date. No need to relaunch.")
+                LOGGER.debug("HoNfigurator already up to date. No need to relaunch.")
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error updating the code: {e}")
     

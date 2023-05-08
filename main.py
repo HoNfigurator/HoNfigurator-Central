@@ -20,8 +20,9 @@ def show_exception_and_exit(exc_type, exc_value, tb):
                 LOGGER.warning(f"Reverting back to last known working branch ({last_working_branch}).")
                 MISC.change_branch(last_working_branch)
             else:
+                formatted_exception = "".join(traceback.format_exception(exc_type, exc_value, tb))
                 while True:
-                    LOGGER.warning("Attempting to update current repository to a newer version.")
+                    LOGGER.warning(f"Attempting to update current repository to a newer version. This is because of the following error: {formatted_exception}")
                     # LOGGER.warn("If this has happened without warning, then @FrankTheGodDamnMotherFuckenTank#8426 has probably released a bad update and it will be reverted automatically shortly. Standby.")
                     MISC.update_github_repository()
                     time.sleep(30)
@@ -68,7 +69,6 @@ def parse_arguments():
     return parser.parse_args()
 
 async def main():
-
     if sys.platform == "linux":
         if os.getuid() != 0:
             print("---- IMPORTANT ----")
