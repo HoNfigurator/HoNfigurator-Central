@@ -140,7 +140,7 @@ class SetupEnvironment:
         default_configuration = self.get_default_hon_configuration()
         default_hon_data = default_configuration['hon_data']
 
-        for key, value in self.hon_data.items():
+        for key, value in list(self.hon_data.items()):
             default_value = default_hon_data.get(key)
             default_value_type = type(default_value)
 
@@ -209,7 +209,11 @@ class SetupEnvironment:
                 if key in self.PATH_KEYS_NOT_IN_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
                     pass
                 else:
-                    major_issues.append(f"Unexpected key and value type for {key}: {value}")
+                    if key == "svr_enableProxy":
+                        self.hon_data["man_enableProxy"] = self.hon_data[key]
+                        del self.hon_data[key]
+                    else:
+                        major_issues.append(f"Unexpected key and value type for {key}: {value}")
 
             if key == "svr_total":
                 total_allowed = MISC.get_total_allowed_servers(int(self.hon_data['svr_total_per_core']))
