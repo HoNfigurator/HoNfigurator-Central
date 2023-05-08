@@ -434,7 +434,7 @@ class GameServer:
             self.schedule_shutdown()
             return False
 
-    async def schedule_shutdown_server(self, client_connection, packet_data, delete=False):
+    async def schedule_shutdown_server(self, client_connection, packet_data, delete=False, disable=True):
         self.scheduled_shutdown = True
         self.delete_me = delete
         # TODO: Schedule doesn't work while servers are still booting up. Example, setconfig hon_data svr_total <new val>
@@ -442,9 +442,9 @@ class GameServer:
         while True:
             num_clients = self.game_state["num_clients"]
             if num_clients is not None and num_clients > 0:
-                await asyncio.sleep(10)
+                await asyncio.sleep(1)
             else:
-                await self.stop_server_network(client_connection, packet_data)
+                await self.stop_server_network(client_connection, packet_data, disable=disable)
                 if delete:
                     await self.manager_event_bus.emit('remove_game_server',self)
                 break
@@ -476,7 +476,7 @@ class GameServer:
     def reset_start_timer(self):
         self.start_timer = 0
 
-    async def stop_server_network(self, client_connection, packet_data, nice=True):
+    async def stop_server_network(self, client_connection, packet_data, nice=True, disable=True):
         if nice:
             if self.game_state["num_clients"] != 0:
                 return
@@ -488,7 +488,8 @@ class GameServer:
         client_connection.writer.write(message_bytes)
         await client_connection.writer.drain()
         self.started = False
-        self.disable_server()
+        if disable:
+            self.disable_server()
         self.unschedule_shutdown()
         self.stop_proxy()
         self.server_closed.set()
@@ -671,7 +672,7 @@ region=naeu
 
     def schedule_shutdown(self, delete=False):
         self.scheduled_shutdown = True
-        self.delete_me = True
+        self.delete_me = delete
 
     def unschedule_shutdown(self):
         self.scheduled_shutdown = False

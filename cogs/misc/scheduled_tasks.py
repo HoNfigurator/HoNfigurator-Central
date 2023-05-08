@@ -78,9 +78,9 @@ class HonfiguratorSchedule():
 
     @catch_exceptions()
     def delete_files(self):
-        #if replay_config.get("active") == True:
-        instance = ReplayCleaner(self.config)
-        instance.clean()
+        if self.config['application_data']['timers']['replay_cleaner']['active'] == True:
+            instance = ReplayCleaner(self.config)
+            instance.clean()
 
 
 class Stats(HonfiguratorSchedule):

@@ -110,7 +110,7 @@ class GameServerManager:
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.global_config)
         self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
         
-    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False):
+    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True):
         try:
             if game_server is None: return False
             client_connection = self.client_connections.get(game_server.port, None)
@@ -126,7 +126,7 @@ class GameServerManager:
                 else:
                     self.tasks.update({
                         'game_servers': {
-                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete))}
+                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete, disable=disable))}
                         }
                     })
                     await asyncio.sleep(0)  # allow the scheduled task to be executed
@@ -486,8 +486,8 @@ class GameServerManager:
     async def check_for_restart_required(self):
         for game_server in self.game_servers.values():
             if game_server.params_are_different():
-                await self.cmd_shutdown_server(game_server)
-                game_server.enable_server()
+                await self.cmd_shutdown_server(game_server,disable=False)
+                # game_server.enable_server()
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
