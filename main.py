@@ -95,7 +95,8 @@ async def main():
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
-    udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
+    udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1 + 10000
+    global_config['hon_data']['autoping_responder_port'] = udp_ping_responder_port
 
     # instantiate the manager
     game_server_manager = GameServerManager(global_config, setup)

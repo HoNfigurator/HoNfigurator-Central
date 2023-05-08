@@ -170,7 +170,18 @@ class CpuNameResponse(BaseModel):
 def get_cpu_name(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"cpu_name": MISC.get_cpu_name()}
 
-
+@app.get("/api/get_all_public_ports")
+def get_public_ports(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    public_game_ports = []
+    public_voice_ports = []
+    for game_server in game_servers.values():
+        public_game_ports.append(game_server.get_public_game_port())
+        public_voice_ports.append(game_server.get_public_voice_port())
+    return {
+        'autoping_listener': global_config['hon_data']['autoping_responder_port'],
+        'public_game_ports': public_game_ports,
+        'public_voice_ports': public_voice_ports
+    }
 
 class CpuUsageResponse(BaseModel):
     cpu_usage: float
