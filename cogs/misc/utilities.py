@@ -22,6 +22,26 @@ class Misc:
         self.total_allowed_servers = None
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
+    def build_commandline_args(self,config_local, config_global):
+        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
+        if self.get_os_platform() == "win32":
+            if config_global['hon_data']['svr_noConsole']:
+                return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconsole","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
+            else:
+                return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
+        elif self.get_os_platform() == "unix":
+            return [
+                config_local['config']['file_path'],
+                '-dedicated',
+                '-noconfig',
+                '-mod game;KONGOR',
+                '-execute',
+                f'"{params}"',
+                '-masterserver',
+                config_global['hon_data']['svr_masterServer'],
+                '-register',
+                f'127.0.0.1:{config_global["hon_data"]["svr_managerPort"]}'
+            ]
     def parse_linux_procs(proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():

@@ -220,6 +220,7 @@ class Commands:
             LOGGER.info("Scheduling restart of servers to apply new configuration")
             if last_key == "svr_total":
                 await self.manager_event_bus.emit('balance_game_server_count')
+            await self.manager_event_bus.emit('check_for_restart_required')
     async def update_and_change_branch(self, branch_name=None, *cmd_args):
         if branch_name:
             MISC.change_branch(branch_name)

@@ -82,10 +82,14 @@ class GameServer:
         self.game_state.clear()
 
     def params_are_different(self):
-        current_params = self._proc_hook.cmdline()[4]
-        new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+        # current_params = self._proc_hook.cmdline()[4]
+        current_params = self._proc_hook.cmdline()
+        new_params = MISC.build_commandline_args(self.config.local, self.global_config)
+        # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
         if current_params != new_params:
+            LOGGER.debug(f"GameServe# {self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
             return True
+        LOGGER.debug(f"GameServe# {self.id} A server configuration change has been suggested, but the suggested settings and existing live executable settings match. Skipping.")
         return False
 
     async def on_game_state_change(self, key, value):
@@ -329,7 +333,7 @@ class GameServer:
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
         if free_mem < 1000000000:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
-        
+        LOGGER.info(f"GameServer #{self.id} - Starting...")
         try:
             if self.config.local['params']['man_enableProxy']:
                 if MISC.get_os_platform() == "win32":
@@ -343,7 +347,8 @@ class GameServer:
             LOGGER.warn("Setting the proxy to OFF.")
             self.config.local['params']['man_enableProxy'] = False
 
-        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+        # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+        cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
 
         if MISC.get_os_platform() == "win32":
             # Server instances write files to location dependent on USERPROFILE and APPDATA variables
@@ -351,23 +356,9 @@ class GameServer:
             # os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
             DETACHED_PROCESS = 0x00000008
 
-            cmdline_args = [self.config.local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",self.global_config['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{self.global_config['hon_data']['svr_managerPort']}"]
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
         else: # linux
-            cmdline_args = [
-                self.config.local['config']['file_path'],
-                '-dedicated',
-                '-noconfig',
-                '-mod game;KONGOR',
-                '-execute',
-                f'"{params}"',
-                '-masterserver',
-                self.global_config['hon_data']['svr_masterServer'],
-                '-register',
-                f'127.0.0.1:{self.global_config["hon_data"]["svr_managerPort"]}'
-            ]
-
             def parse_svr_id(cmdline):
                 for item in cmdline[4].split(";"):
                     if "svr_slave" in item:
@@ -419,8 +410,13 @@ class GameServer:
         try:
             start_time = time.perf_counter()
             done, pending = await asyncio.wait([self.status_received.wait(), self.server_closed.wait()], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
-            for task in pending:
-                task.cancel()
+
+            if len(pending) == 2: # both status_received and server_closed are not completed. This indicates a timeout
+                for task in pending:
+                    task.cancel()
+                LOGGER.error(f"GameServer #{self.id} with port {self.port} timed out ({timeout} seconds) waiting for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
+                self.schedule_shutdown()
+                return False
 
             if self.status_received.is_set():
                 elapsed_time = time.perf_counter() - start_time
@@ -429,13 +425,13 @@ class GameServer:
             elif self.server_closed.is_set():
                 LOGGER.warning(f"GameServer #{self.id} with port {self.port} closed prematurely. Stopped waiting for it.")
                 return False
-        except asyncio.TimeoutError:
-            LOGGER.error(f"GameServer #{self.id} with port {self.port} timed out ({timeout} seconds) waiting for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
-            self.schedule_shutdown()
+        except Exception as e:
+            LOGGER.error(f"Unexpected error occurred: {e}")
             return False
 
+
     async def schedule_shutdown_server(self, client_connection, packet_data, delete=False, disable=True):
-        self.scheduled_shutdown = True
+        self.schedule_shutdown()
         self.delete_me = delete
         # TODO: Schedule doesn't work while servers are still booting up. Example, setconfig hon_data svr_total <new val>
         # I BELIEVE ABOVE IS FIXED, NEED TO TEST
@@ -481,7 +477,8 @@ class GameServer:
             if self.game_state["num_clients"] != 0:
                 return
         self.status_received.clear()
-
+        
+        self.stop_proxy()
         LOGGER.info(f"GameServer #{self.id} - Stopping")
         length_bytes, message_bytes = packet_data
         client_connection.writer.write(length_bytes)
@@ -491,8 +488,8 @@ class GameServer:
         if disable:
             self.disable_server()
         self.unschedule_shutdown()
-        self.stop_proxy()
         self.server_closed.set()
+        self.stopping = False
 
     async def stop_server_exe(self):
         if self._proc:
@@ -634,7 +631,7 @@ region=naeu
                 self.proxy_process = psutil.Process(self.proxy_process.pid)
 
             # Monitor the process with psutil
-            while self.proxy_process.is_running() and self.enabled:
+            while self.proxy_process and self.proxy_process.is_running() and self.enabled:
                 await asyncio.sleep(1)  # Check every second
 
             if self.enabled:
@@ -642,14 +639,16 @@ region=naeu
                 self.proxy_process = None
 
     def stop_proxy(self):
-        if self.proxy_process:
-            self.proxy_process.terminate()
+        if self.proxy_process and self.proxy_process.is_running():
+            try:
+                self.proxy_process.terminate()
+            except psutil.NoSuchProcess: # it doesn't exist, that's fine
+                pass
 
     async def monitor_process(self):
         while not stop_event.is_set():
             if self._proc is not None and self._proc_hook is not None:
                 if not self._proc_hook.is_running() and self.enabled:
-                    LOGGER.info(f"GameServer #{self.id} - Starting...")
                     self._proc = None  # Reset the process reference
                     self._proc_hook = None  # Reset the process hook reference
                     self._pid = None

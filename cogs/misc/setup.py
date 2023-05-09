@@ -116,6 +116,7 @@ class SetupEnvironment:
                 "svr_total": int(MISC.get_cpu_count() / 2),
                 "svr_total_per_core": 1,
                 "man_enableProxy": False,
+                "svr_noConsole": False,
                 "svr_max_start_at_once": 5,
                 "svr_starting_gamePort": 10001,
                 "svr_starting_voicePort": 10061,

@@ -117,7 +117,6 @@ class GameServerManager:
             await asyncio.sleep(delay)
             if client_connection:
                 if force:
-                    #await game_server.stop_server_network(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), nice=False)
                     client_connection.writer.write(COMMAND_LEN_BYTES)
                     client_connection.writer.write(SHUTDOWN_BYTES)
                     await client_connection.writer.drain()
@@ -131,7 +130,7 @@ class GameServerManager:
                     })
                     await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
-                    # return True
+                    return True
             else:
                 # this server hasn't connected to the manager yet
                 await game_server.stop_server_exe()
@@ -448,12 +447,17 @@ class GameServerManager:
 
         if num_servers_to_remove > 0:
             servers_removed = 0
+            servers_to_remove = []
             for game_server in running_servers:
-                if await self.cmd_shutdown_server(game_server, delete=True):
-                    del self.game_servers[game_server.port]
+                await self.cmd_shutdown_server(game_server, delete=True)
+                if not game_server.delete_me:
+                    servers_to_remove.append(game_server.port)
                     servers_removed += 1
                     if servers_removed >= num_servers_to_remove:
                         break
+            for port in servers_to_remove:
+                if port in self.game_servers:
+                    del self.game_servers[port]
 
             LOGGER.info(f"Removed {servers_removed} game servers. {max_servers} game servers are now running.")
         elif num_servers_to_remove < 0:
@@ -487,7 +491,8 @@ class GameServerManager:
         for game_server in self.game_servers.values():
             if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server,disable=False)
-                # game_server.enable_server()
+                await asyncio.sleep(0.1)
+                game_server.enable_server()
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
