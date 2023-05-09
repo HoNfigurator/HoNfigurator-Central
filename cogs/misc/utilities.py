@@ -29,7 +29,7 @@ class Misc:
                 return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconsole","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
             else:
                 return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
-        elif self.get_os_platform() == "unix":
+        elif self.get_os_platform() == "linux":
             return [
                 config_local['config']['file_path'],
                 '-dedicated',
