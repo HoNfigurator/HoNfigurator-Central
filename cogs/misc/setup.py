@@ -277,8 +277,11 @@ class SetupEnvironment:
                     print(
                         "Value must be a 10 digit number. Here is a guide to find your discord user ID. https://www.youtube.com/watch?v=ZPROrf4Fe3Q")
         # else:
-        self.hon_data = self.get_existing_configuration()['hon_data']
-        self.application_data = self.get_existing_configuration()['application_data']
+        try:
+            self.hon_data = self.get_existing_configuration()['hon_data']
+            self.application_data = self.get_existing_configuration()['application_data']
+        except KeyError: # using old config format
+            self.hon_data = self.get_existing_configuration()
         self.full_config = self.merge_config()
         if self.validate_hon_data(self.full_config['hon_data']):
             return True
