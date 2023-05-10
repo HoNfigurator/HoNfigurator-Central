@@ -231,12 +231,13 @@ class SetupEnvironment:
             return value
 
         def iterate_over_app_data(app_dict, default_dict):
-            for key, value in list(app_dict.items()):
+            keys_to_remove = []
+            for key, value in app_dict.items():
                 default_value = default_dict.get(key)
                 default_value_type = type(default_value)
 
-                if default_value_type is type(None):
-                    del app_dict[key]
+                if default_value is None:
+                    keys_to_remove.append(key)
                     minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
                 elif isinstance(value, dict) and isinstance(default_value, dict):
                     iterate_over_app_data(value, default_value)
@@ -248,12 +249,20 @@ class SetupEnvironment:
                         minor_issues.append(f"Resolved: Converted {key} to appropriate type")
                     app_dict[key] = new_value
 
+            for key in keys_to_remove:
+                del app_dict[key]
 
-                # Extra logic for the "location" key
-                if key == "location" and self.application_data['longterm_storage']['active']:
-                    value = handle_path(key, value)
-                    if value is not None:
-                        app_dict[key] = value
+            for key, default_value in default_dict.items():
+                if key not in app_dict:
+                    app_dict[key] = default_value
+                    minor_issues.append(f"Resolved: Added missing configuration item: {key} with default value: {default_value}")
+
+            # Extra logic for the "location" key
+            if 'location' in app_dict and self.application_data['longterm_storage']['active']:
+                value = handle_path('location', app_dict['location'])
+                if value is not None:
+                    app_dict['location'] = value
+
 
         iterate_over_app_data(self.application_data, default_application_data)
 
@@ -350,7 +359,7 @@ class SetupEnvironment:
         except KeyError: # using old config format
             self.hon_data = self.get_existing_configuration()
         self.full_config = self.merge_config()
-        if self.validate_hon_data(self.full_config['hon_data']):
+        if self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
             return True
         else:
             return False
