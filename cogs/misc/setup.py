@@ -211,7 +211,10 @@ class SetupEnvironment:
 
         def handle_str(key, value):
             if not isinstance(value, str) or value == '':
-                return None
+                if key == "location" and value == '':
+                    return value
+                else:
+                    return None
             return value
 
         def handle_path(key, value):
