@@ -95,7 +95,11 @@ async def main():
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
-    udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1 + 10000
+
+    # The autoping responder port is set to be 1 less than the public game port. This is to keep ports grouped together for convenience.
+    if global_config['hon_data']['man_enableProxy']: udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1 + 10000
+    else: udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
+
     global_config['hon_data']['autoping_responder_port'] = udp_ping_responder_port
 
     # instantiate the manager
@@ -108,12 +112,7 @@ async def main():
 
     # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
     try:
-        try:
-            auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
-        except HoNAuthenticationError as e:
-            LOGGER.exception(f"{traceback.format_exc()}")
-        except HoNServerConnectionError as e:
-            LOGGER.exception(f"{traceback.format_exc()}")
+        auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
         api_task = game_server_manager.start_api_server()
         game_server_listener_task = game_server_manager.start_game_server_listener_task(host, game_server_to_mgr_port)
         auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)

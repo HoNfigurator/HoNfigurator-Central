@@ -19,6 +19,7 @@ from os.path import exists
 import json
 from pydantic import BaseModel
 import os
+from datetime import datetime, timedelta
 import traceback
 
 app = FastAPI()
@@ -29,6 +30,8 @@ SETUP = get_setup()
 
 roles_database = RolesDatabase()
 
+CACHE_EXPIRY = timedelta(minutes=20)  # Change to desired cache expiry time
+user_info_cache = {}
 
 app = FastAPI(
     title="HoNfigurator API Server",
@@ -50,11 +53,21 @@ def get_config_item_by_key(k):
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://discord.com/api/oauth2/token")
 
 async def verify_token(request: Request, token: str = Depends(oauth2_scheme)):
+    now = datetime.now()
+
+    # If the user info is in the cache and it's not expired, return it
+    if token in user_info_cache and now - user_info_cache[token]['timestamp'] < CACHE_EXPIRY:
+        return user_info_cache[token]['data']
+
     async with httpx.AsyncClient() as client:
         response = await client.get("https://discord.com/api/users/@me", headers={"Authorization": f"Bearer {token}"})
 
     if response.status_code == 200:
         user_info = response.json()
+
+        # Store the user info in the cache with the current timestamp
+        user_info_cache[token] = {'data': {"token": token, "user_info": user_info}, 'timestamp': now}
+
         return {"token": token, "user_info": user_info}
     else:
         LOGGER.warn(f"API Request from: {request.client.host} - Discord user lookup failure. Discord API Response: {response.text}")
@@ -574,19 +587,19 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    await manager_event_bus.emit('balance_game_server_count',add_servers=num)
+    await manager_event_bus.emit('balance_game_server_count',to_add=num)
 
 @app.post("/api/add_all_servers", description="Add total number of possible servers.")
 async def add_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    await manager_event_bus.emit('balance_game_server_count',add_servers="all")
+    await manager_event_bus.emit('balance_game_server_count',to_add="all")
 
 @app.post("/api/remove_servers/{num}", description="Remove X number of game servers. Dynamically removes servers idle servers.")
 async def remove_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    await manager_event_bus.emit('balance_game_server_count',remove_servers=num)
+    await manager_event_bus.emit('balance_game_server_count',to_remove=num)
 
 @app.post("/api/remove_all_servers", description="Remove all idle servers. Marks occupied servers as 'To be removed'.")
 async def remove_all_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    await manager_event_bus.emit('balance_game_server_count',remove_servers="all")
+    await manager_event_bus.emit('balance_game_server_count',to_remove="all")
 
 """ End API Calls """
 
@@ -608,8 +621,8 @@ def create_self_signed_certificate(ssl_certfile, ssl_keyfile):
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.datetime.utcnow())
-        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
+        .not_valid_before(datetime.utcnow())
+        .not_valid_after(datetime.utcnow() + timedelta(days=365))
         .add_extension(
             x509.SubjectAlternativeName([x509.DNSName("localhost")]),
             critical=False,
@@ -636,16 +649,16 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
             cert_pem = f.read()
 
         cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
-        now = datetime.datetime.utcnow()
+        now = datetime.utcnow()
         time_remaining = cert.not_valid_after - now
 
-        if time_remaining < datetime.timedelta(days=days_before_expiration):
+        if time_remaining < timedelta(days=days_before_expiration):
             asyncio.run(create_self_signed_certificate(ssl_certfile, ssl_keyfile))
-            print("Self-signed certificate has been renewed.")
+            LOGGER.info("Self-signed certificate has been renewed.")
         else:
-            print("Self-signed certificate is still valid. No renewal needed.")
+            LOGGER.debug("Self-signed certificate is still valid. No renewal needed.")
     except Exception as e:
-        print(f"Error checking certificate expiration: {e}")
+        LOGGER.error(f"Error checking certificate expiration: {e}")
 
 
 async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0", port=5000):
@@ -697,4 +710,5 @@ async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0",
         except Exception:
             LOGGER.exception(traceback.format_exc())
     # Create an asyncio task from the coroutine, and return the task
+    LOGGER.info(f"[*] HoNfigurator API - Listening on 0.0.0.0:{port} (PUBLIC)")
     return asyncio.create_task(asgi_server())

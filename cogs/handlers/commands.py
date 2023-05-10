@@ -163,12 +163,12 @@ class Commands:
 
         for key, value in config_dict.items():
             if isinstance(value, dict):
-                if key == "discord_data" or key == "hon_data":
+                if key == "application_data" or key == "hon_data":
                     sub_commands[key] = self.generate_config_subcommands(value, command_coro)
                 else:
                     continue
             else:
-                if key == "discord_data" or key == "hon_data":
+                if key == "application_data" or key == "hon_data":
                     continue
                 sub_commands[key] = lambda *cmd_args: asyncio.ensure_future(command_coro(*cmd_args))
                 sub_commands[key].current_value = value

@@ -76,6 +76,10 @@ class HealthCheckManager:
             except Exception as e:
                 LOGGER.error(f"Error while polling stats directory: {e}")
                 traceback.print_exc()
+    
+    async def remove_old_proxy_processes(self):
+        while not stop_event.is_set():
+            await asyncio.sleep(self.global_config['application_data']['timers']['general_healthcheck'])
 
     async def run_health_checks(self):
         """

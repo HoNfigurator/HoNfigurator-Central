@@ -38,6 +38,7 @@ class GameServer:
         self._proc_owner = None
         self._proc_hook = None
         self.proxy_running = False
+        self.stopping_proxy = False
         self.proxy_process = None
         self.enabled = True # used to determine if the server should run
         self.delete_me = False # used to mark a server for deletion after it's been shutdown
@@ -84,6 +85,7 @@ class GameServer:
     def params_are_different(self):
         # current_params = self._proc_hook.cmdline()[4]
         current_params = self._proc_hook.cmdline()
+        self.set_configuration()
         new_params = MISC.build_commandline_args(self.config.local, self.global_config)
         # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
         if current_params != new_params:
@@ -219,15 +221,15 @@ class GameServer:
                 'current game':f"{self.get_dict_value('now_ingame_skipped_frames')/1000} seconds"
             },
         }
-        if self.get_dict_value('status') == GameStatus.SLEEPING.value:
+        if self.get_dict_value('status') == GameStatus.SLEEPING.value: # 0
             temp['Status'] = 'Sleeping'
-        elif self.get_dict_value('status') == GameStatus.READY.value:
+        elif self.get_dict_value('status') == GameStatus.READY.value: # 1
             temp['Status'] = 'Ready'
-        elif self.get_dict_value('status') == GameStatus.OCCUPIED.value:
+        elif self.get_dict_value('status') == GameStatus.OCCUPIED.value: # 3, yes it skipped 2
             temp['Status'] = 'Occupied'
-        elif self.get_dict_value('status') == GameStatus.STARTING.value:
+        elif self.get_dict_value('status') == GameStatus.STARTING.value: # 4
             temp['Status'] = 'Starting'
-        elif self.get_dict_value('status') == GameStatus.QUEUED.value:
+        elif self.get_dict_value('status') == GameStatus.QUEUED.value: # 5
             temp['Status'] = 'Queued'
 
         game_phase_mapping = {
@@ -318,10 +320,8 @@ class GameServer:
             task.cancel()
 
     async def start_server(self, timeout=180):
-        # clear any existing startup monitor tasks, and reset the startup timer
         self.reset_game_state()
         self.server_closed.clear()
-        self.reset_start_timer()
 
         if await self.get_running_server():
             self.unschedule_shutdown()
@@ -334,18 +334,8 @@ class GameServer:
         if free_mem < 1000000000:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
         LOGGER.info(f"GameServer #{self.id} - Starting...")
-        try:
-            if self.config.local['params']['man_enableProxy']:
-                if MISC.get_os_platform() == "win32":
-                    self.tasks.update({'proxy_task':asyncio.create_task(self.start_proxy())})
-                elif MISC.get_os_platform() == "unix":
-                    raise HoNCompatibilityError("Using the proxy is currently not supported on Linux.")
-                else:
-                    raise HoNCompatibilityError(f"Unknown OS: {MISC.get_os_platform()}. We cannot run the proxy.")
-        except HoNCompatibilityError:
-            LOGGER.warn(traceback.format_exc())
-            LOGGER.warn("Setting the proxy to OFF.")
-            self.config.local['params']['man_enableProxy'] = False
+        
+        self.tasks.update({'proxy_task':asyncio.create_task(self.start_proxy())})
 
         # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
         cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
@@ -405,8 +395,6 @@ class GameServer:
         self.enable_server()
         self.started = True
 
-        #self.tasks.update({'startup_monitor':asyncio.create_task(self.monitor_game_state_status())})
-
         try:
             start_time = time.perf_counter()
             done, pending = await asyncio.wait([self.status_received.wait(), self.server_closed.wait()], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
@@ -414,16 +402,16 @@ class GameServer:
             if len(pending) == 2: # both status_received and server_closed are not completed. This indicates a timeout
                 for task in pending:
                     task.cancel()
-                LOGGER.error(f"GameServer #{self.id} with port {self.port} timed out ({timeout} seconds) waiting for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
+                LOGGER.error(f"GameServer #{self.id} startup timed out. {timeout} seconds waited for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
                 self.schedule_shutdown()
                 return False
 
             if self.status_received.is_set():
                 elapsed_time = time.perf_counter() - start_time
-                LOGGER.info(f"GameServer #{self.id} with port {self.port} started successfully in {elapsed_time:.2f} seconds.")
+                LOGGER.info(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
                 return True
             elif self.server_closed.is_set():
-                LOGGER.warning(f"GameServer #{self.id} with port {self.port} closed prematurely. Stopped waiting for it.")
+                LOGGER.warning(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
                 return False
         except Exception as e:
             LOGGER.error(f"Unexpected error occurred: {e}")
@@ -433,8 +421,6 @@ class GameServer:
     async def schedule_shutdown_server(self, client_connection, packet_data, delete=False, disable=True):
         self.schedule_shutdown()
         self.delete_me = delete
-        # TODO: Schedule doesn't work while servers are still booting up. Example, setconfig hon_data svr_total <new val>
-        # I BELIEVE ABOVE IS FIXED, NEED TO TEST
         while True:
             num_clients = self.game_state["num_clients"]
             if num_clients is not None and num_clients > 0:
@@ -445,39 +431,12 @@ class GameServer:
                     await self.manager_event_bus.emit('remove_game_server',self)
                 break
 
-    async def monitor_game_state_status(self, timeout=60):
-        self.set_start_timer(0)
-        while not self.status_received.is_set():
-            try:
-                await asyncio.sleep(1)
-            except asyncio.CancelledError:
-                print_formatted_text(f"Task {asyncio.current_task().get_name()} is cancelled. Stopping the coroutine.")
-                break
-
-            self.increment_start_timer(1)
-            if self.get_start_timer() >= timeout:
-                LOGGER.error(f"GameServer #{self.id} either did not start correctly or took too long to start.")
-                self.reset_start_timer()
-                break
-
-    def get_start_timer(self):
-        return self.start_timer
-
-    def set_start_timer(self, val):
-        self.start_timer = val
-
-    def increment_start_timer(self, val):
-        self.start_timer += 1
-
-    def reset_start_timer(self):
-        self.start_timer = 0
-
     async def stop_server_network(self, client_connection, packet_data, nice=True, disable=True):
         if nice:
             if self.game_state["num_clients"] != 0:
                 return
+            
         self.status_received.clear()
-        
         self.stop_proxy()
         LOGGER.info(f"GameServer #{self.id} - Stopping")
         length_bytes, message_bytes = packet_data
@@ -491,12 +450,13 @@ class GameServer:
         self.server_closed.set()
         self.stopping = False
 
-    async def stop_server_exe(self):
+    async def stop_server_exe(self, disable=True):
         if self._proc:
+            if disable:
+                self.disable_server()
             self._proc.terminate()
             self.started = False
             self.status_received.clear()
-            self.disable_server()
             self.unschedule_shutdown()
             self.stop_proxy()
             self.server_closed.set()
@@ -516,7 +476,7 @@ class GameServer:
                 elif status is None:
                     if not Misc.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
                         proc.terminate()
-                        LOGGER.debug(f"Terminated GameServer-{self.id} as it has not started up correctly.")
+                        LOGGER.debug(f"Terminated GameServer #{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
                     else:
                         last_good_proc = proc
@@ -531,7 +491,6 @@ class GameServer:
             self._proc_owner = proc.username()
             LOGGER.debug(f"Found process ({self._pid}) for GameServer-{self.id}.")
             try:
-                # self.set_runtime_variables()
                 asyncio.create_task(self.start_proxy())
                 return True
             except Exception:
@@ -575,6 +534,22 @@ region=naeu
         return config_file_path, False
 
     async def start_proxy(self):
+        if not self.config.local['params']['man_enableProxy']:
+            return # proxy isn't enabled
+        
+        try:
+            if MISC.get_os_platform() == "win32":
+                pass
+            elif MISC.get_os_platform() == "linux":
+                raise HoNCompatibilityError("Using the proxy is currently not supported on Linux.")
+            else:
+                raise HoNCompatibilityError(f"Unknown OS: {MISC.get_os_platform()}. We cannot run the proxy.")
+        except HoNCompatibilityError:
+            LOGGER.warn(traceback.format_exc())
+            LOGGER.warn("Setting the proxy to OFF.")
+            self.config.local['params']['man_enableProxy'] = False
+            return
+
         if not exists(self.global_config['hon_data']['hon_install_directory'] / "proxy.exe"):
             raise HoNInvalidServerBinaries(f"Missing proxy.exe. Please obtain proxy.exe from the wasserver package and copy it into {self.global_config['hon_data']['hon_install_directory']}. https://github.com/wasserver/wasserver")
         proxy_config_path, matches_existing = self.create_proxy_config()
@@ -582,7 +557,7 @@ region=naeu
         if not matches_existing:
             # the config file has changed.
             if self.proxy_process:
-                self.proxy_process.terminate()
+                if self.proxy_process.is_running(): self.proxy_process.terminate()
                 self.proxy_process = None
 
         if exists(f"{proxy_config_path}.pid"):
@@ -596,6 +571,7 @@ region=naeu
                     self.proxy_process = process
                     LOGGER.debug(f"Proxy process found: {self.proxy_process}")
                 else:
+                    LOGGER.debug(f"Proxy pid found however the process description didn't match. Not the right PID, just a collision.")
                     self.proxy_process = None
             except psutil.NoSuchProcess:
                 LOGGER.debug(f"Previous proxy process with PID {proxy_pid} was not found.")
@@ -603,9 +579,9 @@ region=naeu
             except Exception:
                 LOGGER.error(f"An error occurred while loading the PID from the last saved value: {proxy_pid}. {traceback.format_exc()}")
                 self.proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path))
-                # LOGGER.warn("Disabling the proxy until the issues above are resolved.")
+                if self.proxy_process: LOGGER.debug("Found existing proxy PID via a proxy process with a matching description.")
 
-        while self.enabled:
+        while self.enabled and self.config.local['params']['man_enableProxy']:
             if not self.proxy_process:
                 if MISC.get_os_platform() == "win32":
                     self.proxy_process = await asyncio.create_subprocess_exec(
@@ -615,14 +591,10 @@ region=naeu
                         stderr=asyncio.subprocess.PIPE,
                         creationflags=subprocess.DETACHED_PROCESS,  # Detach the process from the console on Windows
                     )
-                elif MISC.get_os_platform() == "unix":
-                    self.proxy_process = await asyncio.create_subprocess_exec(
-                    self.global_config['hon_data']['hon_install_directory'] / "proxy.exe",
-                    proxy_config_path,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                    preexec_fn=os.setsid,  # Detach the process on Unix-based systems
-                )
+                elif MISC.get_os_platform() == "linux":
+                    # The code never gets here, because it raises an error for linux before this point.
+                    # However, once proxy is supported, you can start it here
+                    pass
                 else: raise HoNCompatibilityError(f"The OS is unsupported for running honfigurator. OS: {MISC.get_os_platform()}")
 
                 with open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
@@ -634,16 +606,18 @@ region=naeu
             while self.proxy_process and self.proxy_process.is_running() and self.enabled:
                 await asyncio.sleep(1)  # Check every second
 
-            if self.enabled:
-                LOGGER.warn(f"proxy.exe (GameServer-{self.id}) crashed. Restarting...")
+            if self.enabled and not self.stopping_proxy:
+                LOGGER.warn(f"proxy.exe (GameServer #{self.id}) crashed. Restarting...")
                 self.proxy_process = None
 
     def stop_proxy(self):
+        self.stopping_proxy = True
         if self.proxy_process and self.proxy_process.is_running():
             try:
                 self.proxy_process.terminate()
             except psutil.NoSuchProcess: # it doesn't exist, that's fine
                 pass
+        self.stopping_proxy = False
 
     async def monitor_process(self):
         while not stop_event.is_set():
@@ -745,7 +719,7 @@ class GameState:
             'uptime': None,
             'num_clients': None,
             'match_started': None,
-            'game_state_phase': None,
+            'game_phase': None,
             'current_match_id': None,
             'players': [],
             'performance': {

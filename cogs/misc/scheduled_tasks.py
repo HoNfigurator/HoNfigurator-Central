@@ -1,7 +1,8 @@
 import threading
 import functools
 import schedule
-import datetime
+from datetime import datetime, timedelta
+from os.path import exists
 import tzlocal
 import shutil
 import time
@@ -48,12 +49,16 @@ def catch_exceptions(cancel_on_failure=False):
 class HonfiguratorSchedule():
     def __init__(self, config):
         self.config = config
-        self.replay_dir = config["hon_data"]["hon_replays_directory"]
         self.db = TinyDB(HOME_PATH / "cogs" / "db" / "stats.json")
         self.replay_table = self.db.table('stats_replay_count')
         self.file_deletion_table =  self.db.table('file_deletion_table')
 
-        self.path_to_replays = self.config["hon_data"]["hon_replays_directory"]
+        self.replay_cleaner_active = self.config['application_data']['timers']['replay_cleaner']['active']
+        self.move_replays_to_longerm_storage = config["application_data"]["longterm_storage"]["active"]
+
+        self.path_to_replays_locally = config["hon_data"]["hon_replays_directory"]
+        self.longterm_storage_replay_path = self.config["application_data"]["longterm_storage"]["location"]
+        self.active_replay_path = Path(self.longterm_storage_replay_path) if self.move_replays_to_longerm_storage else self.path_to_replays_locally #   The "active replays path" is set to local (hon_replays_directory) if there is no long term storage configured. Otherwise, it's set to long term storage location.
         self.max_replay_age_days = self.config['application_data']['timers']['replay_cleaner']["max_replay_age_days"]
         self.max_temp_files_age_days = self.config['application_data']['timers']['replay_cleaner']["max_temp_files_age_days"]
         self.max_temp_folders_age_days = self.config['application_data']['timers']['replay_cleaner']["max_temp_folders_age_days"]
@@ -63,8 +68,21 @@ class HonfiguratorSchedule():
         # schedule.every(1).minutes.do(self.get_replays) #TODO: to be removed
         LOGGER.info("Setting up background jobs")
         self.cease_continuous_run = run_continuously()
-        schedule.every().day.at("00:20", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
-        schedule.every().day.at("01:10", pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_files)
+
+        """
+            Set a schedule for the tasks. The "get_replays" task has been scheduled 1 hour after replays are moved.
+            It makes more sense to count the replays after they're cleaned up.
+            It also gives ample time for replays to be moved. It may take up to an hour the first time, considering some of the larger server farms.
+            Scheduled times are also configurable via the configuration file.
+        """
+        get_replays_scheduled_time_str = self.config['application_data']['timers']['replay_cleaner']['scheduled_time']
+        get_replays_scheduled_time = datetime.strptime(get_replays_scheduled_time_str, "%H:%M")
+
+        get_replaysnew_scheduled_time = get_replays_scheduled_time + timedelta(hours=1)
+        get_replaysnew_scheduled_time_str = get_replaysnew_scheduled_time.strftime("%H:%M")
+
+        schedule.every().day.at(get_replaysnew_scheduled_time_str, pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
+        schedule.every().day.at(self.config['application_data']['timers']['replay_cleaner']['scheduled_time'], pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_or_move_files)
         LOGGER.info("Success!")
 
     def stop(self):
@@ -77,11 +95,9 @@ class HonfiguratorSchedule():
         instance.count_replays()
 
     @catch_exceptions()
-    def delete_files(self):
-        if self.config['application_data']['timers']['replay_cleaner']['active'] == True:
-            instance = ReplayCleaner(self.config)
-            instance.clean()
-
+    def delete_or_move_files(self):
+        instance = ReplayCleaner(self.config)
+        instance.clean()
 
 class Stats(HonfiguratorSchedule):
     def __init__(self, config):
@@ -97,9 +113,9 @@ class Stats(HonfiguratorSchedule):
 
         size_in_mb = 0
         count = 0
-        for filename in os.listdir(self.replay_dir):
+        for filename in os.listdir(self.active_replay_path):
             if filename.endswith(".honreplay"):
-                file_path = os.path.join(self.replay_dir, filename)
+                file_path = os.path.join(self.active_replay_path, filename)
                 modified_time = os.path.getmtime(file_path)
                 if modified_time > yesterday:
                     size_in_mb += Path(file_path).stat().st_size  / 1000
@@ -123,7 +139,7 @@ class ReplayCleaner(HonfiguratorSchedule):
         counter = 0
         if self.max_replay_age_days == 0:
             return counter
-        for file_path in self.path_to_replays.glob("**/*.honreplay"):
+        for file_path in self.active_replay_path.glob("**/*.honreplay"):
             if time.time() - file_path.stat().st_mtime > self.max_replay_age_days * 86400:
                 counter += 1
                 self.delete(file_path, method = "file")
@@ -133,7 +149,7 @@ class ReplayCleaner(HonfiguratorSchedule):
         counter = 0
         if self.max_temp_files_age_days == 0:
             return counter
-        for file_path in self.path_to_replays.glob("**/*.tmp"):
+        for file_path in self.path_to_replays_locally.glob("**/*.tmp"):
             if time.time() - file_path.stat().st_mtime > self.max_temp_files_age_days * 86400:
                 counter += 1
                 self.delete(file_path, method = "file")
@@ -143,7 +159,7 @@ class ReplayCleaner(HonfiguratorSchedule):
         counter = 0
         if self.max_temp_folders_age_days == 0:
             return counter
-        for folder_path in self.path_to_replays.glob("*/"):
+        for folder_path in self.path_to_replays_locally.glob("*/"):
             if folder_path.is_dir() and time.time() - folder_path.stat().st_mtime > self.max_temp_folders_age_days * 86400:
                 counter += 1
                 self.delete(folder_path, method = "folder")
@@ -153,14 +169,17 @@ class ReplayCleaner(HonfiguratorSchedule):
         counter = 0
         #TODO not implemented yet.
         return counter
+    
+    def move_files_to_longterm_storage(self):
+        counter = 0
+        for file_path in self.path_to_replays_locally.glob("**/*.honreplay"):
+            if time.time() - file_path.stat().st_mtime > 86400:
+                counter += 1
+                shutil.move(file_path, self.longterm_storage_replay_path)
+        return counter
 
     def clean(self):
         stats = {}
-        if self.max_replay_age_days > 0:
-            stats["deleted_replays"] = self.delete_old_replays()
-        else:
-            stats["deleted_replays"] = 0
-
         if self.max_temp_files_age_days > 0:
             stats["deleted_temp_files"] = self.delete_old_tmp_files()
         else:
@@ -170,10 +189,27 @@ class ReplayCleaner(HonfiguratorSchedule):
             stats["deleted_temp_folders"] = self.delete_old_folders()
         else:
             stats["deleted_temp_folders"] =  0
+        
+        if self.move_replays_to_longerm_storage:
+            stats["moved_replays"] = self.move_files_to_longterm_storage()
+        else:
+            stats["moved_replays"] = 0
 
         if self.max_clog_age_days > 0:
             stats["clog_files"] = self.delete_clog_files()
         else:
             stats["clog_files"] = 0
 
+        if self.max_replay_age_days > 0:
+            stats["deleted_replays"] = self.delete_old_replays()
+        else:
+            stats["deleted_replays"] = 0
+        
+        stats["date"] = datetime.now().strftime("%Y-%m-%d")
+
         self.file_deletion_table.insert(stats)
+
+class FileRelocator(HonfiguratorSchedule):
+    def __init__(self, config):
+        super().__init__(config)
+    

@@ -1,6 +1,6 @@
 import os.path
 import os
-from os.path import exists
+from datetime import datetime
 from pathlib import Path
 import pathlib
 import json
@@ -18,12 +18,15 @@ pip_requirements = HOME_PATH / 'requirements.txt'
 
 class SetupEnvironment:
     def __init__(self, config_file_hon):
-        self.PATH_KEYS_IN_CONFIG_FILE = [
+        self.PATH_KEYS_IN_APP_DATA_CONFIG_FILE = [
+            "location"
+        ]
+        self.PATH_KEYS_IN_HON_DATA_CONFIG_FILE = [
             "hon_install_directory", "hon_home_directory"]
-        self.PATH_KEYS_NOT_IN_CONFIG_FILE = [
+        self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE = [
             'hon_artefacts_directory', 'hon_logs_directory', 'hon_replays_directory', 'hon_executable_path']
-        self.ALL_PATH_TYPES = self.PATH_KEYS_IN_CONFIG_FILE + \
-            self.PATH_KEYS_NOT_IN_CONFIG_FILE
+        self.ALL_PATH_TYPES = self.PATH_KEYS_IN_HON_DATA_CONFIG_FILE + \
+            self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
         self.config_file_hon = config_file_hon
@@ -105,16 +108,16 @@ class SetupEnvironment:
                     },
                     "replay_cleaner": {
                         "active": False,
-                        "max_replay_age_days": 30,
+                        "max_replay_age_days": 0,
                         "max_temp_files_age_days": 1,
                         "max_temp_folders_age_days": 1,
-                        "max_clog_age_days": 0
+                        "max_clog_age_days": 0,
+                        "scheduled_time": "00:20"
                     }
                 },
                 "longterm_storage": {
                     "active": False,
-                    "location": "",
-                    "cleanup": False
+                    "location": ""
                 }
             }
         }
@@ -136,105 +139,166 @@ class SetupEnvironment:
 
         default_configuration = self.get_default_hon_configuration()
         default_hon_data = default_configuration['hon_data']
+        default_application_data = default_configuration['application_data']
+
+        def validate_paths(key, value):
+            path = Path(value)
+            if not os.path.isabs(str(path)):
+                major_issues.append(f"The provided path for {key} is not a fully qualified path: {path}")
+                return False
+            try:
+                path.relative_to(HOME_PATH)
+                # If the path is relative to HOME_PATH, raise a major issue
+                major_issues.append(f"The provided path for {key} should not be beneath the home path of HoNfigurator: {path}")
+                return False
+            except ValueError:
+                # If it raises a ValueError, the path is not under HOME_PATH, so this is what we want
+                pass
+            return path
+
+        def handle_path(key, value):
+            value = validate_paths(key, value)
+            if not value:
+                return None
+
+            if not value.is_dir() and not value.is_file():
+                try:
+                    value.mkdir(parents=True, exist_ok=True)
+                    minor_issues.append(f"Resolved: Path did not exist for {key}.")
+                except Exception:
+                    major_issues.append(f"Invalid path for {key}: {value}")
+                    return None
+            return value
+        
+        def is_valid_time_format(time_str):
+            try:
+                datetime.strptime(time_str, "%H:%M")
+                return True
+            except ValueError:
+                return False
+
+        def check_type_and_convert(key, value, expected_type):
+            if key == "scheduled_time" and not is_valid_time_format(value):
+                return None
+            elif expected_type == int:
+                return handle_int(key, value)
+            elif expected_type == bool:
+                return handle_bool(key, value)
+            elif expected_type == str:
+                return handle_str(key, value)
+            elif expected_type in [pathlib.PosixPath, pathlib.WindowsPath]:
+                return handle_path(key, value)
+            else:
+                return value
+
+        def handle_int(key, value):
+            if not isinstance(value, int):
+                try:
+                    return int(value)
+                except ValueError:
+                    return None
+            return value
+
+        def handle_bool(key, value):
+            if not isinstance(value, bool):
+                if str(value).lower() in ['true', 'false']:
+                    return str(value).lower() == 'true'
+                elif str(value) in ['0', '1']:
+                    return str(value) == '1'
+                else:
+                    return None
+            return value
+
+        def handle_str(key, value):
+            if not isinstance(value, str) or value == '':
+                return None
+            return value
+
+        def handle_path(key, value):
+            value = validate_paths(key, value)
+            if not value:
+                return None
+
+            if not value.is_dir() and not value.is_file():
+                try:
+                    value.mkdir(parents=True, exist_ok=True)
+                    return value
+                except Exception:
+                    return None
+            return value
+
+        def iterate_over_app_data(app_dict, default_dict):
+            for key, value in list(app_dict.items()):
+                default_value = default_dict.get(key)
+                default_value_type = type(default_value)
+
+                if default_value_type is type(None):
+                    del app_dict[key]
+                    minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
+                elif isinstance(value, dict) and isinstance(default_value, dict):
+                    iterate_over_app_data(value, default_value)
+                else:
+                    new_value = check_type_and_convert(key, value, default_value_type)
+                    if new_value is None:
+                        major_issues.append(f"Invalid value for {key}: {value}")
+                    elif new_value != value:
+                        minor_issues.append(f"Resolved: Converted {key} to appropriate type")
+                    app_dict[key] = new_value
+
+
+                # Extra logic for the "location" key
+                if key == "location" and self.application_data['longterm_storage']['active']:
+                    value = handle_path(key, value)
+                    if value is not None:
+                        app_dict[key] = value
+
+        iterate_over_app_data(self.application_data, default_application_data)
+
 
         for key, value in list(self.hon_data.items()):
             default_value = default_hon_data.get(key)
             default_value_type = type(default_value)
 
             if key in self.ALL_PATH_TYPES:
-                # Ensure the path ends with the appropriate separator
-                # fixed_path = add_separator_if_missing(value)
-                path = Path(value)
-                value = path
-
-                if not path.is_dir() and not path.is_file():
-                    try:
-                        path.mkdir(parents=True, exist_ok=True)
-                        minor_issues.append(
-                            f"Resolved: Path did not exist for {key}.")
-                    except Exception:
-                        major_issues.append(f"Invalid path for {key}: {path}")
-                self.hon_data[key] = path
-
-            if default_value_type == int:
-                if not isinstance(value, int):
-                    try:
-                        self.hon_data[key] = int(value)
-                        value = int(value)
-                        minor_issues.append(
-                            f"Resolved: Converted string integer to real integer for {key}: {value}")
-                    except ValueError:
-                        major_issues.append(
-                            "Invalid integer value for {}: {}".format(key, value))
-                else:
-                    if key == "svr_starting_gamePort" and value < 10001:
-                        self.hon_data[key] = 10001
-                        minor_issues.append(
-                            f"Resolved: Starting game port reassigned to {self.hon_data[key]}. Must start from 10001 one onwards.")
-                    elif key == "svr_starting_voicePort":
-                        if value < 10061:
-                            self.hon_data[key] = 10061
-                            minor_issues.append(
-                                f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be greater than 10061.")
-                        if self.hon_data[key] - self.hon_data['svr_total'] < self.hon_data['svr_starting_gamePort']:
-                            self.hon_data[key] = self.hon_data['svr_starting_gamePort'] + \
-                                self.hon_data['svr_total']
-                            minor_issues.append(
-                                f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be at least {self.hon_data['svr_total']} (svr_total) higher than the starting game port.")
-
-            elif default_value_type == bool:
-                if not isinstance(value, bool):
-                    if value.lower() in ['true', 'false']:
-                        try:
-                            self.hon_data[key] = value.lower() == 'true'
-                            minor_issues.append(
-                                f"Resolved: Invalid boolean value for {key}: {value}")
-                        except Exception:
-                            major_issues.append(
-                                f"Invalid boolean value for {key}: {value}")
-                    elif value in ['0', '1']:
-                        if value == '0':
-                            self.hon_data[key] = False
-                        elif value == '1':
-                            self.hon_data[key] = True
-                    else:
-                        major_issues.append(
-                            f"Invalid boolean value for {key}: {value}")
-
-            elif default_value_type == str:
-                if not isinstance(value, str) or value == '':
-                    major_issues.append(
-                        f"Invalid string value for {key}: {value}")
-                elif key == "svr_location" and value not in ALLOWED_REGIONS:
-                    major_issues.append(
-                        f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
-            elif default_value_type == pathlib.WindowsPath:
-                if not isinstance(value, pathlib.WindowsPath):
-                    major_issues.append(
-                        f"Invalid path value for {key}: {value}")
-            elif default_value_type == pathlib.PosixPath:
-                if not isinstance(value, pathlib.PosixPath):
-                    major_issues.append(
-                        f"Invalid path value for {key}: {value}")
+                value = handle_path(key, value)
+                if value is not None:
+                    self.hon_data[key] = value
             else:
-                if key in self.PATH_KEYS_NOT_IN_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
-                    pass
-                else:
-                    # this is here to revert an issue I created when I mispelt the proxy setting.
-                    if key == "svr_enableProxy":
-                        self.hon_data["man_enableProxy"] = self.hon_data[key]
-                        del self.hon_data[key]
-                    else:
-                        major_issues.append(
-                            f"Unexpected key and value type for {key}: {value}")
+                new_value = check_type_and_convert(key, value, default_value_type)
+                if new_value is None:
+                    major_issues.append(f"Invalid value for {key}: {value}")
+                elif new_value != value:
+                    minor_issues.append(f"Resolved: Converted {key} to appropriate type")
+                self.hon_data[key] = new_value
 
-            if key == "svr_total":
-                total_allowed = MISC.get_total_allowed_servers(
-                    int(self.hon_data['svr_total_per_core']))
-                if value > total_allowed:
-                    self.hon_data[key] = int(total_allowed)
-                    minor_issues.append(
-                        "Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
+                # Additional validation for some specific keys
+                if key == "svr_starting_gamePort" and new_value < 10001:
+                    self.hon_data[key] = 10001
+                    minor_issues.append(f"Resolved: Starting game port reassigned to {self.hon_data[key]}. Must start from 10001 one onwards.")
+                elif key == "svr_starting_voicePort":
+                    if new_value < 10061:
+                        self.hon_data[key] = 10061
+                        minor_issues.append(f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be greater than 10061.")
+                    if self.hon_data[key] - self.hon_data['svr_total'] < self.hon_data['svr_starting_gamePort']:
+                        self.hon_data[key] = self.hon_data['svr_starting_gamePort'] + self.hon_data['svr_total']
+                        minor_issues.append(f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be at least {self.hon_data['svr_total']} (svr_total) higher than the starting game port.")
+                elif key == "svr_location" and new_value not in ALLOWED_REGIONS:
+                    major_issues.append(f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
+                elif key == "svr_total":
+                    total_allowed = MISC.get_total_allowed_servers(int(self.hon_data['svr_total_per_core']))
+                    if new_value > total_allowed:
+                        self.hon_data[key] = int(total_allowed)
+                        minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
+
+            if key in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
+                pass
+            elif key == "svr_enableProxy":
+                self.hon_data["man_enableProxy"] = self.hon_data[key]
+                del self.hon_data[key]
+            elif default_value_type is type(None):
+                del self.hon_data[key]
+                minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
+
 
         if major_issues:
             error_message = "Configuration file validation issues:\n" + \
@@ -266,7 +330,7 @@ class SetupEnvironment:
         if not database.add_default_data():
             while True:
                 value = input(
-                    "\tPlease provide your discord user ID. This is a 10 digit number:")
+                    "\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID.")
                 try:
                     discord_id = int(value)
                     if len(str(discord_id)) < 10:
@@ -275,7 +339,7 @@ class SetupEnvironment:
                     break
                 except ValueError:
                     print(
-                        "Value must be a 10 digit number. Here is a guide to find your discord user ID. https://www.youtube.com/watch?v=ZPROrf4Fe3Q")
+                        "Value must be a more than 10 digits.")
         # else:
         try:
             self.hon_data = self.get_existing_configuration()['hon_data']
@@ -330,7 +394,7 @@ class SetupEnvironment:
                             else:
                                 self.hon_data[key] = user_input
                                 break
-                        elif key in self.PATH_KEYS_IN_CONFIG_FILE:
+                        elif key in self.PATH_KEYS_IN_HON_DATA_CONFIG_FILE:
                             try:
                                 user_input = user_input.replace("\"", "")
                                 Path(user_input)
@@ -352,6 +416,14 @@ class SetupEnvironment:
         return False
 
     def save_configuration_file(self):
+        def update_nested_key_path_value(nested_dict, target_key):
+            for key, value in nested_dict.items():
+                if key == target_key:
+                    # Convert the value to a string and update the dictionary
+                    nested_dict[key] = str(value)
+                elif isinstance(value, dict):
+                    # If the value is a dictionary, search it recursively
+                    update_nested_key_path_value(value, target_key)
         def are_dicts_equal_with_types(d1, d2):
             if d1.keys() != d2.keys():
                 return False
@@ -363,12 +435,14 @@ class SetupEnvironment:
             return True
 
         hon_data_to_save = {key: value for key, value in self.hon_data.items(
-        ) if key not in self.PATH_KEYS_NOT_IN_CONFIG_FILE and key not in self.OTHER_CONFIG_EXCLUSIONS}
+        ) if key not in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE and key not in self.OTHER_CONFIG_EXCLUSIONS}
         application_data_to_save = self.application_data
 
         # ensure path objects are
-        for path in self.PATH_KEYS_IN_CONFIG_FILE:
+        for path in self.PATH_KEYS_IN_HON_DATA_CONFIG_FILE:
             hon_data_to_save[path] = str(hon_data_to_save[path])
+        for path in self.PATH_KEYS_IN_APP_DATA_CONFIG_FILE:
+            update_nested_key_path_value(application_data_to_save, path)
 
         full_data_to_save = {"hon_data": hon_data_to_save,
                              "application_data": application_data_to_save}

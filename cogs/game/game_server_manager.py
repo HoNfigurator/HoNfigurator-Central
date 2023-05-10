@@ -133,7 +133,7 @@ class GameServerManager:
                     return True
             else:
                 # this server hasn't connected to the manager yet
-                await game_server.stop_server_exe()
+                await game_server.stop_server_exe(disable=disable)
                 game_server.reset_game_state()
                 return True
         except Exception as e:
@@ -188,10 +188,7 @@ class GameServerManager:
             LOGGER.info("Server patching is ongoing.. Please wait.")
             return
 
-        try:
-            local_svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
-        except HoNUnexpectedVersionError:
-            raise HoNInvalidServerBinaries("The version check on the hon_x64.exe failed, because it was not a supported server binary. Please ensure you have correctly followed the guide to set up the server.")
+        local_svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
 
         try:
             patch_information = await self.master_server_handler.compare_upstream_patch()
@@ -405,7 +402,7 @@ class GameServerManager:
 
         return None
 
-    async def balance_game_server_count(self, add_servers=0, remove_servers=0):
+    async def balance_game_server_count(self, to_add=0, to_remove=0):
         """
         Ensures that the maximum number of game servers are running by creating new game servers
         and removing existing game servers as needed.
@@ -414,25 +411,26 @@ class GameServerManager:
             None
         """
         max_servers = self.global_config['hon_data']['svr_total']
-        if add_servers == "all":
+        if to_add == "all":
             max_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
-        elif add_servers > 0:
-            max_servers += add_servers
+        elif to_add > 0:
+            max_servers += to_add
 
-        if remove_servers == "all":
+        if to_remove == "all":
             max_servers = 0
-        elif remove_servers > 0:
-            max_servers -= remove_servers
+        elif to_remove > 0:
+            max_servers -= to_remove
 
         if max_servers < 0: max_servers = 0
         self.global_config['hon_data']['svr_total'] = max_servers
 
         self.setup.validate_hon_data(self.global_config['hon_data'])
 
-        running_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('match_started') != 1]
-        num_running_servers = len(running_servers)
-        num_servers_to_remove = max(num_running_servers - max_servers, 0)
-        num_servers_to_create = max(max_servers - num_running_servers, 0)
+        idle_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') != 3]
+        occupied_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') == 3]
+        total_num_servers = len(occupied_servers) + len(idle_servers)
+        num_servers_to_remove = max(total_num_servers - max_servers, 0)
+        num_servers_to_create = max(max_servers - total_num_servers, 0)
 
         if num_servers_to_create > 0:
             for i in range(num_servers_to_create):
@@ -444,11 +442,11 @@ class GameServerManager:
                     LOGGER.info(f"Game server created at game_port: {game_port}")
                 else:
                     LOGGER.warn("No available ports for creating a new game server.")
-
-        if num_servers_to_remove > 0:
+        
+        async def remove_servers(servers, server_type):
             servers_removed = 0
             servers_to_remove = []
-            for game_server in running_servers:
+            for game_server in servers:
                 await self.cmd_shutdown_server(game_server, delete=True)
                 if not game_server.delete_me:
                     servers_to_remove.append(game_server.port)
@@ -458,10 +456,17 @@ class GameServerManager:
             for port in servers_to_remove:
                 if port in self.game_servers:
                     del self.game_servers[port]
+            
+            LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {max_servers} game servers are now running.")
+            return servers_removed
 
-            LOGGER.info(f"Removed {servers_removed} game servers. {max_servers} game servers are now running.")
-        elif num_servers_to_remove < 0:
-            LOGGER.warn("Number of running game servers is greater than the maximum number of game servers.")
+        if num_servers_to_remove > 0:
+            removed_idle = await remove_servers(idle_servers, 'idle')
+            num_servers_to_remove -= removed_idle
+            if num_servers_to_remove > 0:
+                removed_occupied = await remove_servers(occupied_servers, 'occupied')
+            elif num_servers_to_remove < 0:
+                LOGGER.warn("Number of running game servers is greater than the maximum number of game servers.")
 
 
     async def create_dynamic_game_server(self):
@@ -601,7 +606,10 @@ class GameServerManager:
     async def handle_replay_request(self, match_id, extension, account_id):
         replay_file_name = f"M{match_id}.{extension}"
         replay_file_path = (Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name)
+        replay_file_path_longterm = (Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
         file_exists = Path.exists(replay_file_path)
+        if not file_exists and self.global_config['application_data']['longterm_storage']['active']:
+            file_exists = Path.exists(replay_file_path_longterm)
 
         LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
 
@@ -707,7 +715,7 @@ class GameServerManager:
             async with self.server_start_semaphore:
                 started = await game_server.start_server(timeout=timeout)
                 if not started:
-                    LOGGER.error(f"GameServer #{game_server.id} with port {game_server.port} failed to start.")
+                    LOGGER.error(f"GameServer #{game_server.id} failed to start.")
                     await self.cmd_shutdown_server(game_server)
 
         if game_server == "all":
@@ -717,7 +725,7 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 already_running = await game_server.get_running_server()
                 if already_running:
-                    LOGGER.info(f"GameServer-{game_server.id} with port {game_server.port} already running.")
+                    LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
                 else:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
             await asyncio.gather(*start_tasks, *monitor_tasks)
