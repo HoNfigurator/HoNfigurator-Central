@@ -30,6 +30,7 @@ This guide provides steps for linking the configured HoNfigurator server to a fr
 > **Note** HoN should automatically patch after opening for the first time. 
 If there are any issues, [Contact me](https://discordapp.com/users/197967989964800000)
 
+	
 </details>
 
 <details>
