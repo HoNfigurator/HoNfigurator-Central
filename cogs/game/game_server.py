@@ -620,9 +620,11 @@ region=naeu
         self.stopping_proxy = False
 
     async def monitor_process(self):
+        LOGGER.debug(f"Monitor setup for {self.id}")
         while not stop_event.is_set():
             if self._proc is not None and self._proc_hook is not None:
                 if not self._proc_hook.is_running() and self.enabled:
+                    LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
                     self._proc = None  # Reset the process reference
                     self._proc_hook = None  # Reset the process hook reference
                     self._pid = None
