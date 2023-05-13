@@ -200,7 +200,7 @@ class ReplayCleaner(HonfiguratorSchedule):
         else:
             stats["clog_files"] = 0
 
-        if self.max_replay_age_days > 0:
+        if self.max_replay_age_days > 0 and self.replay_cleaner_active:
             stats["deleted_replays"] = self.delete_old_replays()
         else:
             stats["deleted_replays"] = 0
