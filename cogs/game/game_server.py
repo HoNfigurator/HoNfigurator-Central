@@ -365,22 +365,6 @@ class GameServer:
                     log_file.write(clean_line)
                     log_file.flush()
 
-            # log_file_path = f'./logs/slave_{parse_svr_id(cmdline_args)}.log'
-            # stop_event = threading.Event()
-            # log_file = open(log_file_path, 'w', encoding='utf-8')
-            # exe = subprocess.Popen(cmdline_args, preexec_fn=os.setsid, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, bufsize=10, text=True)
-            # output_thread = threading.Thread(target=process_output, args=(exe.stdout, log_file, stop_event))
-            # output_thread.start()
-
-
-            # #TODO: if the stop event comes we have to execute this:
-            # stop_event.set()
-            # output_thread.join()
-            # exe.stdout.close()
-            # log_file.close()
-            # END
-
-
             # old:
             exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
@@ -619,25 +603,27 @@ region=naeu
                 pass
         self.stopping_proxy = False
 
-    async def monitor_process(self):
-        LOGGER.debug(f"Monitor setup for {self.id}")
-        while not stop_event.is_set():
-            if self._proc is not None and self._proc_hook is not None:
-                if not self._proc_hook.is_running() and self.enabled:
-                    LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
-                    self._proc = None  # Reset the process reference
-                    self._proc_hook = None  # Reset the process hook reference
-                    self._pid = None
-                    self._proc_owner = None
-                    self.started = False
-                    self.server_closed.set()  # Set the server_closed event
-                    self.reset_game_state()
-                    asyncio.create_task(self.manager_event_bus.emit('start_game_servers', self))  # Restart the server
-                elif self._proc_hook.is_running() and not self.enabled and not self.scheduled_shutdown:
-                    #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
-                    self.schedule_shutdown()
+async def monitor_process(self):
+    LOGGER.debug(f"Monitor setup for {self.id}")
+    while not stop_event.is_set():
+        if self._proc is not None and self._proc_hook is not None:
+            exit_status = self._proc.poll()  # Check if the process has ended
+            if exit_status is not None and self.enabled:  # If the process has ended
+                LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
+                self._proc = None  # Reset the process reference
+                self._proc_hook = None  # Reset the process hook reference
+                self._pid = None
+                self._proc_owner = None
+                self.started = False
+                self.server_closed.set()  # Set the server_closed event
+                self.reset_game_state()
+                asyncio.create_task(self.manager_event_bus.emit('start_game_servers', self))  # Restart the server
+            elif exit_status is None and not self.enabled and not self.scheduled_shutdown:
+                #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
+                self.schedule_shutdown()
 
-            await asyncio.sleep(5)  # Monitor process every 5 seconds
+        await asyncio.sleep(5)  # Monitor process every 5 seconds
+
 
     def enable_server(self):
         self.enabled = True
