@@ -584,7 +584,7 @@ region=naeu
                 with open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
                     proxy_pid_file.write(str(self.proxy_process.pid))
 
-                self.proxy_process = psutil.Process(self.proxy_process.pid)
+                # self.proxy_process = psutil.Process(self.proxy_process.pid)
 
             # Monitor the process with psutil
             while self.proxy_process and self.proxy_process.is_running() and self.enabled:
