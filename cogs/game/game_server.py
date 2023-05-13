@@ -603,26 +603,26 @@ region=naeu
                 pass
         self.stopping_proxy = False
 
-async def monitor_process(self):
-    LOGGER.debug(f"Monitor setup for {self.id}")
-    while not stop_event.is_set():
-        if self._proc is not None and self._proc_hook is not None:
-            exit_status = self._proc.poll()  # Check if the process has ended
-            if exit_status is not None and self.enabled:  # If the process has ended
-                LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
-                self._proc = None  # Reset the process reference
-                self._proc_hook = None  # Reset the process hook reference
-                self._pid = None
-                self._proc_owner = None
-                self.started = False
-                self.server_closed.set()  # Set the server_closed event
-                self.reset_game_state()
-                asyncio.create_task(self.manager_event_bus.emit('start_game_servers', self))  # Restart the server
-            elif exit_status is None and not self.enabled and not self.scheduled_shutdown:
-                #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
-                self.schedule_shutdown()
+    async def monitor_process(self):
+        LOGGER.debug(f"Monitor setup for {self.id}")
+        while not stop_event.is_set():
+            if self._proc is not None and self._proc_hook is not None:
+                exit_status = self._proc.poll()  # Check if the process has ended
+                if exit_status is not None and self.enabled:  # If the process has ended
+                    LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
+                    self._proc = None  # Reset the process reference
+                    self._proc_hook = None  # Reset the process hook reference
+                    self._pid = None
+                    self._proc_owner = None
+                    self.started = False
+                    self.server_closed.set()  # Set the server_closed event
+                    self.reset_game_state()
+                    asyncio.create_task(self.manager_event_bus.emit('start_game_servers', self))  # Restart the server
+                elif exit_status is None and not self.enabled and not self.scheduled_shutdown:
+                    #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
+                    self.schedule_shutdown()
 
-        await asyncio.sleep(5)  # Monitor process every 5 seconds
+            await asyncio.sleep(5)  # Monitor process every 5 seconds
 
 
     def enable_server(self):
