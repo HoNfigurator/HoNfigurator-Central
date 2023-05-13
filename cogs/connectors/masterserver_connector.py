@@ -42,7 +42,8 @@ class MasterServerHandler:
             "login": login,
             "pass": password
         }
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=10)  # 10 seconds timeout for the entire operation
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, data=data, headers=self.headers) as response:
                 return await response.text(), response.status
 
