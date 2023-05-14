@@ -142,16 +142,30 @@ async def get_global_config(token_and_user_info: dict = Depends(check_permission
 
 @app.post("/api/set_hon_data", description="Sets the 'hon_data' key within the global manager data dictionary")
 async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    if SETUP.validate_hon_data(hon_data):
-        global_config['hon_data'] = hon_data
-        await manager_event_bus.emit('check_for_restart_required')
+    try:
+        validation = SETUP.validate_hon_data(hon_data=hon_data)
+        if validation:
+            global_config['hon_data'] = hon_data
+            await manager_event_bus.emit('check_for_restart_required')
+    except ValueError as e:
+        return JSONResponse(status_code=501, content=str(e))
+
+@app.post("/api/set_app_data", description="Sets the 'application_data' key within the global manager data dictionary")
+async def set_app_data(app_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
+    try:
+        validation = SETUP.validate_hon_data(application_data=app_data)
+        if validation:
+            global_config['application_data'] = app_data
+            await manager_event_bus.emit('check_for_restart_required')
+    except ValueError as e:
+        return JSONResponse(status_code=501, content=str(e))
 
 class TotalServersResponse(BaseModel):
     total_servers: int
 
 @app.get("/api/get_total_servers", response_model=TotalServersResponse)
 def get_total_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-    return {"total_servers": global_config['hon_data']['svr_total']}
+    return {"total_servers": len(game_servers)}
 
 class CurrentGithubBranch(BaseModel):
     branch: str

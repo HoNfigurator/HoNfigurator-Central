@@ -106,7 +106,7 @@ class GameServer:
                 self.set_server_priority_increase()
             # Add more phases as needed
         elif key == "match_info.mode":
-            if value == "botmatch":
+            if value == "botmatch" and not self.global_config['hon_data']['svr_enableBotMatch']:
                 self.tasks.update({'botmatch_shutdown':asyncio.create_task(self.manager_event_bus.emit('cmd_shutdown_server', self, force=True, delay=30))})
                 while self.status_received.is_set() and not self.server_closed.set():
                     await self.manager_event_bus.emit('cmd_message_server', self, f"Bot matches are disallowed on {self.global_config['hon_data']['svr_name']}. Server closing.")
@@ -583,7 +583,7 @@ region=naeu
 
                 with open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
                     proxy_pid_file.write(str(self.proxy_process.pid))
-
+                await asyncio.sleep(0.1)
                 self.proxy_process = psutil.Process(self.proxy_process.pid)
 
             # Monitor the process with psutil

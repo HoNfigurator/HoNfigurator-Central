@@ -57,6 +57,7 @@ class ConfigManagement():
                 'svr_voicePortStart':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
                 'man_enableProxy':self.get_global_by_key('man_enableProxy'),
                 'svr_location':self.get_global_by_key('svr_location'),
+                'svr_enableBotMatch': self.get_global_by_key('svr_enableBotMatch'),
                 'svr_broadcast':True,
                 'upd_checkForUpdates':False,
                 'sv_autosaveReplay':True,
