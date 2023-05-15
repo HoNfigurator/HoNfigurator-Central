@@ -177,6 +177,12 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
         for task_name, task in tasks_dict.items():
             if task is None:
                 continue
+
+            # Check if task is a nested dictionary of tasks
+            if isinstance(task, dict):
+                task_summary[task_name] = task_status(task)
+                continue
+
             if task.done():
                 if task.exception() is not None:
                     task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception())}
@@ -185,7 +191,7 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
             else:
                 task_summary[task_name] = {'status': 'Running'}
         return task_summary
-    
+
     temp = {}
     temp_gameserver_tasks = {}
 
