@@ -171,7 +171,7 @@ class TaskStatusResponse(BaseModel):
     tasks_status: dict
 
 @app.get("/api/get_tasks_status", response_model=TaskStatusResponse)
-def get_tasks_status():
+def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     def task_status(tasks_dict):
         task_summary = {}
         for task_name, task in tasks_dict.items():
