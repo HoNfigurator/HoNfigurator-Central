@@ -167,6 +167,24 @@ class TotalServersResponse(BaseModel):
 def get_total_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"total_servers": len(game_servers)}
 
+class TaskStatusResponse(BaseModel):
+    tasks_status: dict
+
+@app.get("/api/get_tasks_status", response_model=TaskStatusResponse)
+def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    temp = {}
+    for game_server in game_servers.values():
+        task_summary = {}
+        for task_name, task in game_server.tasks.items():
+            if task.done():
+                if task.exception() is not None:
+                    task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception())}
+                else:
+                    task_summary[task_name] = {'status': 'Done'}
+            else:
+                task_summary[task_name] = {'status': 'Running'}
+        temp[game_server.config.get_local_by_key('svr_name')] = task_summary
+    return {"tasks_status": temp}
 class CurrentGithubBranch(BaseModel):
     branch: str
 @app.get("/api/get_current_github_branch", response_model=CurrentGithubBranch)

@@ -666,6 +666,7 @@ class GameServerManager:
         """
         for key, value in self.client_connections.items():
             if value == client_connection:
+                LOGGER.debug(f"GameServer #{client_connection.id} removing connection.")
                 del self.client_connections[key]
                 game_server = self.game_servers.get(key, None)
                 #   This is in case game server doesn't exist intentionally (maybe config changed)
