@@ -171,11 +171,12 @@ class TaskStatusResponse(BaseModel):
     tasks_status: dict
 
 @app.get("/api/get_tasks_status", response_model=TaskStatusResponse)
-def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-    temp = {}
-    for game_server in game_servers.values():
+def get_tasks_status():
+    def task_status(tasks_dict):
         task_summary = {}
-        for task_name, task in game_server.tasks.items():
+        for task_name, task in tasks_dict.items():
+            if task is None:
+                continue
             if task.done():
                 if task.exception() is not None:
                     task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception())}
@@ -183,7 +184,17 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
                     task_summary[task_name] = {'status': 'Done'}
             else:
                 task_summary[task_name] = {'status': 'Running'}
-        temp[game_server.config.get_local_by_key('svr_name')] = task_summary
+        return task_summary
+    
+    temp = {}
+    temp_gameserver_tasks = {}
+
+    for game_server in game_servers.values():
+        temp_gameserver_tasks[game_server.config.get_local_by_key('svr_name')] = task_status(game_server.tasks)
+
+    temp['manager'] = task_status(manager_tasks)
+    temp['game_servers'] = temp_gameserver_tasks
+
     return {"tasks_status": temp}
 class CurrentGithubBranch(BaseModel):
     branch: str
@@ -693,11 +704,12 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
         LOGGER.error(f"Error checking certificate expiration: {e}")
 
 
-async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0", port=5000):
-    global global_config, game_servers, manager_event_bus
+async def start_api_server(config, game_servers_dict, game_manager_tasks, event_bus, host="0.0.0.0", port=5000):
+    global global_config, game_servers, manager_event_bus, manager_tasks
     global_config = config
     game_servers = game_servers_dict
     manager_event_bus = event_bus
+    manager_tasks = game_manager_tasks
 
     async def asgi_server():
         try:

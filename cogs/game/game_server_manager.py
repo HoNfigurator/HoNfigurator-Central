@@ -73,13 +73,13 @@ class GameServerManager:
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.tasks = {
-            'game_servers':'',
-            'cli_handler':'',
-            'health_checks':'',
-            'autoping_listener':'',
-            'gameserver_listener':'',
-            'authentication_handler':'',
-            'gameserver_startup':''
+            'game_servers':None,
+            'cli_handler':None,
+            'health_checks':None,
+            'autoping_listener':None,
+            'gameserver_listener':None,
+            'authentication_handler':None,
+            'gameserver_startup':None
         }
         # initialise the config validator in case we need it
         self.setup = setup
@@ -224,7 +224,7 @@ class GameServerManager:
         return task
 
     def start_api_server(self):
-        task = asyncio.create_task(start_api_server(self.global_config, self.game_servers, self.event_bus, port=self.global_config['hon_data']['svr_api_port']))
+        task = asyncio.create_task(start_api_server(self.global_config, self.game_servers, self.tasks, self.event_bus, port=self.global_config['hon_data']['svr_api_port']))
         self.tasks.update({'api_server':task})
         return task
 
