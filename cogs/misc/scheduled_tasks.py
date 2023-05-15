@@ -50,6 +50,7 @@ class HonfiguratorSchedule():
     def __init__(self, config):
         self.config = config
         self.db = TinyDB(HOME_PATH / "cogs" / "db" / "stats.json")
+        self.lock = threading.Lock() # Create a lock
         self.replay_table = self.db.table('stats_replay_count')
         self.file_deletion_table =  self.db.table('file_deletion_table')
 
@@ -120,7 +121,8 @@ class Stats(HonfiguratorSchedule):
                 if modified_time > yesterday:
                     size_in_mb += Path(file_path).stat().st_size  / 1000
                     count += 1
-        self.replay_table.insert({"date" : formatted_date_str, "count" : count, "size_in_mb" : size_in_mb})
+        with self.lock: # Acquire the lock before writing to the database
+            self.replay_table.insert({"date" : formatted_date_str, "count" : count, "size_in_mb" : size_in_mb})
 
 
 class ReplayCleaner(HonfiguratorSchedule):
@@ -206,8 +208,9 @@ class ReplayCleaner(HonfiguratorSchedule):
             stats["deleted_replays"] = 0
         
         stats["date"] = datetime.now().strftime("%Y-%m-%d")
-
-        self.file_deletion_table.insert(stats)
+        
+        with self.lock: # Acquire the lock before writing to the database
+            self.file_deletion_table.insert(stats)
 
 class FileRelocator(HonfiguratorSchedule):
     def __init__(self, config):

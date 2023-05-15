@@ -438,7 +438,10 @@ class GameServer:
         if self._proc:
             if disable:
                 self.disable_server()
-            self._proc.terminate()
+            try:
+                self._proc.terminate()
+            except psutil.NoSuchProcess:
+                pass # process doesn't exist, probably race condition of something else terminating it.
             self.started = False
             self.status_received.clear()
             self.unschedule_shutdown()
@@ -475,7 +478,7 @@ class GameServer:
             self._proc_owner = proc.username()
             LOGGER.debug(f"Found process ({self._pid}) for GameServer-{self.id}.")
             try:
-                asyncio.create_task(self.start_proxy())
+                self.tasks.update({'proxy_task':asyncio.create_task(self.start_proxy())})
                 return True
             except Exception:
                 LOGGER.exception(f"{traceback.format_exc()}")
@@ -604,12 +607,16 @@ region=naeu
         self.stopping_proxy = False
 
     async def monitor_process(self):
-        LOGGER.debug(f"Monitor setup for {self.id}")
+        LOGGER.debug(f"GameServer #{self.id} Process monitor started")
         while not stop_event.is_set():
             if self._proc is not None and self._proc_hook is not None:
-                exit_status = self._proc.poll()  # Check if the process has ended
-                if exit_status is not None and self.enabled:  # If the process has ended
-                    LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
+                try:
+                    status = self._proc_hook.status()  # Get the status of the process
+                except psutil.NoSuchProcess:
+                    status = 'stopped'
+                LOGGER.debug(f"GameServer #{self.id} Status: {status}")
+                if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped
+                    LOGGER.debug(f"GameServer #{self.id} is not running")
                     self._proc = None  # Reset the process reference
                     self._proc_hook = None  # Reset the process hook reference
                     self._pid = None
@@ -618,12 +625,11 @@ region=naeu
                     self.server_closed.set()  # Set the server_closed event
                     self.reset_game_state()
                     asyncio.create_task(self.manager_event_bus.emit('start_game_servers', self))  # Restart the server
-                elif exit_status is None and not self.enabled and not self.scheduled_shutdown:
+                elif status != 'zombie' and not self.enabled and not self.scheduled_shutdown:
                     #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                     self.schedule_shutdown()
 
             await asyncio.sleep(5)  # Monitor process every 5 seconds
-
 
     def enable_server(self):
         self.enabled = True
