@@ -343,7 +343,7 @@ class SetupEnvironment:
         if not database.add_default_data():
             while True:
                 value = input(
-                    "\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID.")
+                    "\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
                 try:
                     discord_id = int(value)
                     if len(str(discord_id)) < 10:
