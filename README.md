@@ -3,11 +3,11 @@
 # HoNfigurator Server Manager & API (early access)
 This project operates as the game server manager for hon game server instances.
 
-It negotiates TCP connections between game server instances and upstream HoN authentication services.
+It negotiates TCP connections between game server instances and upstream HoN authentication services, much like the K2 Server Manager.
 
 There is a rest API built in, to allow interaction from external services.
 
-This guide provides steps for linking the configured HoNfigurator server to a front end management webui.
+This guide provides steps for linking the configured HoNfigurator server to a modern front end website where you can remotely manage and monitor one or more HoNfigurator instances.
 
 [Join the discord channel](https://discord.gg/BT23GnBKkT) for more updates and to become more involved with this project.
 
@@ -34,7 +34,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 </details>
 
 <details>
-<summary>Linux (coming soon)</summary>
+<summary>Linux</summary>
 <installer here>
 # Install Server <br>
 1. curl https://games.superbjorn.de/install-server.py | sudo python3 -<br>
@@ -62,7 +62,9 @@ Page Overview:
   - Modify server configuration settings, add or remove servers from your server pool.
 - Users & Roles
   - Manage allowed users. Delegate access or control to different people. Discord ID is mandatory for users you want to add.
+- Troubleshooting
+  - View HoNfigurator logs, and component health reports.
 
-This project is an early release, and the website is the bare minimum for functionality. Many more features will be added.
+This project is an early release but already offers a much more convenient way of running multiple game servers. Many more features will be added.
 	
 Please submit any feature requests, or issues, via the [Issues](https://github.com/frankthetank001/HoNfigurator-Central/issues) page for this repository.
