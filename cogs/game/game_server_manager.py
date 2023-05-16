@@ -73,7 +73,6 @@ class GameServerManager:
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.tasks = {
-            'game_servers':None,
             'cli_handler':None,
             'health_checks':None,
             'autoping_listener':None,
@@ -101,15 +100,44 @@ class GameServerManager:
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         self.create_all_game_servers()
 
-        self.tasks.update({'cli_handler':asyncio.create_task(self.commands.handle_input())})
+        coro = self.commands.handle_input()
+        self.schedule_task(coro, 'cli_handler')
 
         # Start running health checks
 
         # Initialize MasterServerHandler and send requests
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.global_config)
-        self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
-        
+
+        coro = self.health_check_manager.run_health_checks()
+        self.schedule_task(coro, 'healthchecks')
+    
+    def schedule_task(self, coro, name):
+        existing_task = self.tasks.get(name)  # Get existing task if any
+
+        if existing_task is not None:
+            if not isinstance(existing_task, asyncio.Task):
+                LOGGER.error(f"Item '{name}' in tasks is not a Task object.")
+                # Choose one of the following lines, depending on your requirements:
+                # raise ValueError(f"Item '{name}' in tasks is not a Task object.")  # Option 1: raise an error
+                existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
+
+        if existing_task:
+            if not existing_task.done():
+                # Task is still running
+                LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                return existing_task  # Return existing task
+            else:
+                # If the task has finished, retrieve any possible exception to avoid 'unretrieved exception' warnings
+                exception = existing_task.exception()
+                if exception:
+                    LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+
+        # Create and register the new task
+        task = asyncio.create_task(coro)
+        self.tasks[name] = task
+        return task
+                    
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True):
         try:
             if game_server is None: return False
@@ -123,11 +151,7 @@ class GameServerManager:
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
                     return True
                 else:
-                    self.tasks.update({
-                        'game_servers': {
-                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete, disable=disable))}
-                        }
-                    })
+                    game_server.schedule_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete, disable=disable),'scheduled_shutdown')
                     await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
                     return True
@@ -214,18 +238,18 @@ class GameServerManager:
     def start_autoping_listener_task(self, port):
         LOGGER.info("Starting AutoPingListener...")
         self.auto_ping_listener = AutoPingListener(self.global_config, port)
-        self.auto_ping_listener_task = asyncio.create_task(self.auto_ping_listener.start_listener())
-        self.tasks.update({'autoping_listener':self.auto_ping_listener_task})
-        return self.auto_ping_listener_task
+        coro = self.auto_ping_listener.start_listener()
+        task = self.schedule_task(coro, 'autoping_listener')
+        return task
 
     def start_game_server_listener_task(self,*args):
-        task = asyncio.create_task(self.start_game_server_listener(*args))
-        self.tasks.update({'gameserver_listener':task})
+        coro = self.start_game_server_listener(*args)
+        task = self.schedule_task(coro, 'gameserver_listener')
         return task
 
     def start_api_server(self):
-        task = asyncio.create_task(start_api_server(self.global_config, self.game_servers, self.tasks, self.event_bus, port=self.global_config['hon_data']['svr_api_port']))
-        self.tasks.update({'api_server':task})
+        coro = start_api_server(self.global_config, self.game_servers, self.tasks, self.event_bus, port=self.global_config['hon_data']['svr_api_port'])
+        task = self.schedule_task(coro, 'api_server')
         return task
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
@@ -266,8 +290,8 @@ class GameServerManager:
         MISC.save_last_working_branch()
 
     def create_handle_connections_task(self, *args):
-        task = asyncio.create_task(self.manage_upstream_connections(*args))
-        self.tasks.update({'authentication_handler':task})
+        coro = self.manage_upstream_connections(*args)
+        task = self.schedule_task(coro, 'authentication_handler')
         return task
 
     async def manage_upstream_connections(self, udp_ping_responder_port, retry=30):
@@ -679,8 +703,8 @@ class GameServerManager:
         return False
 
     def start_game_servers_task(self, *args, timeout=120):
-        task = asyncio.create_task(self.start_game_servers(*args))
-        self.tasks.update({'gameserver_startup':task})
+        coro = self.start_game_servers(*args)
+        task = self.schedule_task(coro, 'gameserver_startup')
         return task
 
     async def start_game_servers(self, game_server, timeout=120):

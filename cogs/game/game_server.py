@@ -55,11 +55,33 @@ class GameServer:
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
         self.load_gamestate_from_file(match_only=False)
         # Start the monitor_process method as a background task
-        self.tasks.update({'process_monitor':asyncio.create_task(self.monitor_process())})
+        coro = self.monitor_process()
+        self.schedule_task(coro,'process_monitor')
 
-    def schedule_task(self, coro):
+    def schedule_task(self, coro, name):
+        existing_task = self.tasks.get(name)  # Get existing task if any
+
+        if existing_task is not None:
+            if not isinstance(existing_task, asyncio.Task):
+                LOGGER.error(f"Item '{name}' in tasks is not a Task object.")
+                # Choose one of the following lines, depending on your requirements:
+                # raise ValueError(f"Item '{name}' in tasks is not a Task object.")  # Option 1: raise an error
+                existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
+
+        if existing_task:
+            if not existing_task.done():
+                # Task is still running
+                LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                return existing_task  # Return existing task
+            else:
+                # If the task has finished, retrieve any possible exception to avoid 'unretrieved exception' warnings
+                exception = existing_task.exception()
+                if exception:
+                    LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+
+        # Create and register the new task
         task = asyncio.create_task(coro)
-        self.tasks.append(task)
+        self.tasks[name] = task
         return task
 
     def cancel_tasks(self):
@@ -107,7 +129,8 @@ class GameServer:
             # Add more phases as needed
         elif key == "match_info.mode":
             if value == "botmatch" and not self.global_config['hon_data']['svr_enableBotMatch']:
-                self.tasks.update({'botmatch_shutdown':asyncio.create_task(self.manager_event_bus.emit('cmd_shutdown_server', self, force=True, delay=30))})
+                coro = self.manager_event_bus.emit('cmd_shutdown_server', self, force=True, delay=30)
+                self.schedule_task(coro,'botmatch_shutdown')
                 while self.status_received.is_set() and not self.server_closed.set():
                     await self.manager_event_bus.emit('cmd_message_server', self, f"Bot matches are disallowed on {self.global_config['hon_data']['svr_name']}. Server closing.")
                     await asyncio.sleep(5)
@@ -335,7 +358,8 @@ class GameServer:
             raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
         LOGGER.info(f"GameServer #{self.id} - Starting...")
         
-        self.tasks.update({'proxy_task':asyncio.create_task(self.start_proxy())})
+        coro = self.start_proxy()
+        self.schedule_task(coro,'proxy_task')
 
         # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
         cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
@@ -478,7 +502,8 @@ class GameServer:
             self._proc_owner = proc.username()
             LOGGER.debug(f"Found process ({self._pid}) for GameServer-{self.id}.")
             try:
-                self.tasks.update({'proxy_task':asyncio.create_task(self.start_proxy())})
+                coro = self.start_proxy()
+                self.schedule_task(coro,'start_proxy')
                 return True
             except Exception:
                 LOGGER.exception(f"{traceback.format_exc()}")
@@ -523,7 +548,6 @@ region=naeu
     async def start_proxy(self):
         if not self.config.local['params']['man_enableProxy']:
             return # proxy isn't enabled
-        
         try:
             if MISC.get_os_platform() == "win32":
                 pass

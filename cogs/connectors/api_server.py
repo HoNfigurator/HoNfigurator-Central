@@ -177,12 +177,6 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
         for task_name, task in tasks_dict.items():
             if task is None:
                 continue
-
-            # Check if task is a nested dictionary of tasks
-            if isinstance(task, dict):
-                task_summary[task_name] = task_status(task)
-                continue
-
             if task.done():
                 if task.exception() is not None:
                     task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception())}
@@ -191,7 +185,7 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
             else:
                 task_summary[task_name] = {'status': 'Running'}
         return task_summary
-
+    
     temp = {}
     temp_gameserver_tasks = {}
 
@@ -761,4 +755,4 @@ async def start_api_server(config, game_servers_dict, game_manager_tasks, event_
             LOGGER.exception(traceback.format_exc())
     # Create an asyncio task from the coroutine, and return the task
     LOGGER.info(f"[*] HoNfigurator API - Listening on 0.0.0.0:{port} (PUBLIC)")
-    return asyncio.create_task(asgi_server())
+    await asgi_server()
