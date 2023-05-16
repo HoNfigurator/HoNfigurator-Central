@@ -77,7 +77,7 @@ class SetupEnvironment:
     def get_default_hon_configuration(self):
         return {
             "hon_data": {
-                "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - Kongor\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
+                "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - CLEAN\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
                 "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/KONGOR/"),
                 "svr_masterServer": "api.kongor.online",
                 "svr_login": "",
@@ -87,7 +87,7 @@ class SetupEnvironment:
                 "svr_priority": "HIGH",
                 "svr_total": int(MISC.get_cpu_count() / 2),
                 "svr_total_per_core": 1,
-                "man_enableProxy": False,
+                "man_enableProxy": True if MISC.get_os_platform() == "win32" else False,
                 "svr_noConsole": False,
                 "svr_enableBotMatch": False,
                 "svr_max_start_at_once": 5,
