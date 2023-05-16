@@ -109,6 +109,7 @@ class GameManagerParser:
                     int 1 num_clients2      # 53
                 With Players, first 54 bytes remains as fixed values, so treat them first. Additional data is tacked on the end as the clients. See code below for parsing
         """
+
         # Parse fixed-length fields
         game_server.game_state.update({
             'status': packet[1],                                        # extract status field from packet
@@ -180,7 +181,7 @@ class GameManagerParser:
 
         strings = []
         current_index = 6
-        while current_index < len(packet):
+        while current_index < len(packet) and len(strings) < 3:
             try:
                 null_byte_index = packet[current_index:].index(b'\x00')
             except ValueError:

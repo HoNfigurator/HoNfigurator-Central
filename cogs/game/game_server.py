@@ -37,9 +37,7 @@ class GameServer:
         self._proc = None
         self._proc_owner = None
         self._proc_hook = None
-        self.proxy_running = False
-        self.stopping_proxy = False
-        self.proxy_process = None
+        self._proxy_process = None
         self.enabled = True # used to determine if the server should run
         self.delete_me = False # used to mark a server for deletion after it's been shutdown
         self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
@@ -500,7 +498,7 @@ class GameServer:
             self._proc = proc
             self._proc_hook = psutil.Process(pid=proc.pid)
             self._proc_owner = proc.username()
-            LOGGER.debug(f"Found process ({self._pid}) for GameServer-{self.id}.")
+            LOGGER.debug(f"Found process ({self._pid}) for GameServer #{self.id}.")
             try:
                 coro = self.start_proxy()
                 self.schedule_task(coro,'start_proxy')
@@ -567,9 +565,9 @@ region=naeu
 
         if not matches_existing:
             # the config file has changed.
-            if self.proxy_process:
-                if self.proxy_process.is_running(): self.proxy_process.terminate()
-                self.proxy_process = None
+            if self._proxy_process:
+                if self._proxy_process.is_running(): self._proxy_process.terminate()
+                self._proxy_process = None
 
         if exists(f"{proxy_config_path}.pid"):
             with open(f"{proxy_config_path}.pid", 'r') as proxy_pid_file:
@@ -579,23 +577,23 @@ region=naeu
                 process = psutil.Process(proxy_pid)
                 # Check if the process command line matches the one you're using to start the proxy
                 if proxy_config_path in " ".join(process.cmdline()):
-                    self.proxy_process = process
-                    LOGGER.debug(f"Proxy process found: {self.proxy_process}")
+                    self._proxy_process = process
+                    LOGGER.debug(f"Proxy process found: {self._proxy_process}")
                 else:
                     LOGGER.debug(f"Proxy pid found however the process description didn't match. Not the right PID, just a collision.")
-                    self.proxy_process = None
+                    self._proxy_process = None
             except psutil.NoSuchProcess:
                 LOGGER.debug(f"Previous proxy process with PID {proxy_pid} was not found.")
-                self.proxy_process = None
+                self._proxy_process = None
             except Exception:
                 LOGGER.error(f"An error occurred while loading the PID from the last saved value: {proxy_pid}. {traceback.format_exc()}")
-                self.proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path))
-                if self.proxy_process: LOGGER.debug("Found existing proxy PID via a proxy process with a matching description.")
+                self._proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path))
+                if self._proxy_process: LOGGER.debug("Found existing proxy PID via a proxy process with a matching description.")
 
         while self.enabled and self.config.local['params']['man_enableProxy']:
-            if not self.proxy_process:
+            if not self._proxy_process:
                 if MISC.get_os_platform() == "win32":
-                    self.proxy_process = await asyncio.create_subprocess_exec(
+                    self._proxy_process = await asyncio.create_subprocess_exec(
                         self.global_config['hon_data']['hon_install_directory'] / "proxy.exe",
                         proxy_config_path,
                         stdout=asyncio.subprocess.PIPE,
@@ -609,26 +607,24 @@ region=naeu
                 else: raise HoNCompatibilityError(f"The OS is unsupported for running honfigurator. OS: {MISC.get_os_platform()}")
 
                 with open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
-                    proxy_pid_file.write(str(self.proxy_process.pid))
+                    proxy_pid_file.write(str(self._proxy_process.pid))
                 await asyncio.sleep(0.1)
-                self.proxy_process = psutil.Process(self.proxy_process.pid)
+                self._proxy_process = psutil.Process(self._proxy_process.pid)
 
             # Monitor the process with psutil
-            while self.proxy_process and self.proxy_process.is_running() and self.enabled:
+            while self._proxy_process and self._proxy_process.is_running() and self.enabled:
                 await asyncio.sleep(1)  # Check every second
 
-            if self.enabled and not self.stopping_proxy:
+            if self.enabled:
                 LOGGER.warn(f"proxy.exe (GameServer #{self.id}) crashed. Restarting...")
-                self.proxy_process = None
+                self._proxy_process = None
 
     def stop_proxy(self):
-        self.stopping_proxy = True
-        if self.proxy_process and self.proxy_process.is_running():
+        if self._proxy_process and self._proxy_process.is_running():
             try:
-                self.proxy_process.terminate()
+                self._proxy_process.terminate()
             except psutil.NoSuchProcess: # it doesn't exist, that's fine
                 pass
-        self.stopping_proxy = False
 
     async def monitor_process(self):
         LOGGER.debug(f"GameServer #{self.id} Process monitor started")
@@ -640,7 +636,7 @@ region=naeu
                     status = 'stopped'
                 LOGGER.debug(f"GameServer #{self.id} Status: {status}")
                 if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped
-                    LOGGER.debug(f"GameServer #{self.id} is not running")
+                    LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
                     self._proc = None  # Reset the process reference
                     self._proc_hook = None  # Reset the process hook reference
                     self._pid = None
