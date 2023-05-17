@@ -55,8 +55,9 @@ class ConfigManagement():
                 'svr_proxyLocalVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
                 'svr_proxyRemoteVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id+10000 - 1,
                 'svr_voicePortStart':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
-                'man_enableProxy':self.get_global_by_key('svr_enableProxy'),
+                'man_enableProxy':self.get_global_by_key('man_enableProxy'),
                 'svr_location':self.get_global_by_key('svr_location'),
+                'svr_enableBotMatch': self.get_global_by_key('svr_enableBotMatch'),
                 'svr_broadcast':True,
                 'upd_checkForUpdates':False,
                 'sv_autosaveReplay':True,
@@ -78,7 +79,6 @@ class ConfigManagement():
                 'sv_logcollection_highping_value':100,
                 'sv_logcollection_highping_reportclientnum':1,
                 'sv_logcollection_highping_interval':120000,
-                #'host_affinity':self.id - 1
                 'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core']))
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'

@@ -19,6 +19,7 @@ from os.path import exists
 import json
 from pydantic import BaseModel
 import os
+from datetime import datetime, timedelta
 import traceback
 
 app = FastAPI()
@@ -29,6 +30,8 @@ SETUP = get_setup()
 
 roles_database = RolesDatabase()
 
+CACHE_EXPIRY = timedelta(minutes=20)  # Change to desired cache expiry time
+user_info_cache = {}
 
 app = FastAPI(
     title="HoNfigurator API Server",
@@ -50,11 +53,21 @@ def get_config_item_by_key(k):
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="https://discord.com/api/oauth2/token")
 
 async def verify_token(request: Request, token: str = Depends(oauth2_scheme)):
+    now = datetime.now()
+
+    # If the user info is in the cache and it's not expired, return it
+    if token in user_info_cache and now - user_info_cache[token]['timestamp'] < CACHE_EXPIRY:
+        return user_info_cache[token]['data']
+
     async with httpx.AsyncClient() as client:
         response = await client.get("https://discord.com/api/users/@me", headers={"Authorization": f"Bearer {token}"})
 
     if response.status_code == 200:
         user_info = response.json()
+
+        # Store the user info in the cache with the current timestamp
+        user_info_cache[token] = {'data': {"token": token, "user_info": user_info}, 'timestamp': now}
+
         return {"token": token, "user_info": user_info}
     else:
         LOGGER.warn(f"API Request from: {request.client.host} - Discord user lookup failure. Discord API Response: {response.text}")
@@ -129,17 +142,76 @@ async def get_global_config(token_and_user_info: dict = Depends(check_permission
 
 @app.post("/api/set_hon_data", description="Sets the 'hon_data' key within the global manager data dictionary")
 async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    if SETUP.validate_hon_data(hon_data):
-        global_config['hon_data'] = hon_data
-        await manager_event_bus.emit('check_for_restart_required')
+    try:
+        validation = SETUP.validate_hon_data(hon_data=hon_data)
+        if validation:
+            global_config['hon_data'] = hon_data
+            await manager_event_bus.emit('check_for_restart_required')
+    except ValueError as e:
+        return JSONResponse(status_code=501, content=str(e))
+
+@app.post("/api/set_app_data", description="Sets the 'application_data' key within the global manager data dictionary")
+async def set_app_data(app_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
+    try:
+        validation = SETUP.validate_hon_data(application_data=app_data)
+        if validation:
+            global_config['application_data'] = app_data
+            await manager_event_bus.emit('check_for_restart_required')
+    except ValueError as e:
+        return JSONResponse(status_code=501, content=str(e))
 
 class TotalServersResponse(BaseModel):
     total_servers: int
 
 @app.get("/api/get_total_servers", response_model=TotalServersResponse)
 def get_total_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-    return {"total_servers": global_config['hon_data']['svr_total']}
+    return {"total_servers": len(game_servers)}
 
+class TaskStatusResponse(BaseModel):
+    tasks_status: dict
+
+@app.get("/api/get_tasks_status", response_model=TaskStatusResponse)
+def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    def task_status(tasks_dict):
+        task_summary = {}
+        for task_name, task in tasks_dict.items():
+            if task is None:
+                continue
+            if task.done():
+                if task.exception() is not None:
+                    task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception())}
+                else:
+                    task_summary[task_name] = {'status': 'Done'}
+            else:
+                task_summary[task_name] = {'status': 'Running'}
+        return task_summary
+    
+    temp = {}
+    temp_gameserver_tasks = {}
+
+    for game_server in game_servers.values():
+        temp_gameserver_tasks[game_server.config.get_local_by_key('svr_name')] = task_status(game_server.tasks)
+
+    temp['manager'] = task_status(manager_tasks)
+    temp['game_servers'] = temp_gameserver_tasks
+
+    return {"tasks_status": temp}
+class CurrentGithubBranch(BaseModel):
+    branch: str
+@app.get("/api/get_current_github_branch", response_model=CurrentGithubBranch)
+def get_current_github_branch(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"branch":MISC.get_current_branch_name()}
+
+class AllGithubBranch(BaseModel):
+    all_branches: list
+@app.get("/api/get_all_github_branches", response_model=AllGithubBranch)
+def get_all_github_branches(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"all_branches":MISC.get_all_branch_names()}
+
+@app.post("/api/switch_github_branch/{branch}")
+def switch_github_branch(branch: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
+    result = MISC.change_branch(branch)
+    return JSONResponse(status_code=501, content=result)
 class TotalCpusResponse(BaseModel):
     total_cpus: int
 
@@ -153,6 +225,19 @@ class CpuNameResponse(BaseModel):
 @app.get("/api/get_cpu_name", response_model=CpuNameResponse)
 def get_cpu_name(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"cpu_name": MISC.get_cpu_name()}
+
+@app.get("/api/get_all_public_ports")
+def get_public_ports(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    public_game_ports = []
+    public_voice_ports = []
+    for game_server in game_servers.values():
+        public_game_ports.append(game_server.get_public_game_port())
+        public_voice_ports.append(game_server.get_public_voice_port())
+    return {
+        'autoping_listener': global_config['hon_data']['autoping_responder_port'],
+        'public_game_ports': public_game_ports,
+        'public_voice_ports': public_voice_ports
+    }
 
 class CpuUsageResponse(BaseModel):
     cpu_usage: float
@@ -200,7 +285,6 @@ def get_num_players_ingame(token_and_user_info: dict = Depends(check_permission_
         if num_clients is not None:
             num += num_clients
     return {"num_players_ingame": num}
-
 class NumMatchesIngameResponse(BaseModel):
     num_matches_ingame: int
 
@@ -331,14 +415,14 @@ def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_f
     return MISC.get_num_reserved_cpus()
 
 @app.get("/api/get_honfigurator_log_entries/{num}", description="Returns the specified number of log entries from the honfigurator log file.")
-def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
+def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     # return the contents of the current log file
     with open(HOME_PATH / "logs" / "server.log", 'r') as f:
         file_content = f.readlines()
     return file_content[-num:][::-1]
 
 @app.get("/api/get_honfigurator_log_file", description="Returns the HoNfigurator log file completely, for download.")
-def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
+def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     with open(HOME_PATH / "logs" / "server.log", "r") as file:
         log_file_content = file.readlines()
     return log_file_content
@@ -346,7 +430,7 @@ def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permissi
 # Define the /api/get_instances_status endpoint with OpenAPI documentation
 @app.get("/api/get_instances_status", summary="Get instances status")
 #def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="control"))):
+def get_instances(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     """
     Get the status of all game server instances.
 
@@ -355,7 +439,7 @@ def get_instances(token_and_user_info: dict = Depends(check_permission_factory(r
     """
     temp = {}
     for game_server in game_servers.values():
-        temp[game_server.config.get_local_by_key('svr_name')] = game_server.get_pretty_status()
+        temp[game_server.config.get_local_by_key('svr_name')] = game_server.get_pretty_status_for_webui()
     return temp
 
 """
@@ -546,19 +630,19 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    await manager_event_bus.emit('balance_game_server_count',add_servers=num)
+    await manager_event_bus.emit('balance_game_server_count',to_add=num)
 
 @app.post("/api/add_all_servers", description="Add total number of possible servers.")
 async def add_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    await manager_event_bus.emit('balance_game_server_count',add_servers="all")
+    await manager_event_bus.emit('balance_game_server_count',to_add="all")
 
 @app.post("/api/remove_servers/{num}", description="Remove X number of game servers. Dynamically removes servers idle servers.")
 async def remove_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    await manager_event_bus.emit('balance_game_server_count',remove_servers=num)
+    await manager_event_bus.emit('balance_game_server_count',to_remove=num)
 
 @app.post("/api/remove_all_servers", description="Remove all idle servers. Marks occupied servers as 'To be removed'.")
 async def remove_all_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    await manager_event_bus.emit('balance_game_server_count',remove_servers="all")
+    await manager_event_bus.emit('balance_game_server_count',to_remove="all")
 
 """ End API Calls """
 
@@ -580,8 +664,8 @@ def create_self_signed_certificate(ssl_certfile, ssl_keyfile):
         .issuer_name(name)
         .public_key(key.public_key())
         .serial_number(x509.random_serial_number())
-        .not_valid_before(datetime.datetime.utcnow())
-        .not_valid_after(datetime.datetime.utcnow() + datetime.timedelta(days=365))
+        .not_valid_before(datetime.utcnow())
+        .not_valid_after(datetime.utcnow() + timedelta(days=365))
         .add_extension(
             x509.SubjectAlternativeName([x509.DNSName("localhost")]),
             critical=False,
@@ -608,23 +692,24 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
             cert_pem = f.read()
 
         cert = x509.load_pem_x509_certificate(cert_pem, default_backend())
-        now = datetime.datetime.utcnow()
+        now = datetime.utcnow()
         time_remaining = cert.not_valid_after - now
 
-        if time_remaining < datetime.timedelta(days=days_before_expiration):
+        if time_remaining < timedelta(days=days_before_expiration):
             asyncio.run(create_self_signed_certificate(ssl_certfile, ssl_keyfile))
-            print("Self-signed certificate has been renewed.")
+            LOGGER.info("Self-signed certificate has been renewed.")
         else:
-            print("Self-signed certificate is still valid. No renewal needed.")
+            LOGGER.debug("Self-signed certificate is still valid. No renewal needed.")
     except Exception as e:
-        print(f"Error checking certificate expiration: {e}")
+        LOGGER.error(f"Error checking certificate expiration: {e}")
 
 
-async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0", port=5000):
-    global global_config, game_servers, manager_event_bus
+async def start_api_server(config, game_servers_dict, game_manager_tasks, event_bus, host="0.0.0.0", port=5000):
+    global global_config, game_servers, manager_event_bus, manager_tasks
     global_config = config
     game_servers = game_servers_dict
     manager_event_bus = event_bus
+    manager_tasks = game_manager_tasks
 
     async def asgi_server():
         try:
@@ -669,4 +754,5 @@ async def start_api_server(config, game_servers_dict, event_bus, host="0.0.0.0",
         except Exception:
             LOGGER.exception(traceback.format_exc())
     # Create an asyncio task from the coroutine, and return the task
-    return asyncio.create_task(asgi_server())
+    LOGGER.info(f"[*] HoNfigurator API - Listening on 0.0.0.0:{port} (PUBLIC)")
+    await asgi_server()

@@ -4,19 +4,44 @@ import os
 from os.path import exists
 from pathlib import Path
 import sys
+import traceback
+from cpuinfo import get_cpu_info
 import urllib
-from cogs.misc.logger import get_logger
-from cogs.misc.exceptions import UnexpectedVersionError
+from cogs.misc.logger import get_logger, get_home
+from cogs.misc.exceptions import HoNUnexpectedVersionError
 
 LOGGER = get_logger()
+HOME_PATH = get_home()
 
 class Misc:
     def __init__(self):
         self.cpu_count = psutil.cpu_count(logical=True)
-        self.cpu_name = platform.processor()
+        self.cpu_name = get_cpu_info().get('brand_raw', 'Unknown CPU')
         self.total_ram = psutil.virtual_memory().total
         self.os_platform = sys.platform
         self.total_allowed_servers = None
+        self.github_branch_all = self.get_all_branch_names()
+        self.github_branch = self.get_current_branch_name()
+    def build_commandline_args(self,config_local, config_global):
+        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
+        if self.get_os_platform() == "win32":
+            if config_global['hon_data']['svr_noConsole']:
+                return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconsole","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
+            else:
+                return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
+        elif self.get_os_platform() == "linux":
+            return [
+                config_local['config']['file_path'],
+                '-dedicated',
+                '-noconfig',
+                '-mod game;KONGOR',
+                '-execute',
+                f'"{params}"',
+                '-masterserver',
+                config_global['hon_data']['svr_masterServer'],
+                '-register',
+                f'127.0.0.1:{config_global["hon_data"]["svr_managerPort"]}'
+            ]
     def parse_linux_procs(proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():
@@ -33,25 +58,37 @@ class Misc:
                                     if int(item.split(" ")[-1]) == slave_id:
                                         return [ proc ]
         return []
-    def get_proc(proc_name, slave_id = ''):
+    def get_proc(proc_name, slave_id=''):
         if sys.platform == "linux":
             return Misc.parse_linux_procs(proc_name, slave_id)
         procs = []
         for proc in psutil.process_iter():
-            if proc_name == proc.name():
-                if slave_id == '':
-                    procs.append(proc)
-                else:
-                    cmd_line = proc.cmdline()
-                    if len(cmd_line) < 5:
-                        continue
-                    for i in range(len(cmd_line)):
-                        if cmd_line[i] == "-execute":
-                            for item in cmd_line[i+1].split(";"):
-                                if "svr_slave" in item:
-                                    if int(item.split(" ")[-1]) == slave_id:
-                                        procs.append(proc)
+            try:
+                if proc_name == proc.name():
+                    if slave_id == '':
+                        procs.append(proc)
+                    else:
+                        cmd_line = proc.cmdline()
+                        if len(cmd_line) < 5:
+                            continue
+                        for i in range(len(cmd_line)):
+                            if cmd_line[i] == "-execute":
+                                for item in cmd_line[i+1].split(";"):
+                                    if "svr_slave" in item:
+                                        if int(item.split(" ")[-1]) == slave_id:
+                                            procs.append(proc)
+            except psutil.NoSuchProcess:
+                pass
         return procs
+    def get_process_by_port(self,port):
+        for conn in psutil.net_connections(kind='inet'):
+            if conn.status == 'LISTEN' and conn.laddr.port == port:
+                try:
+                    process = psutil.Process(conn.pid)
+                    return process
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
+        return None
     def check_port(port):
         command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)
         result = command.stdout.read()
@@ -190,9 +227,82 @@ class Misc:
                 version = ''.join(part.decode('utf-8') for part in split_bytes if part)
 
             if not validate_version_format(version):
-                raise UnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
+                raise HoNUnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
             else:
                 return version
         elif self.get_os_platform() == "linux":
             with open(Path(hon_exe).parent / "version.txt", 'r') as f:
                 return f.readline().rstrip('\n')
+    def update_github_repository(self):
+        try:
+            # Change the current working directory to the HOME_PATH
+            os.chdir(HOME_PATH)
+
+            # Run the git pull command
+            LOGGER.debug("Checking for upstream HoNfigurator updates.")
+            result = subprocess.run(["git", "pull"], text=True, capture_output=True)
+
+            # Log any errors encountered
+            if result.stderr and result.returncode != 0:
+                LOGGER.error(f"Error encountered while updating: {result.stderr}")
+
+            # Check if the update was successful
+            if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
+                LOGGER.info("Update successful. Relaunching the code...")
+
+                # Relaunch the code
+                os.execv(sys.executable, [sys.executable] + sys.argv)
+            else:
+                LOGGER.debug("HoNfigurator already up to date. No need to relaunch.")
+        except subprocess.CalledProcessError as e:
+            LOGGER.error(f"Error updating the code: {e}")
+    
+    def save_last_working_branch(self):
+        with open(HOME_PATH / "logs" / ".last_working_branch", "w") as f:
+            f.write(self.get_current_branch_name())
+
+    def get_current_branch_name(self):
+        try:
+            os.chdir(HOME_PATH)
+            branch_name = subprocess.check_output(
+                ['git', 'rev-parse', '--abbrev-ref', 'HEAD'],
+                universal_newlines=True
+            ).strip()
+            return branch_name
+        except subprocess.CalledProcessError as e:
+            LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
+            return None
+
+    def get_all_branch_names(self):
+        try:
+            os.chdir(HOME_PATH)
+            branch_names = subprocess.check_output(
+                ['git', 'branch', '--list'],
+                universal_newlines=True
+            ).strip()
+            return [branch.strip('* ') for branch in branch_names.split('\n')]
+        except subprocess.CalledProcessError as e:
+            LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
+            return None
+
+    def change_branch(self, target_branch):
+        try:
+            os.chdir(HOME_PATH)
+            current_branch = self.get_current_branch_name()
+
+            if current_branch == target_branch:
+                LOGGER.info(f"Already on target branch '{target_branch}'")
+                return "Already on target branch"
+
+            result = subprocess.run(['git', 'checkout', target_branch], text=True, capture_output=True)
+
+            # Log any errors encountered
+            if result.stderr and result.returncode != 0:
+                LOGGER.error(f"Error encountered while switching branches: {result.stderr}")
+                return result.stderr
+
+            LOGGER.info(f"Switched to branch '{target_branch}'")
+            LOGGER.info("Relaunching code into new branch.")
+            os.execv(sys.executable, [sys.executable] + sys.argv)
+        except subprocess.CalledProcessError as e:
+            LOGGER.error(f"Error: Could not switch to branch '{target_branch}', make sure it exists: {e.output}")

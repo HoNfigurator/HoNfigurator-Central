@@ -1,20 +1,23 @@
 # exceptions.py
 
-class ServerConnectionError(Exception):
+class HoNServerConnectionError(Exception):
     """Raised when there's an error connecting to the server."""
 
 
-class AuthenticationError(Exception):
+class HoNAuthenticationError(Exception):
     """Raised when there's an error during authentication."""
 
-class ConfigError(Exception):
+class HoNConfigError(Exception):
     """Raised when there's an error with the user's configuration file."""
 
-class UnexpectedVersionError(Exception):
+class HoNUnexpectedVersionError(Exception):
     """Raised when there is an issue with the hon files"""
 
 class HoNPatchError(Exception):
     """Raised when there is an issue with patching"""
 
-class InvalidServerBinaries(Exception):
+class HoNInvalidServerBinaries(Exception):
+    """There is an issue with the local server binaries. They are probably not from wasserver."""
+
+class HoNCompatibilityError(Exception):
     """There is an issue with the local server binaries. They are probably not from wasserver."""

@@ -146,6 +146,7 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
         game_server = game_server_manager.get_game_server_by_port(game_server_port)
         if game_server is None:
             game_server = game_server_manager.create_game_server(game_server_port)
+            await game_server.get_running_server()
 
         # register the client connection in the game server manager
         await game_server_manager.add_client_connection(client_connection,game_server_port)

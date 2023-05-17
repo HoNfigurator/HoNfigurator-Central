@@ -8,7 +8,7 @@ import subprocess
 import sys
 import time
 import inspect
-from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, UnexpectedVersionError, HoNPatchError, InvalidServerBinaries
+from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNUnexpectedVersionError, HoNPatchError, HoNInvalidServerBinaries
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
@@ -43,6 +43,7 @@ WAKE_BYTES = b'!'
 # Define a class for managing game servers
 class GameServerManager:
     def __init__(self, global_config, setup):
+        self.update()
         """
         Initializes a new GameServerManager object.
 
@@ -72,13 +73,12 @@ class GameServerManager:
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.tasks = {
-            'game_servers':'',
-            'cli_handler':'',
-            'health_checks':'',
-            'autoping_listener':'',
-            'gameserver_listener':'',
-            'authentication_handler':'',
-            'gameserver_startup':''
+            'cli_handler':None,
+            'health_checks':None,
+            'autoping_listener':None,
+            'gameserver_listener':None,
+            'authentication_handler':None,
+            'gameserver_startup':None
         }
         # initialise the config validator in case we need it
         self.setup = setup
@@ -100,40 +100,64 @@ class GameServerManager:
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         self.create_all_game_servers()
 
-        self.tasks.update({'cli_handler':asyncio.create_task(self.commands.handle_input())})
+        coro = self.commands.handle_input()
+        self.schedule_task(coro, 'cli_handler')
 
         # Start running health checks
 
         # Initialize MasterServerHandler and send requests
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.global_config)
-        self.tasks.update({'healthchecks':asyncio.create_task(self.health_check_manager.run_health_checks())})
 
-    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False):
+        coro = self.health_check_manager.run_health_checks()
+        self.schedule_task(coro, 'healthchecks')
+    
+    def schedule_task(self, coro, name):
+        existing_task = self.tasks.get(name)  # Get existing task if any
+
+        if existing_task is not None:
+            if not isinstance(existing_task, asyncio.Task):
+                LOGGER.error(f"Item '{name}' in tasks is not a Task object.")
+                # Choose one of the following lines, depending on your requirements:
+                # raise ValueError(f"Item '{name}' in tasks is not a Task object.")  # Option 1: raise an error
+                existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
+
+        if existing_task:
+            if not existing_task.done():
+                # Task is still running
+                LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                return existing_task  # Return existing task
+            else:
+                # If the task has finished, retrieve any possible exception to avoid 'unretrieved exception' warnings
+                exception = existing_task.exception()
+                if exception:
+                    LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+
+        # Create and register the new task
+        task = asyncio.create_task(coro)
+        self.tasks[name] = task
+        return task
+                    
+    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True):
         try:
             if game_server is None: return False
             client_connection = self.client_connections.get(game_server.port, None)
             await asyncio.sleep(delay)
             if client_connection:
                 if force:
-                    #await game_server.stop_server_network(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), nice=False)
                     client_connection.writer.write(COMMAND_LEN_BYTES)
                     client_connection.writer.write(SHUTDOWN_BYTES)
                     await client_connection.writer.drain()
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
                     return True
                 else:
-                    self.tasks.update({
-                        'game_servers': {
-                            game_server.port : { 'scheduled_shutdown' : asyncio.create_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete))}
-                        }
-                    })
+                    game_server.schedule_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete, disable=disable),'scheduled_shutdown')
                     await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
                     return True
             else:
                 # this server hasn't connected to the manager yet
-                await game_server.stop_server_exe()
+                await game_server.stop_server_exe(disable=disable)
                 game_server.reset_game_state()
                 return True
         except Exception as e:
@@ -181,17 +205,14 @@ class GameServerManager:
             await client_connection.writer.drain()
             LOGGER.info(f"Command - Message command sent to GameServer #{game_server.id}.")
         except Exception:
-            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")         
+        
     async def check_upstream_patch(self):
         if self.patching:
             LOGGER.info("Server patching is ongoing.. Please wait.")
             return
 
-        try:
-            local_svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
-        except UnexpectedVersionError:
-            raise InvalidServerBinaries("The version check on the hon_x64.exe failed, because it was not a supported server binary. Please ensure you have correctly followed the guide to set up the server.")
+        local_svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
 
         try:
             patch_information = await self.master_server_handler.compare_upstream_patch()
@@ -214,21 +235,21 @@ class GameServerManager:
         except Exception:
             LOGGER.error(f"{traceback.format_exc()}")
 
-    async def start_autoping_listener_task(self, port):
+    def start_autoping_listener_task(self, port):
         LOGGER.info("Starting AutoPingListener...")
         self.auto_ping_listener = AutoPingListener(self.global_config, port)
-        self.auto_ping_listener_task = asyncio.create_task(self.auto_ping_listener.start_listener())
-        self.tasks.update({'autoping_listener':self.auto_ping_listener_task})
-        return self.auto_ping_listener_task
-
-    def start_game_server_listener_task(self,*args):
-        task = asyncio.create_task(self.start_game_server_listener(*args))
-        self.tasks.update({'gameserver_listener':task})
+        coro = self.auto_ping_listener.start_listener()
+        task = self.schedule_task(coro, 'autoping_listener')
         return task
 
-    async def start_api_server(self):
-        task = await start_api_server(self.global_config, self.game_servers, self.event_bus, port=self.global_config['hon_data']['svr_api_port'])
-        self.tasks.update({'api_server':task})
+    def start_game_server_listener_task(self,*args):
+        coro = self.start_game_server_listener(*args)
+        task = self.schedule_task(coro, 'gameserver_listener')
+        return task
+
+    def start_api_server(self):
+        coro = start_api_server(self.global_config, self.game_servers, self.tasks, self.event_bus, port=self.global_config['hon_data']['svr_api_port'])
+        task = self.schedule_task(coro, 'api_server')
         return task
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
@@ -265,27 +286,12 @@ class GameServerManager:
         LOGGER.info("Server stopped.")
 
     def update(self):
-        try:
-            # Change the current working directory to the HOME_PATH
-            os.chdir(HOME_PATH)
-
-            # Run the git pull command
-            result = subprocess.run(["git", "pull"], check=True, text=True, capture_output=True)
-
-            # Check if the update was successful
-            if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
-                LOGGER.info("Update successful. Relaunching the code...")
-
-                # Relaunch the code
-                os.execv(sys.executable, [sys.executable] + sys.argv)
-            else:
-                LOGGER.info("Already up to date. No need to relaunch.")
-        except subprocess.CalledProcessError as e:
-            LOGGER.error(f"Error updating the code: {e}")
+        MISC.update_github_repository()
+        MISC.save_last_working_branch()
 
     def create_handle_connections_task(self, *args):
-        task = asyncio.create_task(self.manage_upstream_connections(*args))
-        self.tasks.update({'authentication_handler':task})
+        coro = self.manage_upstream_connections(*args)
+        task = self.schedule_task(coro, 'authentication_handler')
         return task
 
     async def manage_upstream_connections(self, udp_ping_responder_port, retry=30):
@@ -310,7 +316,10 @@ class GameServerManager:
                 # Connect to the chat server and authenticate
                 await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
 
-            except (AuthenticationError, ConnectionResetError) as e:
+            except (HoNAuthenticationError, ConnectionResetError ) as e:
+                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
+                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
+            except Exception:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
 
@@ -325,12 +334,12 @@ class GameServerManager:
             dict: A dictionary containing the parsed response from the master server.
 
         Raises:
-            AuthenticationError: If the authentication fails.
+            HoNAuthenticationError: If the authentication fails.
         """
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
-            LOGGER.error("Authentication to MasterServer failed.")
-            raise AuthenticationError(f"[{mserver_auth_response[1]}] Authentication error")
+            LOGGER.error(f"[{mserver_auth_response[1]}] Authentication to MasterServer failed. {mserver_auth_response[0]}")
+            raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error. {mserver_auth_response[0]}")
         LOGGER.info("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
@@ -359,7 +368,7 @@ class GameServerManager:
         chat_auth_response = await chat_server_handler.connect()
 
         if not chat_auth_response:
-            raise AuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
+            raise HoNAuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
 
         LOGGER.info("Authenticated to ChatServer.")
 
@@ -406,7 +415,7 @@ class GameServerManager:
         Returns:
             int or None: the next available port, or None if no ports are available
         """
-        starting_game_port = self.global_config['hon_data']['svr_starting_gamePort'] + 1
+        starting_game_port = self.global_config['hon_data']['svr_starting_gamePort']
         total_allowed_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
 
         for i in range(total_allowed_servers):
@@ -417,7 +426,7 @@ class GameServerManager:
 
         return None
 
-    async def balance_game_server_count(self, add_servers=0, remove_servers=0):
+    async def balance_game_server_count(self, to_add=0, to_remove=0):
         """
         Ensures that the maximum number of game servers are running by creating new game servers
         and removing existing game servers as needed.
@@ -426,25 +435,26 @@ class GameServerManager:
             None
         """
         max_servers = self.global_config['hon_data']['svr_total']
-        if add_servers == "all":
+        if to_add == "all":
             max_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
-        elif add_servers > 0:
-            max_servers += add_servers
+        elif to_add > 0:
+            max_servers += to_add
 
-        if remove_servers == "all":
+        if to_remove == "all":
             max_servers = 0
-        elif remove_servers > 0:
-            max_servers -= remove_servers
+        elif to_remove > 0:
+            max_servers -= to_remove
 
         if max_servers < 0: max_servers = 0
         self.global_config['hon_data']['svr_total'] = max_servers
 
         self.setup.validate_hon_data(self.global_config['hon_data'])
 
-        running_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('match_started') != 1]
-        num_running_servers = len(running_servers)
-        num_servers_to_remove = max(num_running_servers - max_servers, 0)
-        num_servers_to_create = max(max_servers - num_running_servers, 0)
+        idle_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') != 3]
+        occupied_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') == 3]
+        total_num_servers = len(occupied_servers) + len(idle_servers)
+        num_servers_to_remove = max(total_num_servers - max_servers, 0)
+        num_servers_to_create = max(max_servers - total_num_servers, 0)
 
         if num_servers_to_create > 0:
             for i in range(num_servers_to_create):
@@ -456,19 +466,31 @@ class GameServerManager:
                     LOGGER.info(f"Game server created at game_port: {game_port}")
                 else:
                     LOGGER.warn("No available ports for creating a new game server.")
-
-        if num_servers_to_remove > 0:
+        
+        async def remove_servers(servers, server_type):
             servers_removed = 0
-            for game_server in running_servers:
-                if await self.cmd_shutdown_server(game_server):
-                    del self.game_servers[game_server.port]
+            servers_to_remove = []
+            for game_server in servers:
+                await self.cmd_shutdown_server(game_server, delete=True)
+                if not game_server.delete_me:
+                    servers_to_remove.append(game_server.port)
                     servers_removed += 1
                     if servers_removed >= num_servers_to_remove:
                         break
+            for port in servers_to_remove:
+                if port in self.game_servers:
+                    del self.game_servers[port]
+            
+            LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {max_servers} game servers are now running.")
+            return servers_removed
 
-            LOGGER.info(f"Removed {servers_removed} game servers. {max_servers} game servers are now running.")
-        elif num_servers_to_remove < 0:
-            LOGGER.warn("Number of running game servers is greater than the maximum number of game servers.")
+        if num_servers_to_remove > 0:
+            removed_idle = await remove_servers(idle_servers, 'idle')
+            num_servers_to_remove -= removed_idle
+            if num_servers_to_remove > 0:
+                removed_occupied = await remove_servers(occupied_servers, 'occupied')
+            elif num_servers_to_remove < 0:
+                LOGGER.warn("Number of running game servers is greater than the maximum number of game servers.")
 
 
     async def create_dynamic_game_server(self):
@@ -497,7 +519,8 @@ class GameServerManager:
     async def check_for_restart_required(self):
         for game_server in self.game_servers.values():
             if game_server.params_are_different():
-                await self.cmd_shutdown_server(game_server)
+                await self.cmd_shutdown_server(game_server,disable=False)
+                await asyncio.sleep(0.1)
                 game_server.enable_server()
 
     async def remove_dynamic_game_server(self):
@@ -607,7 +630,10 @@ class GameServerManager:
     async def handle_replay_request(self, match_id, extension, account_id):
         replay_file_name = f"M{match_id}.{extension}"
         replay_file_path = (Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name)
+        replay_file_path_longterm = (Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
         file_exists = Path.exists(replay_file_path)
+        if not file_exists and self.global_config['application_data']['longterm_storage']['active']:
+            file_exists = Path.exists(replay_file_path_longterm)
 
         LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
 
@@ -664,6 +690,7 @@ class GameServerManager:
         """
         for key, value in self.client_connections.items():
             if value == client_connection:
+                LOGGER.debug(f"GameServer #{client_connection.id} removing connection.")
                 del self.client_connections[key]
                 game_server = self.game_servers.get(key, None)
                 #   This is in case game server doesn't exist intentionally (maybe config changed)
@@ -676,8 +703,8 @@ class GameServerManager:
         return False
 
     def start_game_servers_task(self, *args, timeout=120):
-        task = asyncio.create_task(self.start_game_servers(*args))
-        self.tasks.update({'gameserver_startup':task})
+        coro = self.start_game_servers(*args)
+        task = self.schedule_task(coro, 'gameserver_startup')
         return task
 
     async def start_game_servers(self, game_server, timeout=120):
@@ -713,7 +740,7 @@ class GameServerManager:
             async with self.server_start_semaphore:
                 started = await game_server.start_server(timeout=timeout)
                 if not started:
-                    LOGGER.error(f"GameServer #{game_server.id} with port {game_server.port} failed to start.")
+                    LOGGER.error(f"GameServer #{game_server.id} failed to start.")
                     await self.cmd_shutdown_server(game_server)
 
         if game_server == "all":
@@ -723,7 +750,7 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 already_running = await game_server.get_running_server()
                 if already_running:
-                    LOGGER.info(f"GameServer #{game_server.id} with port {game_server.port} already running.")
+                    LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
                 else:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
             await asyncio.gather(*start_tasks, *monitor_tasks)

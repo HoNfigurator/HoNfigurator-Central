@@ -1,14 +1,34 @@
 #!/usr/bin/env python3
 import traceback, sys, os
+import time
+from os.path import isfile
 from pathlib import Path
+
+MISC = None
+HOME_PATH = None
 
 def show_exception_and_exit(exc_type, exc_value, tb):
     """
         Exception hook to catch any errors and prevent the window from closing
     """
     traceback.print_exception(exc_type, exc_value, tb)
+    if MISC and HOME_PATH:
+        if isfile(HOME_PATH / "logs" / ".last_working_branch"):
+            with open(HOME_PATH / "logs" / ".last_working_branch", 'r') as f:
+                last_working_branch = f.read()
+            if MISC.get_current_branch_name() != last_working_branch:
+                LOGGER.warning(f"Reverting back to last known working branch ({last_working_branch}).")
+                MISC.change_branch(last_working_branch)
+            else:
+                formatted_exception = "".join(traceback.format_exception(exc_type, exc_value, tb))
+                while True:
+                    LOGGER.warning(f"Attempting to update current repository to a newer version. This is because of the following error: {formatted_exception}")
+                    # LOGGER.warn("If this has happened without warning, then @FrankTheGodDamnMotherFuckenTank#8426 has probably released a bad update and it will be reverted automatically shortly. Standby.")
+                    MISC.update_github_repository()
+                    time.sleep(30)
     raw_input = input(f"Due to the above error, HoNfigurator has failed to launch.")
     sys.exit()
+
 sys.excepthook = show_exception_and_exit
 
 HOME_PATH = Path(os.path.dirname(os.path.abspath(__file__)))
@@ -36,7 +56,7 @@ setup = SetupEnvironment(CONFIG_FILE)
 set_setup(setup)
 
 from cogs.handlers.events import stop_event
-from cogs.misc.exceptions import ServerConnectionError, AuthenticationError, ConfigError
+from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
 
@@ -49,7 +69,6 @@ def parse_arguments():
     return parser.parse_args()
 
 async def main():
-
     if sys.platform == "linux":
         if os.getuid() != 0:
             print("---- IMPORTANT ----")
@@ -63,7 +82,11 @@ async def main():
         global_config = setup.get_final_configuration()
     else:
         LOGGER.exception(f"{traceback.format_exc()}")
-        raise ConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
+        raise HoNConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
+    # check for other HoNfigurator instances.
+    check_existing_proc = MISC.get_process_by_port(global_config['hon_data']['svr_managerPort'])
+    if check_existing_proc:
+        check_existing_proc.terminate()
 
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
@@ -72,7 +95,12 @@ async def main():
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
-    udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
+
+    # The autoping responder port is set to be 1 less than the public game port. This is to keep ports grouped together for convenience.
+    if global_config['hon_data']['man_enableProxy']: udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1 + 10000
+    else: udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
+
+    global_config['hon_data']['autoping_responder_port'] = udp_ping_responder_port
 
     # instantiate the manager
     game_server_manager = GameServerManager(global_config, setup)
@@ -84,12 +112,7 @@ async def main():
 
     # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
     try:
-        try:
-            auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
-        except AuthenticationError as e:
-            LOGGER.exception(f"{traceback.format_exc()}")
-        except ServerConnectionError as e:
-            LOGGER.exception(f"{traceback.format_exc()}")
+        auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
         api_task = game_server_manager.start_api_server()
         game_server_listener_task = game_server_manager.start_game_server_listener_task(host, game_server_to_mgr_port)
         auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
@@ -97,10 +120,8 @@ async def main():
         start_task = game_server_manager.start_game_servers_task("all")
 
         stop_task = asyncio.create_task(stop_event.wait())
-        LOGGER.info("Received stop task")
-
         done, pending = await asyncio.wait(
-            [auth_task, api_task, game_server_listener_task, auto_ping_listener_task, start_task, stop_task]
+            [auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task, stop_task]
         )
         for task in pending:
             LOGGER.warning(f"Task: {task} needs to be shut down by force..")
