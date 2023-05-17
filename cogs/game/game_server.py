@@ -501,7 +501,7 @@ class GameServer:
             LOGGER.debug(f"Found process ({self._pid}) for GameServer #{self.id}.")
             try:
                 coro = self.start_proxy()
-                self.schedule_task(coro,'start_proxy')
+                self.schedule_task(coro,'proxy_task')
                 return True
             except Exception:
                 LOGGER.exception(f"{traceback.format_exc()}")
