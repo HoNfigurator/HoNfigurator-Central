@@ -179,9 +179,9 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
                 continue
             if task.done():
                 if task.exception() is not None:
-                    task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception())}
+                    task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception()), 'end_time': task.end_time}
                 else:
-                    task_summary[task_name] = {'status': 'Done'}
+                    task_summary[task_name] = {'status': 'Done', 'end_time': task.end_time}
             else:
                 task_summary[task_name] = {'status': 'Running'}
         return task_summary

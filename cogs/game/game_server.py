@@ -8,11 +8,11 @@ import json
 import math
 import sys
 import os
+from datetime import datetime, timedelta
 from os.path import exists
-import datetime
 from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
 from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
-from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries
+from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 
@@ -79,6 +79,7 @@ class GameServer:
 
         # Create and register the new task
         task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
 
@@ -202,7 +203,7 @@ class GameServer:
             self.game_state._state['skipped_frames_detailed'][time] = frames
 
             # Remove entries older than one day
-            one_day_ago = time - datetime.timedelta(days=1).total_seconds()
+            one_day_ago = time - timedelta(days=1).total_seconds()
             self.game_state._state['skipped_frames_detailed'] = {key: value for key, value in self.game_state._state['skipped_frames_detailed'].items() if key >= one_day_ago}
 
     def get_pretty_status(self):
@@ -353,7 +354,8 @@ class GameServer:
         free_mem = psutil.virtual_memory().available
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
         if free_mem < 1000000000:
-            raise Exception(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
+            LOGGER.error((f"GameServer #{self.id} - cannot start as there is not enough free RAM"))
+            raise HoNServerError(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
         LOGGER.info(f"GameServer #{self.id} - Starting...")
         
         coro = self.start_proxy()

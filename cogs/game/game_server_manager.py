@@ -6,9 +6,9 @@ import hashlib
 import os.path
 import subprocess
 import sys
-import time
+from datetime import datetime, timedelta
 import inspect
-from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNUnexpectedVersionError, HoNPatchError, HoNInvalidServerBinaries
+from cogs.misc.exceptions import HoNAuthenticationError, HoNServerError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
@@ -78,8 +78,10 @@ class GameServerManager:
             'autoping_listener':None,
             'gameserver_listener':None,
             'authentication_handler':None,
-            'gameserver_startup':None
+            'gameserver_startup':None,
+            'task_cleanup': None
         }
+        self.schedule_task(self.cleanup_tasks_every_30_minutes(), 'task_cleanup')
         # initialise the config validator in case we need it
         self.setup = setup
 
@@ -112,7 +114,28 @@ class GameServerManager:
         coro = self.health_check_manager.run_health_checks()
         self.schedule_task(coro, 'healthchecks')
     
-    def schedule_task(self, coro, name):
+    def cleanup_tasks(self, tasks_dict, current_time):
+        for task_name, task in list(tasks_dict.items()):  # Use list() to avoid "dictionary changed size during iteration" error
+            if task is None:
+                return
+            
+            if not isinstance(task, asyncio.Task):
+                LOGGER.error(f"Item '{task_name}' in tasks is not a Task object.")
+                return
+
+            if task.done() and task.exception() is None and task.end_time + timedelta(minutes=30) < current_time:
+                del tasks_dict[task_name]
+                
+    async def cleanup_tasks_every_30_minutes(self):
+        while True:
+            current_time = datetime.now()
+            # Iterate over all game servers and the manager
+            for game_server in self.game_servers.values():
+                self.cleanup_tasks(game_server.tasks, current_time)
+            self.cleanup_tasks(self.tasks, current_time)
+            await asyncio.sleep(30 * 60)  # Sleep for 30 minutes
+    
+    def schedule_task(self, coro, name, override = False):
         existing_task = self.tasks.get(name)  # Get existing task if any
 
         if existing_task is not None:
@@ -123,7 +146,7 @@ class GameServerManager:
                 existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
 
         if existing_task:
-            if not existing_task.done():
+            if not existing_task.done() and not override:
                 # Task is still running
                 LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
                 return existing_task  # Return existing task
@@ -135,6 +158,7 @@ class GameServerManager:
 
         # Create and register the new task
         task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
                     
@@ -319,7 +343,7 @@ class GameServerManager:
             except (HoNAuthenticationError, ConnectionResetError ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
-            except Exception:
+            except Exception as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
 
@@ -462,7 +486,8 @@ class GameServerManager:
 
                 if game_port is not None:
                     game_server = self.create_game_server(game_port)
-                    asyncio.create_task(self.start_game_servers(game_server))
+                    coro = self.start_game_servers(game_server)
+                    self.schedule_task(coro, 'gameserver_startup', override = True)
                     LOGGER.info(f"Game server created at game_port: {game_port}")
                 else:
                     LOGGER.warn("No available ports for creating a new game server.")
@@ -511,7 +536,8 @@ class GameServerManager:
 
             if game_port is not None:
                 game_server = self.create_game_server(game_port)
-                asyncio.create_task(self.start_game_servers(game_server))
+                coro = self.start_game_servers(game_server)
+                self.schedule_task(coro, 'gameserver_startup', override = True)
                 LOGGER.info(f"Game server created at game_port: {game_port}")
             else:
                 LOGGER.warn("No available ports for creating a new game server.")
@@ -704,7 +730,7 @@ class GameServerManager:
 
     def start_game_servers_task(self, *args, timeout=120):
         coro = self.start_game_servers(*args)
-        task = self.schedule_task(coro, 'gameserver_startup')
+        task = self.schedule_task(coro, 'gameserver_startup', override = True)
         return task
 
     async def start_game_servers(self, game_server, timeout=120):
@@ -738,14 +764,22 @@ class GameServerManager:
         async def start_game_server_with_semaphore(game_server, timeout):
             game_server.game_state.update({'status':GameStatus.QUEUED.value})
             async with self.server_start_semaphore:
-                started = await game_server.start_server(timeout=timeout)
-                if not started:
-                    LOGGER.error(f"GameServer #{game_server.id} failed to start.")
+                # Use the schedule_task method to start the server
+                task = game_server.schedule_task(game_server.start_server(timeout=timeout), 'start_server')
+                try:
+                    # Await the completion of the task with the specified timeout
+                    await asyncio.wait_for(task, timeout)
+                    LOGGER.info(f"GameServer #{game_server.id} started successfully.")
+                except asyncio.TimeoutError:
+                    LOGGER.error(f"GameServer #{game_server.id} failed to start within the timeout period.")
                     await self.cmd_shutdown_server(game_server)
+                except HoNServerError:
+                    # LOGGER.error(f"GameServer #{game_server.id} encountered a server error.")
+                    await self.cmd_shutdown_server(game_server)
+
 
         if game_server == "all":
             start_tasks = []
-            monitor_tasks = []
             # Start all game servers using the semaphore
             for game_server in self.game_servers.values():
                 already_running = await game_server.get_running_server()
@@ -753,7 +787,7 @@ class GameServerManager:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
                 else:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
-            await asyncio.gather(*start_tasks, *monitor_tasks)
+            await asyncio.gather(*start_tasks)
         else:
             await start_game_server_with_semaphore(game_server, timeout)
 

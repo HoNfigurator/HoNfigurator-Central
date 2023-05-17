@@ -21,3 +21,6 @@ class HoNInvalidServerBinaries(Exception):
 
 class HoNCompatibilityError(Exception):
     """There is an issue with the local server binaries. They are probably not from wasserver."""
+
+class HoNServerError(Exception):
+    """There is an issue with the HoN Server itself, perhaps starting has failed due to insufficient RAM"""
