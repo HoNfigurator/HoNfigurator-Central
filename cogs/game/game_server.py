@@ -100,7 +100,7 @@ class GameServer:
 
     def cancel_tasks(self):
         for task in self.tasks.values():
-            task.cancel()
+            self.stop_task(task)
     
     def get_public_game_port(self):
         if self.config.local['params']['man_enableProxy']:
