@@ -146,6 +146,7 @@ async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = D
         validation = SETUP.validate_hon_data(hon_data=hon_data)
         if validation:
             global_config['hon_data'] = hon_data
+            await manager_event_bus.emit('update_server_start_semaphore')
             await manager_event_bus.emit('check_for_restart_required')
     except ValueError as e:
         return JSONResponse(status_code=501, content=str(e))
@@ -623,10 +624,10 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
     if port != "all":
         game_server = game_servers.get(int(port),None)
         if game_server is None: return JSONResponse(status_code=404, content={"error":"Server not managed by manager."})
-        await manager_event_bus.emit('start_game_servers', game_server)
+        await manager_event_bus.emit('start_game_servers', [game_server])
     else:
         for game_server in game_servers.values():
-            await manager_event_bus.emit('start_game_servers', game_server)
+            await manager_event_bus.emit('start_game_servers', [game_server])
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):

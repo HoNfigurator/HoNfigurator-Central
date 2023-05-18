@@ -112,12 +112,20 @@ async def main():
 
     # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
     try:
-        auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
-        api_task = game_server_manager.start_api_server()
-        game_server_listener_task = game_server_manager.start_game_server_listener_task(host, game_server_to_mgr_port)
-        auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
+        auth_coro = game_server_manager.manage_upstream_connections(udp_ping_responder_port)
+        auth_task = game_server_manager.schedule_task(auth_coro, 'authentication_handler')
+        
+        start_coro = game_server_manager.start_game_servers("all", launch=True)
+        start_task = game_server_manager.schedule_task(start_coro, 'gameserver_startup')
 
-        start_task = game_server_manager.start_game_servers_task("all")
+        api_coro = game_server_manager.start_api_server()
+        api_task = game_server_manager.schedule_task(api_coro, 'api_server')
+
+        game_server_listener_coro = game_server_manager.start_game_server_listener(host, game_server_to_mgr_port)
+        game_server_listener_task = game_server_manager.schedule_task(game_server_listener_coro, 'gameserver_listener')
+
+        auto_ping_listener_coro = game_server_manager.start_autoping_listener()
+        auto_ping_listener_task = game_server_manager.schedule_task(auto_ping_listener_coro, 'autoping_listener')
 
         stop_task = asyncio.create_task(stop_event.wait())
         done, pending = await asyncio.wait(

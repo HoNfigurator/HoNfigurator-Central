@@ -25,7 +25,12 @@ MISC = get_misc()
 
 class GameServer:
     def __init__(self, id, port, global_config, remove_self_callback, manager_event_bus):
-        self.tasks = {}
+        self.tasks = {
+            'process_monitor': None,
+            'match_monitor': None,
+            'botmatch_shutdown': None,
+            'proxy_task': None
+        }
         self.manager_event_bus = manager_event_bus
         self.port = port
         self.id = id
@@ -82,6 +87,16 @@ class GameServer:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
+    
+    def stop_task(self, task):
+        if task is None:
+            return
+        elif isinstance(task, asyncio.Task):
+            if not task.done():
+                task.cancel()
+                return True
+        else:
+            return
 
     def cancel_tasks(self):
         for task in self.tasks.values():
@@ -114,6 +129,33 @@ class GameServer:
             return True
         LOGGER.debug(f"GameServe# {self.id} A server configuration change has been suggested, but the suggested settings and existing live executable settings match. Skipping.")
         return False
+    
+    async def match_timer(self):
+        while True:
+            elapsed_time = time.time() - self.game_state['match_info']['start_time']
+            self.game_state['match_info']['duration'] = elapsed_time
+            if elapsed_time >= 45 * 60:  # 45 minutes have passed
+                if self.get_dict_value('num_clients') == 1 and not self.config.local['params']['svr_enableBotMatch']:
+                    # If player count is 1, start another loop that lasts 3 minutes
+                    for _ in range(3 * 60):
+                        await asyncio.sleep(1)
+                        elapsed_time = time.time() - self.game_state['match_info']['start_time']
+                        self.game_state['match_info']['duration'] = elapsed_time
+                        if self.get_dict_value('num_clients') != 1:
+                            break
+                    else:  # If the loop didn't break, the player count is still 1
+                        await self.manager_event_bus.emit('cmd_message_server', self, "Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.")
+                        await self.manager_event_bus.emit('cmd_shutdown_server', self, force=True, delay=5, disable=False)
+                        break
+            await asyncio.sleep(1)
+
+    async def start_match_timer(self):
+        self.game_state['match_info']['start_time'] = time.time()
+        self.schedule_task(self.match_timer(), 'match_monitor')
+
+    async def stop_match_timer(self):
+        self.stop_task(self.tasks['match_monitor'])
+        self.game_state['match_info']['start_time'] = 0
 
     async def on_game_state_change(self, key, value):
         # if not self.status_received.is_set():
@@ -122,9 +164,11 @@ class GameServer:
         if key == "match_started":
             if value == 0:
                 self.set_server_priority_reduce()
+                await self.stop_match_timer()
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
                 self.set_server_priority_increase()
+                await self.start_match_timer()
             # Add more phases as needed
         elif key == "match_info.mode":
             if value == "botmatch" and not self.global_config['hon_data']['svr_enableBotMatch']:
@@ -622,7 +666,7 @@ region=naeu
                 self._proxy_process = None
 
     def stop_proxy(self):
-        if self._proxy_process and self._proxy_process.is_running():
+        if self._proxy_process:
             try:
                 self._proxy_process.terminate()
             except psutil.NoSuchProcess: # it doesn't exist, that's fine
@@ -646,7 +690,8 @@ region=naeu
                     self.started = False
                     self.server_closed.set()  # Set the server_closed event
                     self.reset_game_state()
-                    asyncio.create_task(self.manager_event_bus.emit('start_game_servers', self))  # Restart the server
+                    # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
+                    asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self]))  # restart the server
                 elif status != 'zombie' and not self.enabled and not self.scheduled_shutdown:
                     #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                     self.schedule_shutdown()
@@ -747,6 +792,8 @@ class GameState:
                 'map':None,
                 'mode':None,
                 'name':None,
-                'match_id':None
+                'match_id':None,
+                'start_time': 0,
+                'duration':0
             }
         })

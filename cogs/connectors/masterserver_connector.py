@@ -144,12 +144,14 @@ class MasterServerHandler:
     async def compare_upstream_patch(self):
         url = f"{self.base_url}/patcher/patcher.php"
         data = {"latest": "", "os": f"{self.was}", "arch": "x86_64"}
+        timeout = aiohttp.ClientTimeout(total=10)  # 10 seconds timeout for the entire operation
         try:
-            async with self.session.post(url, headers=self.headers, data=data) as response:
-                if response.status == 200:
-                    return await response.text(), response.status
-                else:
-                    return None
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=self.headers, data=data) as response:
+                    if response.status == 200:
+                        return await response.text(), response.status
+                    else:
+                        return None
         except aiohttp.ClientError:
             LOGGER.exception(f"An error occurred while handling the compare_upstream_patch function: {traceback.format_exc()}")
 
