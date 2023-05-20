@@ -291,11 +291,17 @@ class Misc:
     def get_all_branch_names(self):
         try:
             os.chdir(HOME_PATH)
+            # Fetch the latest information from the remote repository
+            subprocess.run(['git', 'fetch'])
+
+            # Retrieve the branch names from the remote repository
             branch_names = subprocess.check_output(
-                ['git', 'branch', '--list'],
+                ['git', 'for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin/'],
                 universal_newlines=True
             ).strip()
-            return [branch.strip('* ') for branch in branch_names.split('\n')]
+
+            # Process the branch names, excluding "HEAD"
+            return [branch.strip() for branch in branch_names.split('\n') if branch.strip() != 'HEAD']
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
