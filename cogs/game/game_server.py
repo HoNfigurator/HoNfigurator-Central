@@ -282,7 +282,7 @@ class GameServer:
             'Connections': self.get_dict_value('num_clients'),
             'Players': 'Unknown',
             'Uptime': 'Unknown',
-            'CPU Core': self.config.get_local_by_key('host_affinity'),
+            'CPU Core': ','.join(MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core'])),
             'Scheduled Shutdown': 'Yes' if self.scheduled_shutdown else 'No',
             'Marked for Deletion': 'Yes' if self.delete_me else 'No',
             'Performance (lag)': {
@@ -348,7 +348,7 @@ class GameServer:
             'Connections': self.get_dict_value('num_clients'),
             'Players': 'Unknown',
             'Uptime': 'Unknown',
-            'CPU Core': self.config.get_local_by_key('host_affinity'),
+            'CPU Core': ','.join(MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core'])),
             'Scheduled Shutdown': 'Yes' if self.scheduled_shutdown else 'No',
             'Marked for Deletion': 'Yes' if self.delete_me else 'No',
             'Proxy Enabled': 'Yes' if self.config.local['params']['man_enableProxy'] else 'No',
