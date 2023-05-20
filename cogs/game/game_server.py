@@ -171,6 +171,8 @@ class GameServer:
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
             # Add more phases as needed
+        elif key == "game_phase":
+            LOGGER.debug(f"GameServer #{self.id} - Game phase {value}")
         elif key == "match_info.mode":
             if value == "botmatch" and not self.global_config['hon_data']['svr_enableBotMatch']:
                 coro = self.manager_event_bus.emit('cmd_shutdown_server', self, force=True, delay=30)
@@ -759,7 +761,7 @@ class GameState:
 
 
     def update(self, data, current_level=None):
-        monitored_keys = ["match_started", "match_info.mode"]  # Put the list of items you want to monitor here
+        monitored_keys = ["match_started", "match_info.mode", "game_phase"]  # Put the list of items you want to monitor here
 
         # If we are at the root level, set the current level to the main dictionary
         if current_level is None:

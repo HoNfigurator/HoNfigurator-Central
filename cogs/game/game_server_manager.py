@@ -811,6 +811,7 @@ class GameServerManager:
                     return
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
         await asyncio.gather(*start_tasks)
+        await self.check_for_restart_required()
 
     async def initialise_patching_procedure(self, timeout=300, source=None):
         if self.patching:
