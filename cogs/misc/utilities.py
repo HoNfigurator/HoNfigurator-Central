@@ -22,6 +22,7 @@ class Misc:
         self.total_allowed_servers = None
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
+
     def build_commandline_args(self,config_local, config_global):
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
         if self.get_os_platform() == "win32":
@@ -42,6 +43,7 @@ class Misc:
                 '-register',
                 f'127.0.0.1:{config_global["hon_data"]["svr_managerPort"]}'
             ]
+        
     def parse_linux_procs(proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():
@@ -58,6 +60,7 @@ class Misc:
                                     if int(item.split(" ")[-1]) == slave_id:
                                         return [ proc ]
         return []
+    
     def get_proc(proc_name, slave_id=''):
         if sys.platform == "linux":
             return Misc.parse_linux_procs(proc_name, slave_id)
@@ -80,6 +83,7 @@ class Misc:
             except psutil.NoSuchProcess:
                 pass
         return procs
+    
     def get_process_by_port(self,port):
         for conn in psutil.net_connections(kind='inet'):
             if conn.status == 'LISTEN' and conn.laddr.port == port:
@@ -97,6 +101,7 @@ class Misc:
             return True
         else:
             return False
+        
     def get_process_priority(proc_name):
         pid = False
         for proc in psutil.process_iter():
@@ -112,8 +117,10 @@ class Misc:
             elif prio == "256": prio = "REALTIME"
             return prio
         else: return "N/A"
+
     def get_cpu_count(self):
         return self.cpu_count
+    
     def get_cpu_name(self):
         if self.get_os_platform() == "win32":
             return self.cpu_name
@@ -123,6 +130,7 @@ class Misc:
                 for line in f:
                     if line.startswith('model name'):
                         return line.split(':')[1].strip()
+                    
     def format_memory(self,value):
         if value < 1:
             return round(value * 1024)  # Convert to MB and round
@@ -147,6 +155,7 @@ class Misc:
 
     def get_os_platform(self):
         return self.os_platform
+    
     def get_num_reserved_cpus(self):
         if self.cpu_count <=4:
             return 1
@@ -154,6 +163,7 @@ class Misc:
             return 2
         elif self.cpu_count >12:
             return 4
+        
     def get_total_allowed_servers(self,svr_total_per_core):
         total = svr_total_per_core * self.cpu_count
         if self.cpu_count <=4:
@@ -163,6 +173,7 @@ class Misc:
         elif self.cpu_count >12:
             total -= 4
         return total
+    
     def get_server_affinity(self,server_id,svr_total_per_core):
         server_id = int(server_id)
         affinity = []
@@ -181,24 +192,28 @@ class Misc:
             affinity.append(str(self.cpu_count - t))
 
         return affinity
+    
     def get_public_ip(self):
         try:
             external_ip = urllib.request.urlopen('https://4.ident.me').read().decode('utf8')
         except Exception:
             external_ip = urllib.request.urlopen('http://api.ipify.org').read().decode('utf8')
         return external_ip
+    
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"
+    
     def find_process_by_cmdline_keyword(self, keyword, proc_name=None):
         for process in psutil.process_iter(['cmdline']):
             if process.info['cmdline']:
-                if any(keyword in arg.lower() for arg in process.info['cmdline']):
+                if keyword in process.info['cmdline']:
                     if proc_name:
                         if proc_name == process.name():
                             return process
                     else:
                         return process
         return None
+    
     def get_svr_version(self,hon_exe):
         def validate_version_format(version):
             version_parts = version.split('.')

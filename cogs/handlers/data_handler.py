@@ -58,6 +58,7 @@ class ConfigManagement():
                 'man_enableProxy':self.get_global_by_key('man_enableProxy'),
                 'svr_location':self.get_global_by_key('svr_location'),
                 'svr_enableBotMatch': self.get_global_by_key('svr_enableBotMatch'),
+                'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
                 'svr_broadcast':True,
                 'upd_checkForUpdates':False,
                 'sv_autosaveReplay':True,
@@ -79,8 +80,12 @@ class ConfigManagement():
                 'sv_logcollection_highping_value':100,
                 'sv_logcollection_highping_reportclientnum':1,
                 'sv_logcollection_highping_interval':120000,
-                'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core']))
+                'host_affinity':','.join(str(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core'])))
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
+
+        if self.get_global_by_key('svr_override_affinity'):
+            self.local['params'].pop('host_affinity', None)  # Remove 'host_affinity' key if svr_override_affinity is True
+
         return self.local

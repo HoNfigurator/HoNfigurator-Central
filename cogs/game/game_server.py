@@ -151,7 +151,8 @@ class GameServer:
 
     async def start_match_timer(self):
         self.game_state['match_info']['start_time'] = time.time()
-        self.schedule_task(self.match_timer(), 'match_monitor')
+        coro = self.match_timer()
+        self.schedule_task(coro, 'match_monitor')
 
     async def stop_match_timer(self):
         self.stop_task(self.tasks['match_monitor'])
@@ -415,6 +416,12 @@ class GameServer:
             DETACHED_PROCESS = 0x00000008
 
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+            if self.global_config['hon_data']['svr_override_affinity']:
+                affinity = []
+                for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
+                    affinity.append(int(_))
+                p = psutil.Process(exe.pid)
+                p.cpu_affinity(affinity)  # Set CPU affinity
 
         else: # linux
             def parse_svr_id(cmdline):
@@ -631,9 +638,11 @@ region=naeu
             except psutil.NoSuchProcess:
                 LOGGER.debug(f"Previous proxy process with PID {proxy_pid} was not found.")
                 self._proxy_process = None
+                self._proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path), 'proxy.exe')
+                if self._proxy_process: LOGGER.debug("Found existing proxy PID via a proxy process with a matching description.")
             except Exception:
                 LOGGER.error(f"An error occurred while loading the PID from the last saved value: {proxy_pid}. {traceback.format_exc()}")
-                self._proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path))
+                self._proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path), 'proxy.exe')
                 if self._proxy_process: LOGGER.debug("Found existing proxy PID via a proxy process with a matching description.")
 
         while self.enabled and self.config.local['params']['man_enableProxy']:

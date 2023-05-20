@@ -91,6 +91,7 @@ class SetupEnvironment:
                 "svr_noConsole": False,
                 "svr_enableBotMatch": False,
                 "svr_start_on_launch": True,
+		        "svr_override_affinity": False,
                 "svr_max_start_at_once": 5,
                 "svr_starting_gamePort": 10001,
                 "svr_starting_voicePort": 10061,
