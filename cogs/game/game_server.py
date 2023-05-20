@@ -164,11 +164,11 @@ class GameServer:
         #   Indicates that a status update has been received (we have a live connection)
         if key == "match_started":
             if value == 0:
-                self.set_server_priority_reduce()
+                await self.set_server_priority_reduce()
                 await self.stop_match_timer()
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
-                self.set_server_priority_increase()
+                await self.set_server_priority_increase()
                 await self.start_match_timer()
             # Add more phases as needed
         elif key == "match_info.mode":
@@ -560,13 +560,17 @@ class GameServer:
                 LOGGER.exception(f"{traceback.format_exc()}")
         else:
             return False
-    def set_server_priority_reduce(self):
+    async def set_server_priority_reduce(self):
+        if not self._proc_hook:
+            await self.get_running_server()
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.IDLE_PRIORITY_CLASS)
         else:
             self._proc_hook.nice(20)
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
-    def set_server_priority_increase(self):
+    async def set_server_priority_increase(self):
+        if not self._proc_hook:
+            await self.get_running_server()
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
         else:
@@ -689,7 +693,6 @@ region=naeu
                     status = self._proc_hook.status()  # Get the status of the process
                 except psutil.NoSuchProcess:
                     status = 'stopped'
-                LOGGER.debug(f"GameServer #{self.id} Status: {status}")
                 if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped
                     LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
                     self._proc = None  # Reset the process reference

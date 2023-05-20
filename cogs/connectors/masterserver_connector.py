@@ -22,7 +22,8 @@ class MasterServerHandler:
         self.headers = {
             "User-Agent": f"S2 Games/Heroes of Newerth/{self.version}/was/x86_64",
             "Accept": "*/*",
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Server-Launcher": "HoNfigurator"
         }
         self.session = aiohttp.ClientSession()
         self.server_id = None
@@ -98,9 +99,10 @@ class MasterServerHandler:
     
     async def send_stats_file(self, username, password, match_id, file_path):
         def generate_resubmission_key(match_id, session_cookie):
-            sha1 = hashlib.sha1()
-            sha1.update(f"{match_id}{session_cookie}".encode('utf-8'))
-            resubmission_key = sha1.hexdigest()
+            # sha1 = hashlib.sha1()
+            # sha1.update(f"{match_id}{session_cookie}".encode('utf-8'))
+            # resubmission_key = sha1.hexdigest()
+            resubmission_key = f"{match_id}_honfigurator"
             return resubmission_key
 
         if not self.cookie:
@@ -116,7 +118,7 @@ class MasterServerHandler:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
 
         params = {
-            'svr_login': username,
+            'login': username,
             'pass': password,
             'resubmission_key': generate_resubmission_key(match_id, self.cookie),
             'server_id': self.server_id
@@ -137,6 +139,7 @@ class MasterServerHandler:
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, data=payload) as response:
+                    LOGGER.debug(f"[{response.status}] {match_id} stats resubmission")
                     return await response.text(), response.status
         except Exception:
             print(traceback.format_exc())

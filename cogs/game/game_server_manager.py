@@ -30,8 +30,11 @@ HOME_PATH = get_home()
 # TCP Command definitions
 COMMAND_LEN_BYTES = b'\x01\x00'
 SHUTDOWN_BYTES = b'"'
+RESTART_BYTES = b"\x23"
 SLEEP_BYTES = b' '
 WAKE_BYTES = b'!'
+MESSAGE_BYTES = b'$'
+COMMAND_BYTES = b'\x25'  # followed by string of console command
 
 # Define a function to choose a health check based on its type
 # def choose_health_check(type):
@@ -68,6 +71,7 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_shutdown_server', self.cmd_shutdown_server)
         self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
+        self.event_bus.subscribe('cmd_custom_command', self.cmd_custom_command)
         self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
@@ -112,7 +116,7 @@ class GameServerManager:
 
         # Initialize MasterServerHandler and send requests
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
-        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.global_config)
+        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
         self.schedule_task(coro, 'health_checks')
@@ -225,7 +229,7 @@ class GameServerManager:
                 return
 
             if isinstance(message, list): message = (' ').join(message)
-            message_bytes = b'$' + message.encode('ascii') + b'\x00'
+            message_bytes = MESSAGE_BYTES + message.encode('ascii') + b'\x00'
             length = len(message_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
 
@@ -234,7 +238,25 @@ class GameServerManager:
             await client_connection.writer.drain()
             LOGGER.info(f"Command - Message command sent to GameServer #{game_server.id}.")
         except Exception:
-            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")         
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def cmd_custom_command(self, game_server, command):
+        try:
+            client_connection = self.client_connections.get(game_server.port, None)
+            if client_connection is None:
+                return
+
+            if isinstance(command, list): command = (' ').join(command)
+            command_bytes = COMMAND_BYTES + command.encode('ascii') + b'\x00'
+            length = len(command_bytes)
+            length_bytes = length.to_bytes(2, byteorder='little')
+
+            client_connection.writer.write(length_bytes)
+            client_connection.writer.write(command_bytes)
+            await client_connection.writer.drain()
+            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
+        except Exception:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
         
     async def check_upstream_patch(self):
         if self.patching:
@@ -396,11 +418,12 @@ class GameServerManager:
             # .stats submission will not work until KONGOR implements accepting .stats from the custom written manager.
             # TODO: Update below to .error once upstream is configured to accept our stats.
             LOGGER.debug(f"[{mserver_stats_response[1]}] Stats submission failed. Response: {mserver_stats_response[0]}")
-            return
+            return False
+        LOGGER.info(f"{match_id} Stats resubmission successful")
         parsed_mserver_stats_response = phpserialize.loads(mserver_stats_response[0].encode('utf-8'))
         parsed_mserver_stats_response = {key.decode() if isinstance(key, bytes) else key: (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_stats_response.items()}
 
-        return
+        return True
 
     def create_all_game_servers(self):
         for id in range (1,self.global_config['hon_data']['svr_total']+1):

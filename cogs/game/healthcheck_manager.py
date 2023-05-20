@@ -11,10 +11,11 @@ LOGGER = get_logger()
 MISC = get_misc()
 
 class HealthCheckManager:
-    def __init__(self, game_servers, event_bus, callback_check_upstream_patch, global_config):
+    def __init__(self, game_servers, event_bus, callback_check_upstream_patch, callback_resubmit_match_stats, global_config):
         self.game_servers = game_servers
         self.event_bus = event_bus
         self.check_upstream_patch = callback_check_upstream_patch
+        self.resubmit_match_stats = callback_resubmit_match_stats
         self.global_config = global_config
         self.patching = False
 
@@ -63,16 +64,17 @@ class HealthCheckManager:
     
     async def poll_for_game_stats(self):
         while not stop_event.is_set():
-            await asyncio.sleep(self.global_config['application_data']['timers']['manager']['resubmit_match_stats'])
+            await asyncio.sleep(10)
             try:
                 for file_name in os.listdir(self.global_config['hon_data']['hon_logs_directory']):
                     if file_name.endswith(".stats"):
                         match_id = re.search(r'([0-9]+)', file_name) # Extract match_id from file name (M<match_id>.stats)
                         match_id = match_id.group(0)
                         file_path = os.path.join(self.global_config['hon_data']['hon_logs_directory'], file_name)
-                        await self.event_bus.emit('resubmit_match_stats_to_masterserver',match_id, file_path)
-                        print("removing now..")
-                        # os.remove(file_path)  # Remove the .stats file after processing
+                        # await self.event_bus.emit('resubmit_match_stats_to_masterserver',match_id, file_path)
+                        if await self.resubmit_match_stats(match_id, file_path):
+                            print(f"Removing {file_path}")
+                            os.remove(file_path)  # Remove the .stats file after processing
             except Exception as e:
                 LOGGER.error(f"Error while polling stats directory: {e}")
                 traceback.print_exc()

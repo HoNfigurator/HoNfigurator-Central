@@ -109,6 +109,9 @@ class Commands:
     
     async def startup_servers_subcommands(self):
         return self.generate_subcommands(self.startup_servers)
+    
+    async def custom_command_subcommands(self):
+        return self.generate_subcommands(self.cmd_custom_cmd)
 
     async def update_subcommands(self):
         branch_names = MISC.get_all_branch_names()
@@ -116,7 +119,6 @@ class Commands:
         for branch in branch_names:
             sub_commands[branch] = (lambda br: (lambda *cmd_args: asyncio.create_task(self.update_and_change_branch(br, *cmd_args))))(branch)
         return sub_commands
-
 
     async def config_commands(self):
         return self.generate_config_subcommands(self.global_config, self.set_config)
@@ -135,6 +137,7 @@ class Commands:
             "wake": Command("wake", description="Wake up a GameServer", usage="wake <GameServer#>", function=None, sub_commands=await self.wake_subcommands()),
             "sleep": Command("sleep", description="Put a GameServer to sleep", usage="sleep <GameServer#>", function=None, sub_commands=await self.sleep_subcommands()),
             "message": Command("message", description="Send a message to a GameServer", usage="message <GameServer# / ALL> <message>", function=None, sub_commands=await self.message_subcommands(),args=["<type your message>"]),
+            "command": Command("message", description="Initiate a command on a GameServer as if you were typing into the console.", usage="command <GameServer# / ALL> <command>", function=None, sub_commands=await self.custom_command_subcommands()),
             "startup": Command("startup", description="Start 1 or more game servers", usage="startup <GameServer# / ALL>", function=None, sub_commands=await self.startup_servers_subcommands()),
             "status": Command("status", description="Show status of connected GameServers", usage="status", function=self.status, sub_commands={}),
             "reconnect": Command("reconnect", description="Close all GameServer connections, forcing them to reconnect", usage="reconnect", function=self.reconnect, sub_commands={}),
@@ -276,7 +279,7 @@ class Commands:
                             if cmd_args and cmd_args[0] in command_obj.sub_commands:
                                 if self.cmd_name == "setconfig":
                                     handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:-1])
-                                elif self.cmd_name == "message":
+                                elif self.cmd_name == "message" or self.cmd_name == "command":
                                     handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args[:1])
                                 else:
                                     handler = get_value_from_nested_dict(command_obj.sub_commands,cmd_args)
@@ -285,7 +288,7 @@ class Commands:
 
                             try:
                                 if handler:
-                                    if self.cmd_name == "message" :
+                                    if self.cmd_name == "message" or self.cmd_name == "command" :
                                         # Pass the entire command_parts list as arguments to the handler
                                         future = handler(command_parts[2:])
                                     elif self.cmd_name == "setconfig":
@@ -369,19 +372,18 @@ class Commands:
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
-    async def cmd_custom_cmd(self, game_server, *cmd_args):
+    async def cmd_custom_cmd(self, game_server=None, command=None):
         try:
-            if len(cmd_args) < 2:
-                print_formatted_text("Usage: cmd <GameServer#> <data>")
+            if game_server is None or command is None:
+                print_formatted_text("Usage: command <GameServer#> <command>")
                 return
-            game_server = next((gs for gs in list(self.game_servers.values()) if gs.id == int(cmd_args[0])), None)
-            data = b''
-            for part in cmd_args[1:]:
-                if re.fullmatch(r'[0-9a-fA-F]+', part):
-                    data += bytes.fromhex(part)
-                else:
-                    data += part.encode('ascii')
-            await self.manager_event_bus.emit('send_server_command',self.cmd_name, game_server.port, (data))
+            
+            if game_server == "all":
+                for game_server in list(self.game_servers.values()):
+                    await self.manager_event_bus.emit('cmd_custom_command', game_server, command)
+
+            await self.manager_event_bus.emit('cmd_custom_command', game_server, command)
+
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -399,9 +401,9 @@ class Commands:
     async def startup_servers(self,game_server):
         if game_server == "all":
             for game_server in list(self.game_servers.values()):
-                await self.manager_event_bus.emit('enable_game_server', game_server)
+                await self.manager_event_bus.emit('start_game_servers', [game_server])
         else:
-            await self.manager_event_bus.emit('enable_game_server', game_server)
+            await self.manager_event_bus.emit('start_game_servers', [game_server])
     
     async def shutdown_servers(self,game_server):
         if game_server == "all":

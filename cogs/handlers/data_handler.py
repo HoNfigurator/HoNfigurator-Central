@@ -80,7 +80,7 @@ class ConfigManagement():
                 'sv_logcollection_highping_value':100,
                 'sv_logcollection_highping_reportclientnum':1,
                 'sv_logcollection_highping_interval':120000,
-                'host_affinity':','.join(str(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core'])))
+                'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core']))
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
