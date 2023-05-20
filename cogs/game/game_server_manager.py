@@ -16,7 +16,7 @@ from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
-from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, HealthChecks, EventBus as ManagerEventBus
+from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
 from cogs.misc.logger import get_logger, get_misc, get_home
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
@@ -26,24 +26,6 @@ from os.path import exists
 LOGGER = get_logger()
 MISC = get_misc()
 HOME_PATH = get_home()
-
-# TCP Command definitions
-COMMAND_LEN_BYTES = b'\x01\x00'
-SHUTDOWN_BYTES = b'"'
-RESTART_BYTES = b"\x23"
-SLEEP_BYTES = b' '
-WAKE_BYTES = b'!'
-MESSAGE_BYTES = b'$'
-COMMAND_BYTES = b'\x25'  # followed by string of console command
-
-# Define a function to choose a health check based on its type
-# def choose_health_check(type):
-#     for health_check in HealthChecks:
-#         if type.lower() == health_check.name.lower():
-#             return health_check
-#     return None  # Return None if no matching health check is found
-
-# Define a class for managing game servers
 class GameServerManager:
     def __init__(self, global_config, setup):
         self.update()
@@ -178,13 +160,13 @@ class GameServerManager:
             await asyncio.sleep(delay)
             if client_connection:
                 if force:
-                    client_connection.writer.write(COMMAND_LEN_BYTES)
-                    client_connection.writer.write(SHUTDOWN_BYTES)
+                    client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
+                    client_connection.writer.write(GameServerCommands.SHUTDOWN_BYTES.value)
                     await client_connection.writer.drain()
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
                     return True
                 else:
-                    game_server.schedule_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete, disable=disable),'scheduled_shutdown')
+                    game_server.schedule_task(game_server.schedule_shutdown_server(delete=delete, disable=disable),'scheduled_shutdown')
                     await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
                     return True
@@ -201,8 +183,8 @@ class GameServerManager:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
 
-            client_connection.writer.write(COMMAND_LEN_BYTES)
-            client_connection.writer.write(WAKE_BYTES)
+            client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
+            client_connection.writer.write(GameServerCommands.WAKE_BYTES.value)
             await client_connection.writer.drain()
 
             LOGGER.info(f"Command - Wake command sent to GameServer #{game_server.id}.")
@@ -214,8 +196,8 @@ class GameServerManager:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
 
-            client_connection.writer.write(COMMAND_LEN_BYTES)
-            client_connection.writer.write(SLEEP_BYTES)
+            client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
+            client_connection.writer.write(GameServerCommands.SLEEP_BYTES.value)
             await client_connection.writer.drain()
 
             LOGGER.info(f"Command - Sleep command sent to GameServer #{game_server.id}.")
@@ -229,7 +211,7 @@ class GameServerManager:
                 return
 
             if isinstance(message, list): message = (' ').join(message)
-            message_bytes = MESSAGE_BYTES + message.encode('ascii') + b'\x00'
+            message_bytes = GameServerCommands.MESSAGE_BYTES.value + message.encode('ascii') + b'\x00'
             length = len(message_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
 
@@ -240,14 +222,15 @@ class GameServerManager:
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
-    async def cmd_custom_command(self, game_server, command):
+    async def cmd_custom_command(self, game_server, command, delay = 0):
         try:
             client_connection = self.client_connections.get(game_server.port, None)
             if client_connection is None:
                 return
+            await asyncio.sleep(delay)
 
             if isinstance(command, list): command = (' ').join(command)
-            command_bytes = COMMAND_BYTES + command.encode('ascii') + b'\x00'
+            command_bytes = GameServerCommands.COMMAND_BYTES.value + command.encode('ascii') + b'\x00'
             length = len(command_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
 
@@ -522,7 +505,7 @@ class GameServerManager:
                 if port in self.game_servers:
                     del self.game_servers[port]
             
-            LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {max_servers} game servers are now running.")
+            LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {total_num_servers - servers_removed} game servers are now running.")
             return servers_removed
 
         if num_servers_to_remove > 0:
@@ -658,6 +641,7 @@ class GameServerManager:
             # this is in case game server doesn't exist (config change maybe)
             if game_server:
                 game_server.status_received.set()
+                game_server.set_client_connection(client_connection)
             # TODO
             # Create game server object here?
             # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
@@ -741,6 +725,7 @@ class GameServerManager:
                 #   This is in case game server doesn't exist intentionally (maybe config changed)
                 if game_server:
                     game_server.reset_game_state()
+                    game_server.unset_client_connection()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
                 await self.commands.initialise_commands()
                 self.commands.subcommands_changed.set()

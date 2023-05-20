@@ -49,8 +49,28 @@ class ReplayStatus(Enum):
     UPLOAD_COMPLETE = 7
 
 class GameStatus(Enum):
+    # the 'status' object within the gameserver game_state dictionary
     SLEEPING = 0
     READY = 1
     OCCUPIED = 3 # in lobby / game
     STARTING = 4 # Starting (added by me)
     QUEUED = 5 # Queued for start (added by me)
+
+class GamePhase(Enum):
+    # the 'status' object within the gameserver game_state dictionary
+    IDLE = 0
+    IN_LOBBY = 1
+    PICKING_HASE = 2
+    PICKING_PHASE = 3 # in lobby / game
+    LOADING_INTO_MATCH = 4 # Starting (added by me)
+    PREPERATION_PHASE = 5 # Queued for start (added by me)
+    MATCH_STARTED = 6 # Queued for start (added by me)
+class GameServerCommands(Enum):
+    # Manager Command Definitions
+    COMMAND_LEN_BYTES = b'\x01\x00'
+    SHUTDOWN_BYTES = b'"'
+    RESTART_BYTES = b"\x23"
+    SLEEP_BYTES = b' '
+    WAKE_BYTES = b'!'
+    MESSAGE_BYTES = b'$' # followed by length of message and encoded message string
+    COMMAND_BYTES = b'\x25' # followed by string of console command

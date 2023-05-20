@@ -11,7 +11,7 @@ import os
 from datetime import datetime, timedelta
 from os.path import exists
 from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
-from cogs.handlers.events import stop_event, GameStatus, EventBus as GameEventBus
+from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, GamePhase
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
@@ -47,6 +47,7 @@ class GameServer:
         self.delete_me = False # used to mark a server for deletion after it's been shutdown
         self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
         self.game_manager_parser = GameManagerParser(self.id,LOGGER)
+        self.client_connection = None
         """
         Game State specific variables
         """
@@ -145,7 +146,8 @@ class GameServer:
                             break
                     else:  # If the loop didn't break, the player count is still 1
                         await self.manager_event_bus.emit('cmd_message_server', self, "Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.")
-                        await self.manager_event_bus.emit('cmd_shutdown_server', self, force=True, delay=5, disable=False)
+                        for player in self.game_state['players']:
+                            await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player['name']}", delay=5)
                         break
             await asyncio.sleep(1)
 
@@ -164,6 +166,7 @@ class GameServer:
         #   Indicates that a status update has been received (we have a live connection)
         if key == "match_started":
             if value == 0:
+                LOGGER.debug(f"GameServer #{self.id} - Game Ended: {self.game_state['current_match_id']}")
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
             elif value == 1:
@@ -173,12 +176,21 @@ class GameServer:
             # Add more phases as needed
         elif key == "game_phase":
             LOGGER.debug(f"GameServer #{self.id} - Game phase {value}")
+            if value == GamePhase.IDLE.value and self.scheduled_shutdown:
+                await self.stop_server_network()
         elif key == "match_info.mode":
             if value == "botmatch" and not self.global_config['hon_data']['svr_enableBotMatch']:
-                coro = self.manager_event_bus.emit('cmd_shutdown_server', self, force=True, delay=30)
+
+                delay = 30
+                coro = self.manager_event_bus.emit('cmd_custom_command', self, "serverreset", delay=delay)
                 self.schedule_task(coro,'botmatch_shutdown')
-                while self.status_received.is_set() and not self.server_closed.set():
-                    await self.manager_event_bus.emit('cmd_message_server', self, f"Bot matches are disallowed on {self.global_config['hon_data']['svr_name']}. Server closing.")
+
+                msg_count = 0
+                while self.game_state['status'] != GameStatus.READY.value:
+                    await self.manager_event_bus.emit('cmd_message_server', self, f"Bot matches are disallowed on {self.global_config['hon_data']['svr_name']}. Server closing in {delay - (msg_count*5)} seconds.")
+                    msg_count +=1
+                    if msg_count > 10:
+                        break
                     await asyncio.sleep(5)
 
     def unlink_client_connection(self):
@@ -198,6 +210,12 @@ class GameServer:
             self.game_state._state['performance'][attribute] = value
         else:
             raise KeyError(f"Attribute '{attribute}' not found in game_state or performance dictionary.")
+    
+    def set_client_connection(self, client_connection):
+        self.client_connection = client_connection
+    
+    def unset_client_connection(self, client_connection):
+        self.client_connection = None
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
@@ -477,22 +495,23 @@ class GameServer:
         except Exception as e:
             LOGGER.error(f"Unexpected error occurred: {e}")
             return False
+    
+    def mark_for_deletion(self):
+        self.delete_me = True
+    
+    def mark_for_deletion(self):
+        self.delete_me = False
 
 
-    async def schedule_shutdown_server(self, client_connection, packet_data, delete=False, disable=True):
+    async def schedule_shutdown_server(self, delete=False, disable=True):
         self.schedule_shutdown()
         self.delete_me = delete
-        while True:
-            num_clients = self.game_state["num_clients"]
-            if num_clients is not None and num_clients > 0:
-                await asyncio.sleep(1)
-            else:
-                await self.stop_server_network(client_connection, packet_data, disable=disable)
-                if delete:
-                    await self.manager_event_bus.emit('remove_game_server',self)
-                break
+        if disable:
+            self.disable_server()
+        if self.game_state['game_phase'] == GamePhase.IDLE.value:
+            await self.stop_server_network()
 
-    async def stop_server_network(self, client_connection, packet_data, nice=True, disable=True):
+    async def stop_server_network(self, nice=True):
         if nice:
             if self.game_state["num_clients"] != 0:
                 return
@@ -500,16 +519,14 @@ class GameServer:
         self.status_received.clear()
         self.stop_proxy()
         LOGGER.info(f"GameServer #{self.id} - Stopping")
-        length_bytes, message_bytes = packet_data
-        client_connection.writer.write(length_bytes)
-        client_connection.writer.write(message_bytes)
-        await client_connection.writer.drain()
+        self.client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
+        self.client_connection.writer.write(GameServerCommands.SHUTDOWN_BYTES.value)
+        await self.client_connection.writer.drain()
         self.started = False
-        if disable:
-            self.disable_server()
         self.unschedule_shutdown()
         self.server_closed.set()
-        self.stopping = False
+        if self.delete_me:
+            await self.manager_event_bus.emit('remove_game_server',self)
 
     async def stop_server_exe(self, disable=True):
         if self._proc:

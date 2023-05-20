@@ -13,6 +13,7 @@ import uvicorn
 import asyncio
 from cogs.misc.logger import get_logger, get_misc, get_home, get_setup
 from cogs.db.roles_db_connector import RolesDatabase
+from cogs.game.match_parser import MatchParser
 from typing import Any, Dict, List, Tuple
 import logging
 from os.path import exists
@@ -128,6 +129,7 @@ class PingResponse(BaseModel):
     status: str
 @app.get("/api/ping", response_model=PingResponse, description="Responds with the a simple pong to indicate server is alive.")
 async def ping(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    LOGGER.debug("API - Ping request OK")
     return {"status":"OK"}
 
 """Protected Endpoints"""
@@ -421,6 +423,16 @@ def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_per
     with open(HOME_PATH / "logs" / "server.log", 'r') as f:
         file_content = f.readlines()
     return file_content[-num:][::-1]
+
+# @app.get("/api/get_chat_logs/{match_id}", description="Retrieve a list of chat entries from a given match id")
+# def get_chat_logs(match_id: str):
+#     log_path = global_config['hon_data']['hon_logs_directory'] / f"{match_id}.log"
+
+#     if not exists(log_path):
+#         return JSONResponse(status_code=404, content="Log file not found.")
+    
+#     match_parser = MatchParser(match_id, log_path)
+#     return match_parser.parse_chat()
 
 @app.get("/api/get_honfigurator_log_file", description="Returns the HoNfigurator log file completely, for download.")
 def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
