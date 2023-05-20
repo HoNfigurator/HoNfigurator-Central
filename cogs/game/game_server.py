@@ -214,7 +214,7 @@ class GameServer:
     def set_client_connection(self, client_connection):
         self.client_connection = client_connection
     
-    def unset_client_connection(self, client_connection):
+    def unset_client_connection(self):
         self.client_connection = None
 
     def set_configuration(self):
