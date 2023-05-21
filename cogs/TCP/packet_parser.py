@@ -92,7 +92,7 @@ class GameManagerParser:
                     int 1 msg_type			# 0
                     int 1 status			# 1
                     int 4 uptime			# 2-6
-                    int 4 unknown			# 6-10
+                    int 4 server load		# 6-10
                     int 1 num_clients1		# 10
                     int 1 match_started		# 11
                     int 4 unknown           # 12-16
@@ -111,13 +111,16 @@ class GameManagerParser:
         """
 
         # Parse fixed-length fields
-        game_server.game_state.update({
+        temp = ({
             'status': packet[1],                                        # extract status field from packet
             'uptime': int.from_bytes(packet[2:6], byteorder='little'),  # extract uptime field from packet
+            'cpu_core_util': f"{int.from_bytes(packet[6:10], byteorder='little') / 100}%",   # extract the server load value
             'num_clients': packet[10],                                  # extract number of clients field from packet
             'match_started': packet[11],                                # extract match started field from packet
             'game_phase': packet[40],                                   # extract game phase field from packet
         })
+        game_server.game_state.update(temp)
+
         # If the packet only contains fixed-length fields, print the game info and return
         if len(packet) == 54:
             if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
@@ -236,12 +239,12 @@ class GameManagerParser:
             This is an update from the game server regarding the status of the zipped replay file.
             Most likely for the manager to upload incrementally, if that setting is on (default not on)
         """
-        self.log("debug",f"GameServer #{self.id} - Received replay zip update: {packet}")
+        # self.log("debug",f"GameServer #{self.id} - Received replay zip update: {packet}")
         if game_server.get_dict_value('current_match_id') == None:
             match = re.search(rb"/(\d+)/", packet)
             if match:
                 match_id = int(match.group(1))
-                self.log("debug",f"Match ID: {match_id}")
+                self.log("debug",f"Updated running match data with Match ID: {match_id}")
                 game_server.update_dict_value('current_match_id',match_id)
                 game_server.load_gamestate_from_file(match_only=True)
             else:

@@ -24,8 +24,12 @@ class ConfigManagement():
         return None
     def get_local_by_key(self,k):
         for d in self.local.values():
-            try: return d[k]
-            except: pass
+            try: 
+                if k == 'svr_name':
+                    return d[k].replace(' 0','')
+                return d[k]
+            except:
+                pass
         return None
     def get_local_configuration(self):
         if MISC.get_os_platform() == "win32":

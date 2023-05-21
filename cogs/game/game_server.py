@@ -146,6 +146,7 @@ class GameServer:
                             break
                     else:  # If the loop didn't break, the player count is still 1
                         await self.manager_event_bus.emit('cmd_message_server', self, "Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.")
+                        LOGGER.info(f"Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.\n\tGame Phase: {self.game_state['game_phase']}\n\tMatch Started: {self.game_state['match_started']}\n\tStatus: {self.game_state['status']}")
                         for player in self.game_state['players']:
                             await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player['name']}", delay=5)
                         break
@@ -355,25 +356,28 @@ class GameServer:
 
         temp = {
             'ID': self.id,
-            'Match ID': self.get_dict_value('current_match_id',None),
+            'Match ID': self.get_dict_value('current_match_id', None),
             'Local Game Port': self.port,
             'Local Voice Port': self.config.local['params']['svr_proxyLocalVoicePort'],
             'Public Game Port': self.get_public_game_port(),
             'Public Voice Port': self.get_public_voice_port(),
-            'Region':self.config.get_local_by_key('svr_location'),
+            'Region': self.config.get_local_by_key('svr_location'),
             'Status': 'Unknown',
             'Game Phase': 'Unknown',
+            'Match Duration': 'Unknown',  # Initialize with default value
             'Connections': self.get_dict_value('num_clients'),
             'Players': 'Unknown',
             'Uptime': 'Unknown',
             'CPU Core': ','.join(MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core'])),
+            'CPU Utilisation': self.get_dict_value('cpu_core_util'),
             'Scheduled Shutdown': 'Yes' if self.scheduled_shutdown else 'No',
             'Marked for Deletion': 'Yes' if self.delete_me else 'No',
             'Proxy Enabled': 'Yes' if self.config.local['params']['man_enableProxy'] else 'No',
             'Performance (lag)': {
-                'current game':f"{self.get_dict_value('now_ingame_skipped_frames')/1000} seconds"
+                'current game': f"{self.get_dict_value('now_ingame_skipped_frames') / 1000} seconds"
             },
         }
+
         if self.get_dict_value('status') == GameStatus.SLEEPING.value:
             temp['Status'] = 'Sleeping'
         elif self.get_dict_value('status') == GameStatus.READY.value:
@@ -397,9 +401,17 @@ class GameServer:
         player_names = [player['name'] for player in self.game_state._state['players']] if 'players' in self.game_state._state else []
         temp['Game Phase'] = game_phase_mapping.get(self.get_dict_value('game_phase'), 'Unknown')
         temp['Players'] = ', '.join(player_names)
+
+        if self.game_state['match_started'] == 1:
+            if self.game_state['match_info']['duration']:
+                temp['Match Duration'] = format_time(self.game_state['match_info']['duration'])
+
         temp['Uptime'] = format_time(self.get_dict_value('uptime') / 1000) if self.get_dict_value('uptime') is not None else 'Unknown'
 
-        return (temp)
+        for k,v in list(temp.items()):
+            if v == "Unknown": del temp[k]
+
+        return temp
 
     def cancel_task(self, task_name):
         task = self.tasks.get(task_name)

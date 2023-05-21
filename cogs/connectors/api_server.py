@@ -735,7 +735,6 @@ async def start_api_server(config, game_servers_dict, game_manager_tasks, event_
 
             # Set the handlers, log level, and propagation settings to match your existing logger
             uvicorn_logger.handlers = LOGGER.handlers.copy()
-
             uvicorn_logger.setLevel(logging.WARNING)
             uvicorn_logger.propagate = LOGGER.propagate
 
@@ -769,7 +768,8 @@ async def start_api_server(config, game_servers_dict, game_manager_tasks, event_
                     use_colors=False
                 )
         except Exception:
-            LOGGER.exception(traceback.format_exc())
+            LOGGER.error(traceback.format_exc())  # Log the traceback of the exception
+
     # Create an asyncio task from the coroutine, and return the task
     LOGGER.info(f"[*] HoNfigurator API - Listening on 0.0.0.0:{port} (PUBLIC)")
     await asgi_server()
