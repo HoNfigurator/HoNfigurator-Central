@@ -181,10 +181,13 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
             if task is None:
                 continue
             if task.done():
-                if task.exception() is not None:
-                    task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception()), 'end_time': task.end_time}
-                else:
-                    task_summary[task_name] = {'status': 'Done', 'end_time': task.end_time}
+                try:
+                    if task.exception() is not None:
+                        task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception()), 'end_time': task.end_time}
+                    else:
+                        task_summary[task_name] = {'status': 'Done', 'end_time': task.end_time}
+                except asyncio.CancelledError:
+                    task_summary[task_name] = {'status': 'Cancelled'}
             else:
                 task_summary[task_name] = {'status': 'Running'}
         return task_summary
@@ -199,6 +202,7 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
     temp['game_servers'] = temp_gameserver_tasks
 
     return {"tasks_status": temp}
+
 class CurrentGithubBranch(BaseModel):
     branch: str
 @app.get("/api/get_current_github_branch", response_model=CurrentGithubBranch)
