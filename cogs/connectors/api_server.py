@@ -3,6 +3,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+import asyncio
 import datetime
 from fastapi import FastAPI, Request, Response, Body, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
@@ -19,7 +20,6 @@ import logging
 from os.path import exists
 import json
 from pydantic import BaseModel
-import os
 from datetime import datetime, timedelta
 import traceback
 
@@ -721,6 +721,55 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
         LOGGER.error(f"Error checking certificate expiration: {e}")
 
 
+def start_uvicorn(app, host, port, log_level, lifespan, use_colors, ssl_keyfile=None, ssl_certfile=None):
+    try:
+        if ssl_keyfile and ssl_certfile:
+            uvicorn.run(
+                app,
+                host=host,
+                port=port,
+                log_level=log_level,
+                lifespan=lifespan,
+                use_colors=use_colors,
+                ssl_keyfile=ssl_keyfile,
+                ssl_certfile=ssl_certfile
+            )
+        else:
+            uvicorn.run(
+                app,
+                host=host,
+                port=port,
+                log_level=log_level,
+                lifespan=lifespan,
+                use_colors=use_colors
+            )
+    except Exception:
+        LOGGER.error(traceback.format_exc())  # Log the traceback of the exception
+
+async def asgi_server(loop, app, host, port):
+    ssl_keyfile = HOME_PATH / "localhost.key"
+    ssl_certfile = HOME_PATH / "localhost.crt"
+
+    if not exists(ssl_certfile) or not exists(ssl_keyfile):
+        create_self_signed_certificate(ssl_certfile, ssl_keyfile)
+    else:
+        check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile)
+
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level="warning",
+        lifespan="on",
+        use_colors=False,
+        ssl_keyfile=ssl_keyfile if exists(ssl_keyfile) else None,
+        ssl_certfile=ssl_certfile if exists(ssl_certfile) else None,
+    )
+    server = uvicorn.Server(config)
+
+    # Schedule the server task on the event loop
+    await loop.create_task(server.serve())
+
 async def start_api_server(config, game_servers_dict, game_manager_tasks, event_bus, host="0.0.0.0", port=5000):
     global global_config, game_servers, manager_event_bus, manager_tasks
     global_config = config
@@ -728,48 +777,15 @@ async def start_api_server(config, game_servers_dict, game_manager_tasks, event_
     manager_event_bus = event_bus
     manager_tasks = game_manager_tasks
 
-    async def asgi_server():
-        try:
-            # Create a new logger for uvicorn
-            uvicorn_logger = logging.getLogger("uvicorn")
+    # Create a new logger for uvicorn
+    uvicorn_logger = logging.getLogger("uvicorn")
 
-            # Set the handlers, log level, and propagation settings to match your existing logger
-            uvicorn_logger.handlers = LOGGER.handlers.copy()
-            uvicorn_logger.setLevel(logging.WARNING)
-            uvicorn_logger.propagate = LOGGER.propagate
+    # Set the handlers, log level, and propagation settings to match your existing logger
+    uvicorn_logger.handlers = LOGGER.handlers.copy()
+    uvicorn_logger.setLevel(logging.WARNING)
+    uvicorn_logger.propagate = LOGGER.propagate
 
-            # Specify the path to the certificate and key files
-            ssl_keyfile = HOME_PATH / "localhost.key"
-            ssl_certfile = HOME_PATH / "localhost.crt"
-
-            if not exists(ssl_certfile) or not exists(ssl_keyfile):
-                create_self_signed_certificate(ssl_certfile, ssl_keyfile)
-            else:
-                check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile)
-
-            if exists(ssl_keyfile) and exists(ssl_certfile):
-                return await uvicorn.run(
-                    app,
-                    host=host,
-                    port=port,
-                    log_level="warning",
-                    lifespan="on",
-                    use_colors=False,
-                    ssl_keyfile=ssl_keyfile,
-                    ssl_certfile=ssl_certfile
-                )
-            else:
-                return await uvicorn.run(
-                    app,
-                    host=host,
-                    port=port,
-                    log_level="warning",
-                    lifespan="on",
-                    use_colors=False
-                )
-        except Exception:
-            LOGGER.error(traceback.format_exc())  # Log the traceback of the exception
-
-    # Create an asyncio task from the coroutine, and return the task
-    LOGGER.info(f"[*] HoNfigurator API - Listening on 0.0.0.0:{port} (PUBLIC)")
-    await asgi_server()
+    LOGGER.info(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
+    
+    loop = asyncio.get_running_loop()
+    await asgi_server(loop, app, host, port)

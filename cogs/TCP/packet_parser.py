@@ -221,6 +221,7 @@ class GameManagerParser:
         }
         game_server.game_state.update({'match_info':empty_lobby_info})
         game_server.game_state.update({'players':[]})
+        game_server.reset_game_state()
         game_server.save_gamestate_to_file()
         game_server.reset_skipped_frames()
 
