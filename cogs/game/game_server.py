@@ -160,10 +160,11 @@ class GameServer:
             self.idle_disconnect_timer += 1
             if self.idle_disconnect_timer >= 60:
                 await self.manager_event_bus.emit('cmd_message_server', self, "Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.")
-                LOGGER.info(f"Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.\n\tGame Phase: {self.game_state['game_phase']}\n\tMatch Started: {self.game_state['match_started']}\n\tStatus: {self.game_state['status']}")
+                LOGGER.info(f"GameServer #{self.id} - Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.\n\tGame Phase: {self.game_state['game_phase']}\n\tMatch Started: {self.game_state['match_started']}\n\tStatus: {self.game_state['status']}")
                 for player in self.game_state['players']:
                     player_name = player['name']
                     player_name = re.sub(r'\[.*?\]', '', player_name)
+                    LOGGER.info(f"GameServer #{self.id} - Terminating player: {player_name}")
                     await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
                 break
             await asyncio.sleep(1)
