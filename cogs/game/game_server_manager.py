@@ -169,7 +169,7 @@ class GameServerManager:
                     return True
                 else:
                     game_server.schedule_task(game_server.schedule_shutdown_server(delete=delete, disable=disable),'scheduled_shutdown')
-                    await asyncio.sleep(0)  # allow the scheduled task to be executed
+                    # await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
                     return True
             else:
@@ -650,7 +650,7 @@ class GameServerManager:
             # since the game server isn't actually off yet, it will keep creating a connection.
 
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-            await self.commands.initialise_commands()
+            # await self.commands.initialise_commands()
             self.commands.subcommands_changed.set()
             return True
         else:
@@ -671,7 +671,7 @@ class GameServerManager:
         if not file_exists:
             # Send the "does not exist" packet
             await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
-            LOGGER.warn(f"Replay file {replay_file_path} does not exist.")
+            LOGGER.warn(f"Replay file {replay_file_name} does not exist. Checked: {replay_file_path} and {replay_file_path_longterm}")
             return
 
         # Send the "exists" packet
@@ -729,7 +729,7 @@ class GameServerManager:
                     game_server.reset_game_state()
                     game_server.unset_client_connection()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-                await self.commands.initialise_commands()
+                # await self.commands.initialise_commands()
                 self.commands.subcommands_changed.set()
                 return True
         return False

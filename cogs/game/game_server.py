@@ -29,7 +29,8 @@ class GameServer:
             'process_monitor': None,
             'match_monitor': None,
             'botmatch_shutdown': None,
-            'proxy_task': None
+            'proxy_task': None,
+            'idle_disconnect_timer': None
         }
         self.manager_event_bus = manager_event_bus
         self.port = port
@@ -48,6 +49,7 @@ class GameServer:
         self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
         self.game_manager_parser = GameManagerParser(self.id,LOGGER)
         self.client_connection = None
+        self.idle_disconnect_timer = 0
         """
         Game State specific variables
         """
@@ -142,21 +144,6 @@ class GameServer:
         while True:
             elapsed_time = time.time() - self.game_state['match_info']['start_time']
             self.game_state['match_info']['duration'] = elapsed_time
-            if elapsed_time >= 45 * 60:  # 45 minutes have passed
-                if self.get_dict_value('num_clients') == 1 and not self.config.local['params']['svr_enableBotMatch']:
-                    # If player count is 1, start another loop that lasts 3 minutes
-                    for _ in range(3 * 60):
-                        await asyncio.sleep(1)
-                        elapsed_time = time.time() - self.game_state['match_info']['start_time']
-                        self.game_state['match_info']['duration'] = elapsed_time
-                        if self.get_dict_value('num_clients') != 1:
-                            break
-                    else:  # If the loop didn't break, the player count is still 1
-                        await self.manager_event_bus.emit('cmd_message_server', self, "Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.")
-                        LOGGER.info(f"Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.\n\tGame Phase: {self.game_state['game_phase']}\n\tMatch Started: {self.game_state['match_started']}\n\tStatus: {self.game_state['status']}")
-                        for player in self.game_state['players']:
-                            await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player['name']}", delay=5)
-                        break
             await asyncio.sleep(1)
 
     async def start_match_timer(self):
@@ -167,16 +154,31 @@ class GameServer:
     async def stop_match_timer(self):
         self.stop_task(self.tasks['match_monitor'])
         self.game_state['match_info']['start_time'] = 0
+    
+    async def start_disconnect_timer(self):
+        while True:
+            self.idle_disconnect_timer += 1
+            if self.idle_disconnect_timer >= 60:
+                await self.manager_event_bus.emit('cmd_message_server', self, "Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.")
+                LOGGER.info(f"Server is shutting down. Single player has remained connected for 3+ minutes when all other players have left the game.\n\tGame Phase: {self.game_state['game_phase']}\n\tMatch Started: {self.game_state['match_started']}\n\tStatus: {self.game_state['status']}")
+                for player in self.game_state['players']:
+                    player_name = player['name']
+                    player_name = re.sub(r'\[.*?\]', '', player_name)
+                    await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
+                break
+            await asyncio.sleep(1)
+
+    async def stop_disconnect_timer(self):
+        self.stop_task(self.tasks['idle_disconnect_timer'])
+        self.idle_disconnect_timer = 0
 
     async def on_game_state_change(self, key, value):
-        # if not self.status_received.is_set():
-        #     self.status_received.set()
-        #   Indicates that a status update has been received (we have a live connection)
         if key == "match_started":
             if value == 0:
                 LOGGER.debug(f"GameServer #{self.id} - Game Ended: {self.game_state['current_match_id']}")
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
+                await self.stop_disconnect_timer()
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
                 await self.set_server_priority_increase()
@@ -186,6 +188,10 @@ class GameServer:
             LOGGER.debug(f"GameServer #{self.id} - Game phase {value}")
             if value == GamePhase.IDLE.value and self.scheduled_shutdown:
                 await self.stop_server_network()
+            elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
+                LOGGER.debug(f"GameServer #{self.id} - Game in final stages, game ending.")
+                await self.schedule_task(self.start_disconnect_timer,'idle_disconnect_timer', coro_bracket=True)
+            # add more phases as needed
         elif key == "match_info.mode":
             if value == "botmatch" and not self.global_config['hon_data']['svr_enableBotMatch']:
 
@@ -618,10 +624,13 @@ class GameServer:
         if not self._proc_hook:
             await self.get_running_server()
         if sys.platform == "win32":
-            self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
+            if self.global_config['hon_data']['svr_priority'] == "REALTIME":
+                self._proc_hook.nice(psutil.REALTIME_PRIORITY_CLASS)
+            else:
+                self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
         else:
             self._proc_hook.nice(-19)
-        LOGGER.info(f"GameServer #{self.id} - Priority set to High.")        
+        LOGGER.info(f"GameServer #{self.id} - Priority set to {self.global_config['hon_data']['svr_priority']}.")        
 
     def create_proxy_config(self):
         config_filename = f"Config{self.id}"

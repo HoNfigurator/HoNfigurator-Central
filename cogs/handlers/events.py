@@ -60,11 +60,13 @@ class GamePhase(Enum):
     # the 'status' object within the gameserver game_state dictionary
     IDLE = 0
     IN_LOBBY = 1
-    PICKING_HASE = 2
-    PICKING_PHASE = 3 # in lobby / game
+    ### = 2  there is never phase 2
+    PICKING_PHASE = 3 # Picking phase
     LOADING_INTO_MATCH = 4 # Starting (added by me)
     PREPERATION_PHASE = 5 # Queued for start (added by me)
     MATCH_STARTED = 6 # Queued for start (added by me)
+    GAME_ENDING = 7 # game is over, base is alive but players haven't left the lobby
+    GAME_ENDED = 8 # base is dead, and players are still in lobby
 class GameServerCommands(Enum):
     # Manager Command Definitions
     COMMAND_LEN_BYTES = b'\x01\x00'

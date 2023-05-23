@@ -309,7 +309,7 @@ class Commands:
 
                 # If subcommands_changed event is set, update the command completer with the new command handlers
                 if self.subcommands_changed.is_set():
-                    await self.initialise_commands()
+                    # await self.initialise_commands()
                     self.command_completer.update_command_handlers(self.commands)
             except Exception:
                 print_formatted_text(traceback.format_exc())
