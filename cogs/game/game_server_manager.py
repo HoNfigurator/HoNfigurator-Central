@@ -97,6 +97,7 @@ class GameServerManager:
         # Start running health checks
 
         # Initialize MasterServerHandler and send requests
+        self.chat_server_handler = None
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
 
@@ -339,9 +340,11 @@ class GameServerManager:
 
             except (HoNAuthenticationError, ConnectionResetError ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
+                LOGGER.error(traceback.format_exc())
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
             except Exception as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
+                LOGGER.error(traceback.format_exc())
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
 
     async def send_auth_request_to_masterserver(self):
@@ -371,7 +374,7 @@ class GameServerManager:
 
     async def authenticate_and_handle_chat_server(self, parsed_mserver_auth_response, udp_ping_responder_port):
         # Create a new ChatServerHandler instance and connect to the chat server
-        chat_server_handler = ChatServerHandler(
+        self.chat_server_handler = ChatServerHandler(
             parsed_mserver_auth_response["chat_address"],
             parsed_mserver_auth_response["chat_port"],
             parsed_mserver_auth_response["session"],
@@ -386,7 +389,7 @@ class GameServerManager:
         )
 
         # connect and authenticate to chatserver
-        chat_auth_response = await chat_server_handler.connect()
+        chat_auth_response = await self.chat_server_handler.connect()
 
         if not chat_auth_response:
             raise HoNAuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
@@ -394,7 +397,7 @@ class GameServerManager:
         LOGGER.info("Authenticated to ChatServer.")
 
         # Start handling packets from the chat server
-        await chat_server_handler.handle_packets()
+        await self.chat_server_handler.handle_packets()
 
     async def resubmit_match_stats_to_masterserver(self, match_id, file_path):
         mserver_stats_response = await self.master_server_handler.send_stats_file(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest(), match_id, file_path)
@@ -660,51 +663,60 @@ class GameServerManager:
 
     async def handle_replay_request(self, match_id, extension, account_id):
         replay_file_name = f"M{match_id}.{extension}"
-        replay_file_path = (Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name)
-        replay_file_path_longterm = (Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
-        file_exists = Path.exists(replay_file_path)
-        if not file_exists and self.global_config['application_data']['longterm_storage']['active']:
-            file_exists = Path.exists(replay_file_path_longterm)
-
         LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
+        replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
+        if self.global_config['application_data']['longterm_storage']['active']:
+            replay_file_paths.append(self.global_config['application_data']['longterm_storage']['location'] / replay_file_name)
+
+        for replay_path in replay_file_paths:
+            file_exists = Path.exists(replay_path)
+            if file_exists:
+                replay_file_path = replay_path
+                break
 
         if not file_exists:
             # Send the "does not exist" packet
-            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
-            LOGGER.warn(f"Replay file {replay_file_name} does not exist. Checked: {replay_file_path} and {replay_file_path_longterm}")
+            # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
+            res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
+            LOGGER.warn(f"Replay file {replay_file_name} does not exist. Checked: {replay_file_paths}")
             return
 
         # Send the "exists" packet
-        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.QUEUED)
-        LOGGER.debug(f"Replay file exists. Obtaining upload location information.")
+        # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.QUEUED)
+        res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.QUEUED)
+        LOGGER.debug(f"Replay file exists ({replay_file_name}). Obtaining upload location information.")
 
         # Upload the file and send status updates as required
         file_size = os.path.getsize(replay_file_path)
 
         upload_details = await self.master_server_handler.get_replay_upload_info(match_id, extension, self.global_config['hon_data']['svr_login'], file_size)
 
-
         if upload_details is None or upload_details[1] != 200:
-            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
-            LOGGER.error(f"Failed to obtain upload location information. HTTP Response ({upload_details[1]}):\n\t{upload_details[0]}")
+            # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            LOGGER.error(f"{replay_file_name} - Failed to obtain upload location information. HTTP Response ({upload_details[1]}):\n\t{upload_details[0]}")
             return
 
         upload_details_parsed = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in upload_details[0].items()}
-        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
+        LOGGER.debug(f"Uploading {replay_file_name} to {upload_details_parsed['TargetURL']}")
 
-        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
+        LOGGER.debug(f"Uploading {replay_file_name} to {upload_details_parsed['TargetURL']}")
 
-        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
+        # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
+        res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.UPLOADING)
         try:
             upload_result = await self.master_server_handler.upload_replay_file(replay_file_path, replay_file_name, upload_details_parsed['TargetURL'])
         except Exception:
-            LOGGER.exception(f"Undefined Exception: {traceback.format_exc()}")
+            LOGGER.error(f"Error uploading replay file {replay_file_path}")
+            LOGGER.error(f"Undefined Exception: {traceback.format_exc()}")
 
         if upload_result[1] not in [204,200]:
-            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             LOGGER.error(f"Replay upload failed! HTTP Upload Response ({upload_result[1]})\n\t{upload_result[0]}")
             return
-        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
+        # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
+        res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
         LOGGER.debug("Replay upload completed successfully.")
 
 

@@ -135,8 +135,10 @@ class ChatServerHandler:
             # Send the packet to the chat server
             self.writer.write(packet_data)
             await self.writer.drain()
+            LOGGER.debug(f">>> [MGR|CHAT] Sending replay status update\n\tMatch ID: {match_id}\n\tRequested by player ID: {account_id}\n\tStatus update: {status}\n\tPacket: {packet_data}")
+            return True
         except ConnectionResetError:
-            LOGGER.error("Connection reset by the server.")
+            LOGGER.error(f">>> ERR [MGR|CHAT] Replay status update error: Connection reset by the server. Replay update request details:\n\tMatch ID: {match_id}\n\tRequested by: {account_id}\n\tStatus update: {status}\n\tPacket: {packet_data}")
 
     def get_headers(self, data):
         msg_len = int.from_bytes(data[0:2], byteorder='little')

@@ -42,6 +42,9 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    LOGGER.error(traceback.format_exc())
 
 def get_config_item_by_key(k):
     for d in global_config.values():
@@ -129,7 +132,6 @@ class PingResponse(BaseModel):
     status: str
 @app.get("/api/ping", response_model=PingResponse, description="Responds with the a simple pong to indicate server is alive.")
 async def ping(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-    LOGGER.debug("API - Ping request OK")
     return {"status":"OK"}
 
 """Protected Endpoints"""
@@ -426,6 +428,9 @@ def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_per
     # return the contents of the current log file
     with open(HOME_PATH / "logs" / "server.log", 'r') as f:
         file_content = f.readlines()
+    
+    # Remove the newlines from each string in the list
+    file_content = [line.strip() for line in file_content]
     return file_content[-num:][::-1]
 
 # @app.get("/api/get_chat_logs/{match_id}", description="Retrieve a list of chat entries from a given match id")
@@ -722,29 +727,26 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
 
 
 def start_uvicorn(app, host, port, log_level, lifespan, use_colors, ssl_keyfile=None, ssl_certfile=None):
-    try:
-        if ssl_keyfile and ssl_certfile:
-            uvicorn.run(
-                app,
-                host=host,
-                port=port,
-                log_level=log_level,
-                lifespan=lifespan,
-                use_colors=use_colors,
-                ssl_keyfile=ssl_keyfile,
-                ssl_certfile=ssl_certfile
-            )
-        else:
-            uvicorn.run(
-                app,
-                host=host,
-                port=port,
-                log_level=log_level,
-                lifespan=lifespan,
-                use_colors=use_colors
-            )
-    except Exception:
-        LOGGER.error(traceback.format_exc())  # Log the traceback of the exception
+    if ssl_keyfile and ssl_certfile:
+        uvicorn.run(
+            app,
+            host=host,
+            port=port,
+            log_level=log_level,
+            lifespan=lifespan,
+            use_colors=use_colors,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile
+        )
+    else:
+        uvicorn.run(
+            app,
+            host=host,
+            port=port,
+            log_level=log_level,
+            lifespan=lifespan,
+            use_colors=use_colors
+        )
 
 async def asgi_server(loop, app, host, port):
     ssl_keyfile = HOME_PATH / "localhost.key"
@@ -769,6 +771,7 @@ async def asgi_server(loop, app, host, port):
 
     # Schedule the server task on the event loop
     await loop.create_task(server.serve())
+    # await server.serve()
 
 async def start_api_server(config, game_servers_dict, game_manager_tasks, event_bus, host="0.0.0.0", port=5000):
     global global_config, game_servers, manager_event_bus, manager_tasks
