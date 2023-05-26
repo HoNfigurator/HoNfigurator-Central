@@ -135,9 +135,9 @@ class GameServer:
         new_params = MISC.build_commandline_args(self.config.local, self.global_config)
         # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
         if current_params != new_params:
-            LOGGER.debug(f"GameServe# {self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
+            LOGGER.debug(f"GameServer #{self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
             return True
-        LOGGER.debug(f"GameServe# {self.id} A server configuration change has been suggested, but the suggested settings and existing live executable settings match. Skipping.")
+        LOGGER.debug(f"GameServer #{self.id} A server configuration change has been suggested, but the suggested settings and existing live executable settings match. Skipping.")
         return False
     
     async def match_timer(self):
