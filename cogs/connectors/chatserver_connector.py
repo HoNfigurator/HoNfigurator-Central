@@ -40,7 +40,6 @@ class ChatServerHandler:
             await self.writer.drain()
 
             # The authentication response will now be handled by the handle_packets function
-            raise ConnectionRefusedError
             return True
         except ConnectionRefusedError:
             LOGGER.warn("Connection refused by the chat server.")
