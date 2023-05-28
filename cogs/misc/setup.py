@@ -35,8 +35,6 @@ class SetupEnvironment:
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()
         self.hon_data = self.default_configuration['hon_data']
-        for key in self.WINDOWS_SPECIFIC_CONFIG_ITEMS:
-            if key in self.hon_data.items(): del self.hon_data[key]
         self.application_data = self.default_configuration['application_data']
         self.current_data = None
 
@@ -483,6 +481,9 @@ class SetupEnvironment:
         config['system_data'] = self.add_miscellaneous_data()
         config['hon_data'].update(self.hon_data)
         config['application_data'].update(self.application_data)
+        if MISC.get_os_platform() == "linux":
+            for key in self.WINDOWS_SPECIFIC_CONFIG_ITEMS:
+                if key in self.hon_data.items(): del self.hon_data[key]
         return config
 
     def add_runtime_data(self):
