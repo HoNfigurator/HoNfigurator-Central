@@ -483,7 +483,7 @@ class SetupEnvironment:
         config['application_data'].update(self.application_data)
         if MISC.get_os_platform() == "linux":
             for key in self.WINDOWS_SPECIFIC_CONFIG_ITEMS:
-                if key in self.hon_data.items(): del self.hon_data[key]
+                if key in config.items(): del config[key]
         return config
 
     def add_runtime_data(self):
