@@ -28,6 +28,7 @@ class ChatServerHandler:
         self.writer = None
         self.keepalive_task = None
         self.manager_chat_parser = ManagerChatParser(LOGGER)
+        self.chat_connection_lost_event = asyncio.Event()
 
     async def connect(self):
         try:
@@ -39,11 +40,10 @@ class ChatServerHandler:
             await self.writer.drain()
 
             # The authentication response will now be handled by the handle_packets function
+            raise ConnectionRefusedError
             return True
-
         except ConnectionRefusedError:
-            LOGGER.warn("Connection refused by the chat server. Retrying in 10 seconds...")
-            await asyncio.sleep(10)
+            LOGGER.warn("Connection refused by the chat server.")
         except OSError as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -71,12 +71,15 @@ class ChatServerHandler:
                     data.extend(chunk)
                 else:
                     msg_type = int.from_bytes(data[:2], byteorder='little')
-                    await self.handle_received_packet(msg_len, msg_type, bytes(data))
+                    _, keepalive_task = await self.handle_received_packet(msg_len, msg_type, bytes(data))
+                    if keepalive_task is not None: await keepalive_task
             except asyncio.IncompleteReadError:
                 LOGGER.error(f"IncompleteReadError: {traceback.format_exc()}")
             except ConnectionResetError:
                 LOGGER.error("Connection reset by the server.")
                 break
+            except Exception:
+                LOGGER.error(f"Other connection error. {traceback.format_exc()}")
 
     def create_handshake_packet(self, session_id, server_id):
         msg_type = 0x1600
@@ -160,9 +163,7 @@ class ChatServerHandler:
     async def handle_received_packet(self, msg_len, msg_type, data):
         parsed = await self.manager_chat_parser.handle_packet(msg_type,msg_len,data,"receiving")
 
-        print_prefix = f"<<< [CHAT|MGR] - [{hex(msg_type)}] "
         if msg_type == 0x1700:
-            LOGGER.debug(f"{print_prefix}Handshake accepted by the chat server.")
             len, server_info_packet = self.create_server_info_packet(self.server_id, username=self.username, region=self.region, server_name=self.server_name, version=self.version, ip_addr=self.ip_addr, udp_ping_responder_port=self.udp_ping_responder_port)
             self.writer.write(len)
             await self.writer.drain()
@@ -172,17 +173,14 @@ class ChatServerHandler:
             # start a timer to send two packets every 15 seconds
             async def send_keepalive():
                 while not stop_event.is_set():
-                    try:
-                        await asyncio.sleep(15)
-                        self.writer.write(b'\x02\x00')
-                        await self.writer.drain()
-                        self.writer.write(b'\x00*')
-                        await self.writer.drain()
-                    except ConnectionResetError:
-                        break
+                    await asyncio.sleep(15)
+                    self.writer.write(b'\x02\x00')
+                    await self.writer.drain()
+                    self.writer.write(b'\x00*')
+                    await self.writer.drain()
 
-            asyncio.create_task(send_keepalive())
-            return True
+            keepalive_task = asyncio.create_task(send_keepalive())
+            return True, keepalive_task
         elif msg_type == 0x0400:
             # shutdown notice
             asyncio.create_task(self.close_connection())
@@ -191,6 +189,7 @@ class ChatServerHandler:
         elif msg_type == 0x1704:
             # replay request
             await self.manager_event_bus.emit('handle_replay_request', parsed['match_id'], parsed['extension'], parsed['account_id'])
+        return None, None
 
 
     def close(self):

@@ -316,37 +316,6 @@ class GameServerManager:
         MISC.update_github_repository()
         MISC.save_last_working_branch()
 
-    async def manage_upstream_connections(self, udp_ping_responder_port, retry=30):
-        """
-        Authenticate the game server with the master server and connect to the chat server.
-
-        This function sends a request to the master server to authenticate the game server, and then
-        connects to the chat server and authenticates the game server with the chat server. It also starts
-        handling packets from the chat server.
-
-        Args:
-            udp_ping_responder_port (int): The port to use for the UDP ping responder.
-
-        Returns:
-            None
-        """
-        while not stop_event.is_set():
-            try:
-                # Send requests to the master server
-                parsed_mserver_auth_response = await self.send_auth_request_to_masterserver()
-
-                # Connect to the chat server and authenticate
-                await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
-
-            except (HoNAuthenticationError, ConnectionResetError ) as e:
-                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
-                LOGGER.error(traceback.format_exc())
-                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
-            except Exception as e:
-                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
-                LOGGER.error(traceback.format_exc())
-                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
-
     async def send_auth_request_to_masterserver(self):
         """
         Send a request to the master server to authenticate the game server.
@@ -372,6 +341,33 @@ class GameServerManager:
 
         return parsed_mserver_auth_response
 
+
+    async def manage_upstream_connections(self, udp_ping_responder_port, retry=30):
+        """
+        Authenticate the game server with the master server and connect to the chat server.
+
+        This function sends a request to the master server to authenticate the game server, and then
+        connects to the chat server and authenticates the game server with the chat server. It also starts
+        handling packets from the chat server.
+
+        Args:
+            udp_ping_responder_port (int): The port to use for the UDP ping responder.
+
+        Returns:
+            None
+        """
+        while not stop_event.is_set():
+            try:
+                # Send requests to the master server
+                parsed_mserver_auth_response = await self.send_auth_request_to_masterserver()
+
+                # Connect to the chat server and authenticate
+                await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
+
+            except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
+                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
+                LOGGER.error(traceback.format_exc())
+                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
     async def authenticate_and_handle_chat_server(self, parsed_mserver_auth_response, udp_ping_responder_port):
         # Create a new ChatServerHandler instance and connect to the chat server
         self.chat_server_handler = ChatServerHandler(
@@ -392,7 +388,7 @@ class GameServerManager:
         chat_auth_response = await self.chat_server_handler.connect()
 
         if not chat_auth_response:
-            raise HoNAuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
+            raise HoNAuthenticationError(f"Chatserver authentication failure")
 
         LOGGER.info("Authenticated to ChatServer.")
 

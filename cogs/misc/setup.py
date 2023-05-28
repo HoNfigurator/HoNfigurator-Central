@@ -29,10 +29,14 @@ class SetupEnvironment:
             self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
+        # self.LINUX_SPECIFIC_CONFIG_ITEMS = ['']
+        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','man_enableProxy','svr_override_affinity']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()
         self.hon_data = self.default_configuration['hon_data']
+        for key in self.WINDOWS_SPECIFIC_CONFIG_ITEMS:
+            if key in self.hon_data.items(): del self.hon_data[key]
         self.application_data = self.default_configuration['application_data']
         self.current_data = None
 
