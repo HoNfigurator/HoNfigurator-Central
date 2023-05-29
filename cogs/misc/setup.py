@@ -358,6 +358,13 @@ class SetupEnvironment:
             os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
         if not os.path.exists(self.config_file_logging):
             self.create_logging_configuration_file()
+        if not os.path.exists(self.config_file_hon):
+            if args:
+                if args.hon_install_directory:
+                    self.hon_data["hon_install_directory"] = Path(
+                        args.hon_install_directory)
+            self.create_hon_configuration_file(
+                detected="hon_install_directory")
         database = RolesDatabase()
         if not database.add_default_data():
             while True:
@@ -372,13 +379,6 @@ class SetupEnvironment:
                 except ValueError:
                     print(
                         "Value must be a more than 10 digits.")
-        if not os.path.exists(self.config_file_hon):
-            if args:
-                if args.hon_install_directory:
-                    self.hon_data["hon_install_directory"] = Path(
-                        args.hon_install_directory)
-            self.create_hon_configuration_file(
-                detected="hon_install_directory")
         # else:
         try:
             self.hon_data = self.get_existing_configuration()['hon_data']
