@@ -149,4 +149,4 @@ if __name__ == "__main__":
         LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
         stop_event.set()
     finally:
-        os._exit(0)
+        sys.exit(0)
