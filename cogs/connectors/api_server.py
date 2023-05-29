@@ -13,6 +13,7 @@ from typing import Any, Dict
 import uvicorn
 import asyncio
 from cogs.misc.logger import get_logger, get_misc, get_home, get_setup
+from cogs.handlers.events import stop_event
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.match_parser import MatchParser
 from typing import Any, Dict, List, Tuple
@@ -726,6 +727,8 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
     except Exception as e:
         LOGGER.error(f"Error checking certificate expiration: {e}")
 
+def signal_handler(*_):
+    stop_event.set()
 
 def start_uvicorn(app, host, port, log_level, lifespan, use_colors, ssl_keyfile=None, ssl_certfile=None):
     if ssl_keyfile and ssl_certfile:
@@ -749,7 +752,7 @@ def start_uvicorn(app, host, port, log_level, lifespan, use_colors, ssl_keyfile=
             use_colors=use_colors
         )
 
-async def asgi_server(loop, app, host, port):
+async def asgi_server(app, host, port):
     ssl_keyfile = HOME_PATH / "localhost.key"
     ssl_certfile = HOME_PATH / "localhost.crt"
 
@@ -769,10 +772,14 @@ async def asgi_server(loop, app, host, port):
         ssl_certfile=ssl_certfile if exists(ssl_certfile) else None,
     )
     server = uvicorn.Server(config)
+    server_task = asyncio.create_task(server.serve())
 
-    # Schedule the server task on the event loop
-    await loop.create_task(server.serve())
-    # await server.serve()
+    try:
+        await stop_event.wait()
+    finally:
+        server.should_exit = True  # this flag tells Uvicorn to wrap up and exit
+        LOGGER.info("Shutting down API Server")
+        await server_task
 
 async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, host="0.0.0.0", port=5000):
     global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks
@@ -792,5 +799,5 @@ async def start_api_server(config, game_servers_dict, game_manager_tasks, health
 
     LOGGER.info(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
     
-    loop = asyncio.get_running_loop()
-    await asgi_server(loop, app, host, port)
+    # loop = asyncio.get_running_loop()
+    await asgi_server(app, host, port)

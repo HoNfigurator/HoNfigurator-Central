@@ -311,7 +311,7 @@ class GameServerManager:
 
         await self.master_server_handler.close_session()
 
-        LOGGER.info("Server stopped.")
+        LOGGER.info("Stopping HoNfigurator manager listener.")
 
     def update(self):
         MISC.update_github_repository()
@@ -367,8 +367,9 @@ class GameServerManager:
 
             except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
-                LOGGER.error(traceback.format_exc())
+                # LOGGER.error(traceback.format_exc())
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
+        LOGGER.info("Stopping authentication handlers")
     async def authenticate_and_handle_chat_server(self, parsed_mserver_auth_response, udp_ping_responder_port):
         # Create a new ChatServerHandler instance and connect to the chat server
         self.chat_server_handler = ChatServerHandler(
@@ -784,9 +785,19 @@ class GameServerManager:
                         return
                     task = game_server.schedule_task(game_server.start_server(timeout=timeout), 'start_server')
                     try:
-                        # Await the completion of the task with the specified timeout
-                        await asyncio.wait_for(task, timeout)
-                        LOGGER.info(f"GameServer #{game_server.id} started successfully.")
+                        # Prepare the tasks
+                        tasks = [asyncio.wait_for(task, timeout), stop_event.wait()]
+                        # Wait for any task to complete
+                        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                        # If the stop_event was set, cancel the other task and return
+                        if stop_event.is_set():
+                            for task in pending:
+                                task.cancel()
+                            LOGGER.info(f"Shutting down uninitialised GameServer #{game_server.id} due to stop event.")
+                            await self.cmd_shutdown_server(game_server)
+                        else:
+                            # The game server start task completed successfully
+                            LOGGER.info(f"GameServer #{game_server.id} started successfully.")
                     except asyncio.TimeoutError:
                         LOGGER.error(f"GameServer #{game_server.id} failed to start within the timeout period.")
                         await self.cmd_shutdown_server(game_server)

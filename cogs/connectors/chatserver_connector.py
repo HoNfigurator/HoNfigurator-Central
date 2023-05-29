@@ -49,15 +49,17 @@ class ChatServerHandler:
 
     async def handle_packets(self):
         # Wait until we are connected to the chat server before starting to handle packets
-        while not self.reader:
+        while not self.reader and not stop_event.is_set():
             await asyncio.sleep(0.1)
 
         # Handle packets until the connection is closed
-        while stop_event.is_set() or not self.reader.at_eof():
+        while not self.reader.at_eof():
             try:
+                if stop_event.is_set():
+                    break
                 msg_len_data = await self.reader.read(2)
                 if len(msg_len_data) < 2:
-                    LOGGER.warn("Connection closed by the server.")
+                    LOGGER.warn("Connection closed by the chat server. For status updates check https://discord.com/channels/991034716360687637/1034679496990789692")
                     break
                 msg_len = int.from_bytes(msg_len_data, byteorder='little')
 
@@ -65,13 +67,13 @@ class ChatServerHandler:
                 while len(data) < msg_len:
                     chunk = await self.reader.read(msg_len - len(data))
                     if len(chunk) == 0:
-                        LOGGER.warn("Connection closed by the server.")
+                        LOGGER.warn("Connection closed by the chat server. For status updates check https://discord.com/channels/991034716360687637/1034679496990789692")
                         break
                     data.extend(chunk)
                 else:
                     msg_type = int.from_bytes(data[:2], byteorder='little')
-                    _, keepalive_task = await self.handle_received_packet(msg_len, msg_type, bytes(data))
-                    if keepalive_task is not None: await keepalive_task
+                    await self.handle_received_packet(msg_len, msg_type, bytes(data))
+                    # if keepalive_task is not None: asyncio.create_task(keepalive_task)
             except asyncio.IncompleteReadError:
                 LOGGER.error(f"IncompleteReadError: {traceback.format_exc()}")
             except ConnectionResetError:
@@ -181,8 +183,8 @@ class ChatServerHandler:
                     self.writer.write(b'\x00*')
                     await self.writer.drain()
 
-            keepalive_task = asyncio.create_task(send_keepalive())
-            return True, keepalive_task
+            asyncio.create_task(send_keepalive())
+            # return True, keepalive_task
         elif msg_type == 0x0400:
             # shutdown notice
             asyncio.create_task(self.close_connection())
@@ -191,7 +193,7 @@ class ChatServerHandler:
         elif msg_type == 0x1704:
             # replay request
             await self.manager_event_bus.emit('handle_replay_request', parsed['match_id'], parsed['extension'], parsed['account_id'])
-        return None, None
+        # return None, None
 
 
     def close(self):

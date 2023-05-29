@@ -94,7 +94,7 @@ async def main():
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
     jobs.setup_tasks()
-    stop_run_continuously = run_continuously()
+    run_continuously()
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
@@ -129,22 +129,16 @@ async def main():
         auto_ping_listener_coro = game_server_manager.start_autoping_listener()
         auto_ping_listener_task = game_server_manager.schedule_task(auto_ping_listener_coro, 'autoping_listener')
 
-        stop_task = asyncio.create_task(stop_event.wait())
-        done, pending = await asyncio.wait(
-            [auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task, stop_task]
+        await asyncio.gather(
+            auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task
         )
-        for task in pending:
-            LOGGER.warning(f"Task: {task} needs to be shut down by force..")
-            task.cancel()
-
     except asyncio.CancelledError:
         LOGGER.info("Tasks cancelled due to stop_event being set.")
     finally:
-        LOGGER.info("Stopping background job for scheduler")
-        stop_run_continuously.set()
-        LOGGER.info("Everything shut. Good bye!")
-        LOGGER.info("You can CTRL + C now..")
-        return
+        # Cancel all remaining tasks
+        for task in asyncio.all_tasks():
+            task.cancel()
+        LOGGER.info("Everything shut. Goodbye!")
 
 
 if __name__ == "__main__":
@@ -154,3 +148,5 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
         stop_event.set()
+    finally:
+        os._exit(0)

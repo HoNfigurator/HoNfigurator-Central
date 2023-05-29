@@ -12,23 +12,26 @@ import os
 from pathlib import Path
 from tinydb import TinyDB, Query
 from cogs.misc.logger import get_logger, get_misc, get_home
+from cogs.handlers.events import stop_event
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
 # pip install: tinydb schedule tzlocal pytz
 
 def run_continuously(interval=60):
-    cease_continuous_run = threading.Event()
     class ScheduleThread(threading.Thread):
         @classmethod
         def run(cls):
-            while not cease_continuous_run.is_set():
+            while not stop_event.is_set():
                 schedule.run_pending()
-                time.sleep(interval) # execute every minute (for now..)
+                for _ in range(interval):
+                    if stop_event.is_set():
+                        LOGGER.info("Stopping scheduled tasks")
+                        break
+                    time.sleep(1)
 
     continuous_thread = ScheduleThread()
     continuous_thread.start()
-    return cease_continuous_run
 
 
 def catch_exceptions(cancel_on_failure=False):

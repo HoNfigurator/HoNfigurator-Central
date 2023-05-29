@@ -130,7 +130,10 @@ class GameServer:
     def params_are_different(self):
         if not self._proc_hook: return
 
-        current_params = self._proc_hook.cmdline()
+        try:
+            current_params = self._proc_hook.cmdline()
+        except psutil.NoSuchProcess:
+            return False
         self.set_configuration()
         new_params = MISC.build_commandline_args(self.config.local, self.global_config)
         # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
@@ -705,7 +708,7 @@ region=naeu
                 self._proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path), 'proxy.exe')
                 if self._proxy_process: LOGGER.debug("Found existing proxy PID via a proxy process with a matching description.")
 
-        while self.enabled and self.config.local['params']['man_enableProxy']:
+        while not stop_event.is_set() and self.enabled and self.config.local['params']['man_enableProxy']:
             if not self._proxy_process:
                 if MISC.get_os_platform() == "win32":
                     self._proxy_process = await asyncio.create_subprocess_exec(
@@ -727,7 +730,7 @@ region=naeu
                 self._proxy_process = psutil.Process(self._proxy_process.pid)
 
             # Monitor the process with psutil
-            while self._proxy_process and self._proxy_process.is_running() and self.enabled:
+            while not stop_event.is_set() and self._proxy_process and self._proxy_process.is_running() and self.enabled:
                 await asyncio.sleep(1)  # Check every second
 
             if self.enabled:
@@ -769,7 +772,7 @@ region=naeu
                     if stop_event.is_set():
                         break
                     await asyncio.sleep(1)
-                    
+
         except asyncio.CancelledError:
             LOGGER.debug(f"GameServer #{self.id} Process monitor cancelled")
             # Propagate the cancellation

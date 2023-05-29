@@ -169,5 +169,6 @@ class HealthCheckManager:
             # Sleep for a bit before checking tasks again
             for _ in range(10):
                 if stop_event.is_set():
+                    LOGGER.info("Stopping HealthCheck Manager")
                     break
                 await asyncio.sleep(1)
