@@ -172,7 +172,10 @@ class ChatServerHandler:
             # start a timer to send two packets every 15 seconds
             async def send_keepalive():
                 while not stop_event.is_set():
-                    await asyncio.sleep(15)
+                    for _ in range(15):
+                        if stop_event.is_set():
+                            break
+                        await asyncio.sleep(1)
                     self.writer.write(b'\x02\x00')
                     await self.writer.drain()
                     self.writer.write(b'\x00*')

@@ -764,8 +764,12 @@ region=naeu
                     elif status != 'zombie' and not self.enabled and not self.scheduled_shutdown:
                         #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                         self.schedule_shutdown()
-
-                await asyncio.sleep(5)  # Monitor process every 5 seconds
+                
+                for _ in range(5):  # Monitor process every 5 seconds
+                    if stop_event.is_set():
+                        break
+                    await asyncio.sleep(1)
+                    
         except asyncio.CancelledError:
             LOGGER.debug(f"GameServer #{self.id} Process monitor cancelled")
             # Propagate the cancellation

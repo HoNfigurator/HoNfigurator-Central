@@ -1,12 +1,10 @@
 import subprocess, psutil
-import platform
 import os
 from os.path import exists
 from pathlib import Path
 import sys
-import traceback
 from cpuinfo import get_cpu_info
-import urllib
+import requests
 from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
 
@@ -22,6 +20,7 @@ class Misc:
         self.total_allowed_servers = None
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
+        self.public_ip = self.lookup_public_ip()
 
     def build_commandline_args(self,config_local, config_global):
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
@@ -94,13 +93,10 @@ class Misc:
                     pass
         return None
     def check_port(port):
-        command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)
-        result = command.stdout.read()
-        result = result.decode()
-        if f"0.0.0.0:{port}" in result:
-            return True
-        else:
-            return False
+        for conn in psutil.net_connections('udp'):
+            if conn.laddr.port == port:
+                return True
+        return False
         
     def get_process_priority(proc_name):
         pid = False
@@ -194,11 +190,16 @@ class Misc:
         return affinity
     
     def get_public_ip(self):
+        if self.public_ip:
+            return self.public_ip
+        return self.lookup_public_ip()
+    
+    def lookup_public_ip(self):
         try:
-            external_ip = urllib.request.urlopen('https://4.ident.me').read().decode('utf8')
+            self.public_ip = requests.get('https://4.ident.me').text
         except Exception:
-            external_ip = urllib.request.urlopen('http://api.ipify.org').read().decode('utf8')
-        return external_ip
+            self.public_ip = requests.get('http://api.ipify.org').text
+        return self.public_ip
     
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"

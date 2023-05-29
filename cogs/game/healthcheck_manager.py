@@ -59,15 +59,21 @@ class HealthCheckManager:
 
     async def public_ip_healthcheck(self):
         while not stop_event.is_set():
-            await asyncio.sleep(self.global_config['application_data']['timers']['manager']['public_ip_healthcheck'])
-            for game_server in self.game_servers.values():
-                # Perform the public IP health check for each game server
-                # Example: self.perform_health_check(game_server, HealthChecks.public_ip_healthcheck)
-                pass
+            for _ in range(self.global_config['application_data']['timers']['manager']['public_ip_healthcheck']):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
+            public_ip = MISC.lookup_public_ip()
+            if public_ip != self.global_config['hon_data']['svr_ip']:
+                self.global_config['hon_data']['svr_ip'] = public_ip
+                self.event_bus.emit('check_for_restart_required')
 
     async def general_healthcheck(self):
         while not stop_event.is_set():
-            await asyncio.sleep(self.global_config['application_data']['timers']['manager']['general_healthcheck'])
+            for _ in range(self.global_config['application_data']['timers']['manager']['general_healthcheck']):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
             for game_server in self.game_servers.values():
                 # Perform the general health check for each game server
                 # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
@@ -75,7 +81,10 @@ class HealthCheckManager:
 
     async def lag_healthcheck(self):
         while not stop_event.is_set():
-            await asyncio.sleep(self.global_config['application_data']['timers']['manager']['lag_healthcheck'])
+            for _ in range(self.global_config['application_data']['timers']['manager']['lag_healthcheck']):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
             for game_server in self.game_servers.values():
                 # Perform the lag health check for each game server
                 # Example: self.perform_health_check(game_server, HealthChecks.lag_healthcheck)
@@ -83,7 +92,10 @@ class HealthCheckManager:
 
     async def patch_version_healthcheck(self):
         while not stop_event.is_set():
-            await asyncio.sleep(self.global_config['application_data']['timers']['manager']['check_for_hon_update'])
+            for _ in range(self.global_config['application_data']['timers']['manager']['check_for_hon_update']):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
             try:
                 if not MISC.get_os_platform() == "win32": # TODO: not checking patch on linux yet
                     return
@@ -94,7 +106,10 @@ class HealthCheckManager:
     
     async def honfigurator_version_healthcheck(self):
         while not stop_event.is_set():
-            await asyncio.sleep(self.global_config['application_data']['timers']['manager']['check_for_honfigurator_update'])
+            for _ in range(self.global_config['application_data']['timers']['manager']['check_for_honfigurator_update']):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
             try:
                 await self.event_bus.emit('update')
             except Exception:
@@ -102,7 +117,10 @@ class HealthCheckManager:
     
     async def poll_for_game_stats(self):
         while not stop_event.is_set():
-            await asyncio.sleep(10)
+            for _ in range(10):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
             try:
                 for file_name in os.listdir(self.global_config['hon_data']['hon_logs_directory']):
                     if file_name.endswith(".stats"):
@@ -119,7 +137,10 @@ class HealthCheckManager:
     
     async def remove_old_proxy_processes(self):
         while not stop_event.is_set():
-            await asyncio.sleep(self.global_config['application_data']['timers']['general_healthcheck'])
+            for _ in range(self.global_config['application_data']['timers']['manager']['general_healthcheck']):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
 
     async def run_health_checks(self):
         """
@@ -146,4 +167,7 @@ class HealthCheckManager:
                         self.tasks[task_name] = self.schedule_task(self.honfigurator_version_healthcheck(), task_name)
 
             # Sleep for a bit before checking tasks again
-            await asyncio.sleep(10)
+            for _ in range(10):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)

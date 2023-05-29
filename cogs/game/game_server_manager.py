@@ -28,7 +28,6 @@ MISC = get_misc()
 HOME_PATH = get_home()
 class GameServerManager:
     def __init__(self, global_config, setup):
-        self.update()
         """
         Initializes a new GameServerManager object.
 
@@ -103,6 +102,8 @@ class GameServerManager:
 
         coro = self.health_check_manager.run_health_checks()
         self.schedule_task(coro, 'health_checks')
+
+        MISC.save_last_working_branch()
     
     def cleanup_tasks(self, tasks_dict, current_time):
         for task_name, task in list(tasks_dict.items()):  # Use list() to avoid "dictionary changed size during iteration" error
