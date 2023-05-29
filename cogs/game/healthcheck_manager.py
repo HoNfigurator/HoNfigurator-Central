@@ -6,6 +6,7 @@ import asyncio
 import traceback
 import os
 import re
+from datetime import datetime
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -18,6 +19,43 @@ class HealthCheckManager:
         self.resubmit_match_stats = callback_resubmit_match_stats
         self.global_config = global_config
         self.patching = False
+        self.tasks = {
+            'hon_update_check': None,
+            'honfigurator_update_check': None,
+            'game_stats_resubmission': None,
+
+        }
+    
+    def schedule_task(self, coro, name, override = False):
+        existing_task = self.tasks.get(name)  # Get existing task if any
+
+        if existing_task is not None:
+            if not isinstance(existing_task, asyncio.Task):
+                LOGGER.error(f"Item '{name}' in tasks is not a Task object.")
+                # Choose one of the following lines, depending on your requirements:
+                # raise ValueError(f"Item '{name}' in tasks is not a Task object.")  # Option 1: raise an error
+                existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
+
+        if existing_task:
+            if existing_task.done():
+                if not existing_task.cancelled():
+                    # If the task has finished and was not cancelled, retrieve any possible exception to avoid 'unretrieved exception' warnings
+                    exception = existing_task.exception()
+                    if exception:
+                        LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+                else:
+                    LOGGER.info(f"The previous task '{name}' was cancelled.")
+            else:
+                if not override:
+                    # Task is still running
+                    LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                    return existing_task  # Return existing task
+
+        # Create and register the new task
+        task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
+        self.tasks[name] = task
+        return task
 
     async def public_ip_healthcheck(self):
         while not stop_event.is_set():
@@ -89,20 +127,23 @@ class HealthCheckManager:
 
             If health check functions are not wrapped in try
         """
-        stop_task = asyncio.create_task(stop_event.wait())
-        # TODO: implement the poll_for_game_stats function below, once upstream accepts our format.
-        done, pending = await asyncio.wait(
-            [self.public_ip_healthcheck(), self.general_healthcheck(), self.lag_healthcheck(), self.patch_version_healthcheck(), self.honfigurator_version_healthcheck(), stop_task],
-            return_when=asyncio.FIRST_COMPLETED
-        )
+        # Create tasks using schedule_task method
+        self.tasks['hon_update_check'] = self.schedule_task(self.patch_version_healthcheck(), 'hon_update_check')
+        self.tasks['honfigurator_update_check'] = self.schedule_task(self.honfigurator_version_healthcheck(), 'honfigurator_update_check')
 
-        # Check for uncaught exceptions in the done tasks
-        for task in done:
-            exc = task.exception()
-            if exc:
-                LOGGER.exception(f"An exception occurred in a health check task: {exc}")
-                traceback.print_exception(type(exc), exc, exc.__traceback__)
+        while not stop_event.is_set():
+            for task_name, task in self.tasks.items():
+                if task is None or task.done():
+                    if task and task.exception():
+                        exc = task.exception()
+                        LOGGER.exception(f"An exception occurred in task '{task_name}': {exc}")
+                        traceback.print_exception(type(exc), exc, exc.__traceback__)
+                    
+                    # Schedule task again
+                    if task_name == 'hon_update_check':
+                        self.tasks[task_name] = self.schedule_task(self.patch_version_healthcheck(), task_name)
+                    elif task_name == 'honfigurator_update_check':
+                        self.tasks[task_name] = self.schedule_task(self.honfigurator_version_healthcheck(), task_name)
 
-        # Cancel the pending tasks
-        for task in pending:
-            task.cancel()
+            # Sleep for a bit before checking tasks again
+            await asyncio.sleep(10)

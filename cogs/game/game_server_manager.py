@@ -277,7 +277,7 @@ class GameServerManager:
         await self.auto_ping_listener.start_listener()
 
     async def start_api_server(self):
-        await start_api_server(self.global_config, self.game_servers, self.tasks, self.event_bus, port=self.global_config['hon_data']['svr_api_port'])
+        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, port=self.global_config['hon_data']['svr_api_port'])
     
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """

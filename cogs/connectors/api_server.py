@@ -202,6 +202,7 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
 
     temp['manager'] = task_status(manager_tasks)
     temp['game_servers'] = temp_gameserver_tasks
+    temp['health_checks'] = task_status(health_check_tasks)
 
     return {"tasks_status": temp}
 
@@ -773,12 +774,13 @@ async def asgi_server(loop, app, host, port):
     await loop.create_task(server.serve())
     # await server.serve()
 
-async def start_api_server(config, game_servers_dict, game_manager_tasks, event_bus, host="0.0.0.0", port=5000):
-    global global_config, game_servers, manager_event_bus, manager_tasks
+async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, host="0.0.0.0", port=5000):
+    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks
     global_config = config
     game_servers = game_servers_dict
     manager_event_bus = event_bus
     manager_tasks = game_manager_tasks
+    health_check_tasks = health_tasks
 
     # Create a new logger for uvicorn
     uvicorn_logger = logging.getLogger("uvicorn")
