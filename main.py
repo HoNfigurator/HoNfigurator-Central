@@ -50,6 +50,9 @@ from cogs.misc.utilities import Misc
 MISC = Misc()
 set_misc(MISC)
 
+# check for update at launch
+MISC.update_github_repository()
+
 from cogs.misc.setup import SetupEnvironment
 CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
 setup = SetupEnvironment(CONFIG_FILE)
