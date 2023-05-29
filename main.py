@@ -3,6 +3,7 @@ import traceback, sys, os
 import time
 from os.path import isfile
 from pathlib import Path
+import subprocess
 
 MISC = None
 HOME_PATH = None
@@ -149,4 +150,5 @@ if __name__ == "__main__":
         LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
         stop_event.set()
     finally:
+        if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
         sys.exit(0)
