@@ -5,6 +5,9 @@ from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
 import asyncio
 import datetime
+import os
+import time
+import math
 from fastapi import FastAPI, Request, Response, Body, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 import httpx
@@ -144,6 +147,43 @@ class GlobalConfigResponse(BaseModel):
 @app.get("/api/get_global_config", description="Returns the global configuration of the manager")
 async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return global_config
+
+@app.get("/api/get_replay/{match_id}", description="Searches the server for the specified replay")
+async def get_replay(match_id: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    def convert_size(size_bytes):
+        if size_bytes == 0:
+            return "0B"
+        size_name = ("B", "KB", "MB")
+        i = int(math.floor(math.log(size_bytes, 1024)))
+        p = math.pow(1024, i)
+        s = round(size_bytes / p, 2)
+        return f"{s} {size_name[i]}"
+    match_id = match_id.replace("M",'')
+    match_id = match_id.replace("m",'')
+    match_id = match_id.replace(".honreplay",'')
+    replay_exists,path = await manager_find_replay_callback(f"M{match_id}.honreplay")
+    if replay_exists:
+        # Get the file size in bytes
+        file_size = os.path.getsize(path)
+        
+        # Convert file size to a human readable format
+        file_size = convert_size(file_size)
+        
+        # Get the creation time
+        creation_time = os.path.getctime(path)
+        
+        # Convert the creation time to a readable format
+        creation_time = time.ctime(creation_time)
+        
+        return {
+            'match_id': str(match_id),
+            'path': str(path),
+            'server': global_config['hon_data']['svr_name'],
+            'file_size': file_size,
+            'creation_time': creation_time
+        }
+    else:
+        return JSONResponse(status_code=404,content="Replay not found")
 
 @app.post("/api/set_hon_data", description="Sets the 'hon_data' key within the global manager data dictionary")
 async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
@@ -781,13 +821,14 @@ async def asgi_server(app, host, port):
         LOGGER.info("Shutting down API Server")
         await server_task
 
-async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, host="0.0.0.0", port=5000):
-    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks
+async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, host="0.0.0.0", port=5000):
+    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback
     global_config = config
     game_servers = game_servers_dict
     manager_event_bus = event_bus
     manager_tasks = game_manager_tasks
     health_check_tasks = health_tasks
+    manager_find_replay_callback = find_replay_callback
 
     # Create a new logger for uvicorn
     uvicorn_logger = logging.getLogger("uvicorn")

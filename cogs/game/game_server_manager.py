@@ -278,7 +278,7 @@ class GameServerManager:
         await self.auto_ping_listener.start_listener()
 
     async def start_api_server(self):
-        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, port=self.global_config['hon_data']['svr_api_port'])
+        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
     
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
@@ -658,10 +658,8 @@ class GameServerManager:
             #TODO: raise error or happy with logger?
             LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
             return False
-
-    async def handle_replay_request(self, match_id, extension, account_id):
-        replay_file_name = f"M{match_id}.{extension}"
-        LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
+    
+    async def find_replay_file(self,replay_file_name):
         replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
         if self.global_config['application_data']['longterm_storage']['active']:
             replay_file_paths.append(self.global_config['application_data']['longterm_storage']['location'] / replay_file_name)
@@ -670,8 +668,15 @@ class GameServerManager:
             file_exists = Path.exists(replay_path)
             if file_exists:
                 replay_file_path = replay_path
-                break
+                return True,replay_file_path
 
+    async def handle_replay_request(self, match_id, extension, account_id):
+        replay_file_name = f"M{match_id}.{extension}"
+        LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
+
+        replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
+        file_exists,replay_file_path = await self.find_replay_file(replay_file_name)
+        
         if not file_exists:
             # Send the "does not exist" packet
             # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
