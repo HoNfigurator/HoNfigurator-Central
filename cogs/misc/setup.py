@@ -4,6 +4,7 @@ from datetime import datetime
 from pathlib import Path
 import pathlib
 import json
+import requests
 from cogs.misc.logger import get_logger, get_home, get_misc
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.hide_pass import getpass
@@ -29,7 +30,6 @@ class SetupEnvironment:
             self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
-        # self.LINUX_SPECIFIC_CONFIG_ITEMS = ['']
         self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','man_enableProxy','svr_override_affinity']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
@@ -85,7 +85,7 @@ class SetupEnvironment:
                 "svr_login": "",
                 "svr_password": "",
                 "svr_name": "",
-                "svr_location": "",
+                "svr_location": self.get_server_region(),
                 "svr_priority": "HIGH",
                 "svr_total": int(MISC.get_cpu_count() / 2),
                 "svr_total_per_core": 1,
@@ -126,6 +126,28 @@ class SetupEnvironment:
                 }
             }
         }
+    
+    def get_server_region(self):
+        try:
+            public_ip = MISC.get_public_ip()
+            response = requests.get(f"https://api.iplocation.net/?ip={public_ip}")
+            country_code = response.json()['country_code2']
+        except Exception as e:
+            print(f"Failed to get IP geolocation: {e}")
+            return None
+
+        # Map country codes to server regions
+        mapping = {
+            'AU': 'AU',
+            'EU': 'EU',
+            'TH': 'TH',
+            'SG': 'SEA', # Singapore for Southeast Asia
+            'BR': 'BR',
+            'RU': 'RU',
+            'US': 'USE' # default to USE for all US IPs
+        }
+
+        return mapping.get(country_code, "") # default to 'USE' if country code not found
 
     def get_existing_configuration(self):
         with open(self.config_file_hon, 'r') as config_file_hon:
@@ -336,13 +358,6 @@ class SetupEnvironment:
             os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
         if not os.path.exists(self.config_file_logging):
             self.create_logging_configuration_file()
-        if not os.path.exists(self.config_file_hon):
-            if args:
-                if args.hon_install_directory:
-                    self.hon_data["hon_install_directory"] = Path(
-                        args.hon_install_directory)
-            self.create_hon_configuration_file(
-                detected="hon_install_directory")
         database = RolesDatabase()
         if not database.add_default_data():
             while True:
@@ -357,6 +372,13 @@ class SetupEnvironment:
                 except ValueError:
                     print(
                         "Value must be a more than 10 digits.")
+        if not os.path.exists(self.config_file_hon):
+            if args:
+                if args.hon_install_directory:
+                    self.hon_data["hon_install_directory"] = Path(
+                        args.hon_install_directory)
+            self.create_hon_configuration_file(
+                detected="hon_install_directory")
         # else:
         try:
             self.hon_data = self.get_existing_configuration()['hon_data']
@@ -373,15 +395,24 @@ class SetupEnvironment:
         with open(str(self.config_file_logging), 'w') as config_file_logging:
             json.dump(self.get_default_logging_configuration(),
                       config_file_logging, indent=4)
-
+            
     def create_hon_configuration_file(self, detected=None):
-
-        print("\n\nConfiguration file not found. Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
+        print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
+        while True:
+            basic = input("Would you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
+            if basic in ['y','n', 'Y', 'N']:
+                break
+            print("Please provide 'y' for default settings or 'n' for advanced settings.")
 
         for key, value in self.hon_data.items():
+            if basic in ['y','Y'] and (value or value == False): continue
             while True:
                 if key == "svr_password":
-                    user_input = getpass(f"\tEnter the value for '{key}': ")
+                    user_input = getpass(f"\tEnter the value for '{key}' (HINT: HoN Password): ")
+                elif key == "svr_login":
+                    user_input = input(f"\tEnter the value for '{key}' (HINT: HoN Username): ")
+                elif key == "svr_name":
+                    user_input = input(f"\tEnter the value for '{key}' (HINT: Server display name): ")
                 elif detected == key:
                     user_input = input("\tEnter the value for '{}'{}: ".format(
                         key, " (detected: {})".format(value) if value or value == False else ""))
