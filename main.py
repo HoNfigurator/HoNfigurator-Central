@@ -97,7 +97,6 @@ async def main():
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
 
     # The autoping responder port is set to be 1 less than the public game port. This is to keep ports grouped together for convenience.
-    if global_config['hon_data']['man_enableProxy']: udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1 + 10000
     udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1 + 10000 if 'man_enableProxy' in global_config and global_config['hon_data']['man_enableProxy'] else global_config['hon_data']['svr_starting_gamePort'] - 1
 
     global_config['hon_data']['autoping_responder_port'] = udp_ping_responder_port
