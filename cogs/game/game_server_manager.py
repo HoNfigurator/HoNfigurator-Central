@@ -124,7 +124,10 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 self.cleanup_tasks(game_server.tasks, current_time)
             self.cleanup_tasks(self.tasks, current_time)
-            await asyncio.sleep(30 * 60)  # Sleep for 30 minutes
+            for _ in range(30 * 60):  # Monitor process every 5 seconds
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
     
     def schedule_task(self, coro, name, override = False):
         existing_task = self.tasks.get(name)  # Get existing task if any
@@ -662,7 +665,7 @@ class GameServerManager:
     async def find_replay_file(self,replay_file_name):
         replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
         if self.global_config['application_data']['longterm_storage']['active']:
-            replay_file_paths.append(self.global_config['application_data']['longterm_storage']['location'] / replay_file_name)
+            replay_file_paths.append(Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
 
         for replay_path in replay_file_paths:
             file_exists = Path.exists(replay_path)
@@ -675,13 +678,16 @@ class GameServerManager:
         LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
 
         replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
+        if self.global_config['application_data']['longterm_storage']['active']:
+            replay_file_paths.append(Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
         file_exists,replay_file_path = await self.find_replay_file(replay_file_name)
         
         if not file_exists:
             # Send the "does not exist" packet
             # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
             res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
-            LOGGER.warn(f"Replay file {replay_file_name} does not exist. Checked: {replay_file_paths}")
+            non_existing_paths = [str(path) for path in replay_file_paths]
+            LOGGER.warn(f"Replay file {replay_file_name} does not exist. Checked: {non_existing_paths}")
             return
 
         # Send the "exists" packet
