@@ -158,6 +158,8 @@ async def get_replay(match_id: str, token_and_user_info: dict = Depends(check_pe
         p = math.pow(1024, i)
         s = round(size_bytes / p, 2)
         return f"{s} {size_name[i]}"
+    if not match_id:
+        return JSONResponse(status_code=500,content="Invalid match ID")
     match_id = match_id.replace("M",'')
     match_id = match_id.replace("m",'')
     match_id = match_id.replace(".honreplay",'')

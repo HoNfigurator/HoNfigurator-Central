@@ -846,7 +846,7 @@ class GameServerManager:
                 await self.cmd_message_server(game_server, "!! ANNOUNCEMENT !! This server will shutdown after the current match for patching.")
             await self.cmd_shutdown_server(game_server)
 
-        if MISC.get_proc(self.global_config['hon_data']['hon_executable_path']):
+        if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
             return
 
         # begin patch
