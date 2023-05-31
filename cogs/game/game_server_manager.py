@@ -334,8 +334,8 @@ class GameServerManager:
         """
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
-            LOGGER.error(f"[{mserver_auth_response[1]}] Authentication to MasterServer failed. {mserver_auth_response[0]}")
-            raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error. {mserver_auth_response[0]}")
+            LOGGER.error(f"[{mserver_auth_response[1]}] Authentication to MasterServer failed.")
+            raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
         LOGGER.info("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
