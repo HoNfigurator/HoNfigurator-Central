@@ -22,6 +22,7 @@ class Misc:
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
         self.public_ip = self.lookup_public_ip()
+        self.hon_version = None
 
     def build_commandline_args(self,config_local, config_global):
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
@@ -245,11 +246,14 @@ class Misc:
 
             if not validate_version_format(version):
                 raise HoNUnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
-            else:
-                return version
+
         elif self.get_os_platform() == "linux":
             with open(Path(hon_exe).parent / "version.txt", 'r') as f:
-                return f.readline().rstrip('\n')
+                version = f.readline().rstrip('\n')
+        
+        self.hon_version = version
+        return version
+
     def update_github_repository(self):
         try:
             # Change the current working directory to the HOME_PATH
