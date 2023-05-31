@@ -79,8 +79,8 @@ class ChatServerHandler:
             except ConnectionResetError:
                 LOGGER.error("Connection reset by the server.")
                 break
-            except Exception:
-                LOGGER.error(f"Other connection error. {traceback.format_exc()}")
+            # except Exception:  This causes spam errors. We should let it reconnect naturally if there's an issue
+            #     LOGGER.error(f"Other connection error. {traceback.format_exc()}")
 
     def create_handshake_packet(self, session_id, server_id):
         msg_type = 0x1600

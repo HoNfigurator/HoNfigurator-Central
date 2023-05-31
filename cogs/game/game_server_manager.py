@@ -5,7 +5,6 @@ import asyncio
 import hashlib
 import os.path
 import subprocess
-import sys
 from datetime import datetime, timedelta
 import inspect
 from cogs.misc.exceptions import HoNAuthenticationError, HoNServerError
@@ -848,8 +847,7 @@ class GameServerManager:
 
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
             return
-
-        # begin patch
+        
         patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
         # subprocess.run([patcher_exe, "-norun"])
         try:

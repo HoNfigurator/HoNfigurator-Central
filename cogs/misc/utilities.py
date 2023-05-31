@@ -1,5 +1,6 @@
 import subprocess, psutil
 import os
+import hashlib
 from os.path import exists
 from pathlib import Path
 import sys
@@ -43,7 +44,7 @@ class Misc:
                 f'127.0.0.1:{config_global["hon_data"]["svr_managerPort"]}'
             ]
         
-    def parse_linux_procs(proc_name, slave_id):
+    def parse_linux_procs(self, proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():
                 if slave_id == '':
@@ -60,9 +61,9 @@ class Misc:
                                         return [ proc ]
         return []
     
-    def get_proc(proc_name, slave_id=''):
+    def get_proc(self, proc_name, slave_id=''):
         if sys.platform == "linux":
-            return Misc.parse_linux_procs(proc_name, slave_id)
+            return self.parse_linux_procs(proc_name, slave_id)
         procs = []
         for proc in psutil.process_iter():
             try:
@@ -92,7 +93,7 @@ class Misc:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         return None
-    def check_port(port):
+    def check_port(self, port):
         for conn in psutil.net_connections('udp'):
             if conn.laddr.port == port:
                 return True
@@ -272,6 +273,16 @@ class Misc:
                 LOGGER.debug("HoNfigurator already up to date. No need to relaunch.")
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error updating the code: {e}")
+    
+    def calculate_md5(file_path):
+        with open(file_path, "rb") as file:
+            md5_hash = hashlib.md5()
+            chunk_size = 4096
+
+            while chunk := file.read(chunk_size):
+                md5_hash.update(chunk)
+
+            return md5_hash.hexdigest()
     
     def save_last_working_branch(self):
         with open(HOME_PATH / "logs" / ".last_working_branch", "w") as f:

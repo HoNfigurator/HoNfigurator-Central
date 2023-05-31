@@ -583,7 +583,7 @@ class GameServer:
         """
             Check if existing hon server is running.
         """
-        running_procs = Misc.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
+        running_procs = MISC.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
         last_good_proc = None
         while len(running_procs) > 0:
             last_good_proc = None
@@ -592,7 +592,7 @@ class GameServer:
                 if status == 3:
                     last_good_proc = proc
                 elif status is None:
-                    if not Misc.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
+                    if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
                         proc.terminate()
                         LOGGER.debug(f"Terminated GameServer #{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
