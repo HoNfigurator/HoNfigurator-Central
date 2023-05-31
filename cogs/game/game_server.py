@@ -527,9 +527,6 @@ class GameServer:
     
     def mark_for_deletion(self):
         self.delete_me = True
-    
-    def mark_for_deletion(self):
-        self.delete_me = False
 
 
     async def schedule_shutdown_server(self, delete=False, disable=True):

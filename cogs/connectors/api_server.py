@@ -149,7 +149,7 @@ async def get_global_config(token_and_user_info: dict = Depends(check_permission
     return global_config
 
 @app.get("/api/get_hon_version")
-async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
+async def get_hon_version(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return MISC.hon_version
 
 @app.get("/api/get_replay/{match_id}", description="Searches the server for the specified replay")
