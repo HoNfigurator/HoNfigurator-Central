@@ -101,6 +101,9 @@ async def main(game_traffic_port, manager_traffic_port, remote_host):
     game_server = await asyncio.start_server(handle_game_connection, '0.0.0.0', game_traffic_port)
     manager_server = await asyncio.start_server(handle_manager_connection, '0.0.0.0', manager_traffic_port)
 
+    print(f"Game server started on port {game_traffic_port}")
+    print(f"Manager server started on port {manager_traffic_port}")
+
     async with game_server, manager_server:
         await asyncio.gather(game_server.serve_forever(), manager_server.serve_forever())
 
