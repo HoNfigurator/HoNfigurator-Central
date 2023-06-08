@@ -1,6 +1,9 @@
 import subprocess, psutil
 import os
 import hashlib
+import crcmod
+import zipfile
+import binascii
 from os.path import exists
 from pathlib import Path
 import sys
@@ -278,7 +281,17 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error updating the code: {e}")
     
-    def calculate_md5(file_path):
+    def calculate_crc32(self, file_path):
+        crc32_func = crcmod.predefined.mkCrcFun('crc-32')
+        crc = 0
+
+        with open(file_path, 'rb') as file:
+            for chunk in iter(lambda: file.read(4096), b''):
+                crc = crc32_func(chunk, crc)
+
+        return binascii.hexlify(crc.to_bytes(4, 'big')).decode()
+    
+    def calculate_md5(self, file_path):
         with open(file_path, "rb") as file:
             md5_hash = hashlib.md5()
             chunk_size = 4096
@@ -287,6 +300,10 @@ class Misc:
                 md5_hash.update(chunk)
 
             return md5_hash.hexdigest()
+    
+    def unzip_file(self, source_zip, dest_unzip):
+        with zipfile.ZipFile(source_zip, 'r') as zip_ref:
+            zip_ref.extractall(dest_unzip)
     
     def save_last_working_branch(self):
         with open(HOME_PATH / "logs" / ".last_working_branch", "w") as f:

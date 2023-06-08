@@ -5,8 +5,11 @@ import asyncio
 import hashlib
 import os.path
 import subprocess
+import urllib
 from datetime import datetime, timedelta
 import inspect
+import tempfile
+import shutil
 from cogs.misc.exceptions import HoNAuthenticationError, HoNServerError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
@@ -25,6 +28,9 @@ from os.path import exists
 LOGGER = get_logger()
 MISC = get_misc()
 HOME_PATH = get_home()
+HON_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+HON_UPDATE_X64_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+
 class GameServerManager:
     def __init__(self, global_config, setup):
         """
@@ -505,10 +511,11 @@ class GameServerManager:
                     servers_removed += 1
                     if servers_removed >= num_servers_to_remove:
                         break
-            for port in servers_to_remove:
-                if port in self.game_servers:
-                    game_server.cancel_tasks()
-                    del self.game_servers[port]
+            # for port in servers_to_remove:
+            #     await asyncio.sleep(0.1)
+            #     if port in self.game_servers:
+            #         game_server.cancel_tasks()
+            #         del self.game_servers[port]
             
             LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {total_num_servers - servers_removed} game servers are now running.")
             return servers_removed
@@ -835,6 +842,23 @@ class GameServerManager:
         except Exception:
             print(traceback.format_exc())
 
+    async def patch_extract_crc_from_file(self, url):
+        try:
+            with urllib.request.urlopen(url) as response:
+                content = response.read().decode('utf-8')
+            # sample: 4.10.8.0;4.10.8.honpatch;B30B80D1;hon_update_x64.zip;4DFDFDD5
+            components = content.strip().split(';')
+            version = components[0]
+            patch = components[1]
+            hon_exe_crc = components[2]
+            filename = components[3]
+            hon_update_exe_crc = components[-1]
+            return hon_update_exe_crc
+        
+        except Exception as e:
+            LOGGER.error(f"Error occurred while extracting CRC from file: {e}")
+            return None
+
     async def initialise_patching_procedure(self, timeout=300, source=None):
         if self.patching:
             LOGGER.warn("Patching is already in progress.")
@@ -848,24 +872,45 @@ class GameServerManager:
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
             return
         
+        hon_update_x64_crc = await self.patch_extract_crc_from_file(HON_VERSION_URL)
+        if (not exists(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe')) or (hon_update_x64_crc and hon_update_x64_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe').lower()):
+            try:
+                temp_folder = tempfile.TemporaryDirectory()
+                temp_path = temp_folder.name
+                temp_zip_path = Path(temp_path) / 'hon_update_x64.zip'
+                temp_update_x64_path = Path(temp_path) / 'hon_update_x64.exe'
+                
+                download_hon_update_x64 = urllib.request.urlretrieve(HON_UPDATE_X64_DOWNLOAD_URL, temp_zip_path)
+                if not download_hon_update_x64:
+                    LOGGER.warn(f"Newer hon_update_x64.zip is available, however the download failed.\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                    return
+
+                temp_extracted_path = temp_folder.name
+                MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
+
+                hon_update_x64_path = self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'
+
+                # Check if the file is in use before moving it
+                try:
+                    shutil.move(temp_update_x64_path, hon_update_x64_path)
+                except PermissionError:
+                    LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'} is currently in use. Closing the file..")
+                    process = MISC.get_proc(proc_name='hon_update_x64.exe')
+                    if process: process.terminate()
+                    try:
+                        shutil.move(temp_update_x64_path, hon_update_x64_path)
+                    except:
+                        LOGGER.error(f"HoN Update - Failed to copy downloaded hon_update_x64.exe into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                        return
+
+            except Exception as e:
+                LOGGER.error(f"Error occurred during file download or extraction: {e}")
+                LOGGER.error(traceback.format_exc())
+        
         patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
         # subprocess.run([patcher_exe, "-norun"])
         try:
-            subprocess.run([patcher_exe, "-manager"], timeout=timeout)
-            # the hon_update_x64.exe will launch the default k2 server manager, indicating patching is complete. We don't need it so close it.
-            wait_for_temp_manager = 0
-            max = 5
-
-            temp_manager_proc = None
-            while not temp_manager_proc:
-                await asyncio.sleep(1)
-                temp_manager_proc = MISC.find_process_by_cmdline_keyword("-manager", proc_name = self.global_config['hon_data']['hon_executable_name'])
-                wait_for_temp_manager +=1
-                if wait_for_temp_manager >= max:
-                    LOGGER.error(f"Patching failed as it exceeded {max} seconds waiting for patcher to open manager.")
-                    return False
-
-            temp_manager_proc.terminate()
+            subprocess.run([patcher_exe, "-norun"], timeout=timeout)
 
             svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
             if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:

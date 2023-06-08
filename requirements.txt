@@ -16,3 +16,4 @@ httpx==0.24.0
 schedule==1.2.0
 cryptography==38.0.4
 py-cpuinfo==9.0.0
+crcmod==1.7
