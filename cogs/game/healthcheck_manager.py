@@ -23,7 +23,7 @@ class HealthCheckManager:
             'hon_update_check': None,
             'honfigurator_update_check': None,
             'game_stats_resubmission': None,
-
+            'public_ip_changed_check': None,
         }
     
     def schedule_task(self, coro, name, override = False):
@@ -32,7 +32,6 @@ class HealthCheckManager:
         if existing_task is not None:
             if not isinstance(existing_task, asyncio.Task):
                 LOGGER.error(f"Item '{name}' in tasks is not a Task object.")
-                # Choose one of the following lines, depending on your requirements:
                 # raise ValueError(f"Item '{name}' in tasks is not a Task object.")  # Option 1: raise an error
                 existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
 
@@ -63,10 +62,10 @@ class HealthCheckManager:
                 if stop_event.is_set():
                     break
                 await asyncio.sleep(1)
-            public_ip = MISC.lookup_public_ip()
-            if public_ip != self.global_config['hon_data']['svr_ip']:
+            public_ip = await MISC.lookup_public_ip_async()
+            if public_ip and public_ip != self.global_config['hon_data']['svr_ip']:
                 self.global_config['hon_data']['svr_ip'] = public_ip
-                self.event_bus.emit('check_for_restart_required')
+                await self.event_bus.emit('check_for_restart_required')
 
     async def general_healthcheck(self):
         while not stop_event.is_set():
@@ -151,6 +150,8 @@ class HealthCheckManager:
         # Create tasks using schedule_task method
         self.tasks['hon_update_check'] = self.schedule_task(self.patch_version_healthcheck(), 'hon_update_check')
         self.tasks['honfigurator_update_check'] = self.schedule_task(self.honfigurator_version_healthcheck(), 'honfigurator_update_check')
+        self.tasks['game_stats_resubmission'] = self.schedule_task(self.poll_for_game_stats(), 'game_stats_resubmission')
+        self.tasks['public_ip_changed_check'] = self.schedule_task(self.public_ip_healthcheck(), 'public_ip_changed_check')
 
         while not stop_event.is_set():
             for task_name, task in self.tasks.items():
@@ -165,6 +166,10 @@ class HealthCheckManager:
                         self.tasks[task_name] = self.schedule_task(self.patch_version_healthcheck(), task_name)
                     elif task_name == 'honfigurator_update_check':
                         self.tasks[task_name] = self.schedule_task(self.honfigurator_version_healthcheck(), task_name)
+                    elif task_name == 'game_stats_resubmission':
+                        self.tasks[task_name] = self.schedule_task(self.poll_for_game_stats(), task_name)
+                    elif task_name == 'public_ip_changed_check':
+                        self.tasks[task_name] = self.schedule_task(self.public_ip_healthcheck(), task_name)
 
             # Sleep for a bit before checking tasks again
             for _ in range(10):

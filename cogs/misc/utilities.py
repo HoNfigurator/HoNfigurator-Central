@@ -9,6 +9,7 @@ from pathlib import Path
 import sys
 from cpuinfo import get_cpu_info
 import requests
+import aiohttp
 from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
 
@@ -203,7 +204,24 @@ class Misc:
         try:
             self.public_ip = requests.get('https://4.ident.me').text
         except Exception:
-            self.public_ip = requests.get('http://api.ipify.org').text
+            try:
+                self.public_ip = requests.get('http://api.ipify.org').text
+            except Exception:
+                LOGGER.error("Failed to fetch public IP")
+                self.public_ip = None
+        return self.public_ip
+    
+    async def lookup_public_ip_async(self):
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get('https://4.ident.me') as response:
+                    self.public_ip = await response.text()
+            except Exception:
+                try:
+                    async with session.get('http://api.ipify.org') as response:
+                        self.public_ip = await response.text()
+                except Exception:
+                    self.public_ip = None
         return self.public_ip
     
     def get_svr_description(self):
