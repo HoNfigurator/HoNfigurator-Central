@@ -189,12 +189,22 @@ class ReplayCleaner(HonfiguratorSchedule):
         return counter
     
     def move_files_to_longterm_storage(self):
-        counter = 0
+        success = 0
+        fail = 0
         for file_path in self.path_to_replays_locally.glob("**/*.honreplay"):
             if time.time() - file_path.stat().st_mtime > 86400:
-                counter += 1
-                shutil.move(file_path, self.longterm_storage_replay_path)
-        return counter
+                try:
+                    shutil.move(file_path, self.longterm_storage_replay_path)
+                    success += 1
+                except FileExistsError:
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+                except Exception as e:
+                    LOGGER.error(f"Error moving replay file: {file_path}. {e}")
+                    fail+=1
+        return success,fail
 
     def clean(self):
         stats = {}
@@ -209,7 +219,9 @@ class ReplayCleaner(HonfiguratorSchedule):
             stats["deleted_temp_folders"] =  0
         
         if self.move_replays_to_longerm_storage:
-            stats["moved_replays"] = self.move_files_to_longterm_storage()
+            moved, failed = self.move_files_to_longterm_storage()
+            stats["moved_replays"] = moved
+            stats["failed_to_move_replays"] = failed
         else:
             stats["moved_replays"] = 0
 
