@@ -407,7 +407,7 @@ class GameServerManager:
 
     async def resubmit_match_stats_to_masterserver(self, match_id, file_path):
         mserver_stats_response = await self.master_server_handler.send_stats_file(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest(), match_id, file_path)
-        if mserver_stats_response[1] != 200 or mserver_stats_response[0] == '':
+        if not mserver_stats_response or mserver_stats_response[1] != 200 or mserver_stats_response[0] == '':
             # .stats submission will not work until KONGOR implements accepting .stats from the custom written manager.
             # TODO: Update below to .error once upstream is configured to accept our stats.
             LOGGER.error(f"[{mserver_stats_response[1]}] Stats resubmission failed - {file_path}. Response: {mserver_stats_response[0]}")
