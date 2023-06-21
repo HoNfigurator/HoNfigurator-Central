@@ -132,7 +132,7 @@ class MasterServerHandler:
                 with open(file_path, 'r', encoding='utf-16-le') as f:
                     file_content = f.read().lstrip('\ufeff')
             elif MISC.get_os_platform() == "linux":
-                with open(file_path, 'r', encoding='utf-8') as f:
+                with open(file_path, 'r', encoding='ascii') as f:
                     file_content = f.read().lstrip('\ufeff')
             else:
                 raise HoNCompatibilityError(f"OS is reported as {MISC.get_os_platform()} however only 'win32' or 'linux' are supported.")
