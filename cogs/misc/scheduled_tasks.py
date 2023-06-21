@@ -7,6 +7,7 @@ import tzlocal
 import shutil
 import time
 import pytz
+from json import JSONDecodeError
 import sys
 import os
 from pathlib import Path
@@ -40,7 +41,12 @@ def catch_exceptions(cancel_on_failure=False):
         def wrapper(*args, **kwargs):
             try:
                 return job_func(*args, **kwargs)
-            except:
+            except JSONDecodeError:
+                LOGGER.error('Json Decode Error. Clearing DB...')
+                clear_db()  # calling the clear_db function to clear the DB
+                if cancel_on_failure:
+                    return schedule.CancelJob
+            except Exception:
                 import traceback
                 LOGGER.error(traceback.format_exc())
                 if cancel_on_failure:
@@ -48,6 +54,13 @@ def catch_exceptions(cancel_on_failure=False):
         return wrapper
     return catch_exceptions_decorator
 
+def clear_db():
+    try:
+        with open(HOME_PATH / "cogs" / "db" / "stats.json", 'w') as db_file:
+            db_file.write('')
+        LOGGER.info('DB cleared successfully.')
+    except Exception as e:
+        LOGGER.error(f'Failed to clear DB: {str(e)}')
 
 class HonfiguratorSchedule():
     def __init__(self, config):
