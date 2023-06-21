@@ -410,7 +410,7 @@ class GameServerManager:
         if not mserver_stats_response or mserver_stats_response[1] != 200 or mserver_stats_response[0] == '':
             # .stats submission will not work until KONGOR implements accepting .stats from the custom written manager.
             # TODO: Update below to .error once upstream is configured to accept our stats.
-            LOGGER.error(f"[{mserver_stats_response[1] if mserver_stats_response else 'unknown'}] Stats resubmission failed - {file_path}. Response: {mserver_stats_response[0]}")
+            LOGGER.error(f"[{mserver_stats_response[1] if mserver_stats_response else 'unknown'}] Stats resubmission failed - {file_path}. Response: {mserver_stats_response[0] if mserver_stats_response else 'unknown'}")
             return False
         LOGGER.info(f"{match_id} Stats resubmission successful")
         parsed_mserver_stats_response = phpserialize.loads(mserver_stats_response[0].encode('utf-8'))
