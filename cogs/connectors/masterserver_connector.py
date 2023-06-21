@@ -2,12 +2,14 @@ import traceback
 import aiohttp
 import os
 import urllib.parse
-from cogs.misc.logger import get_logger
+from cogs.misc.logger import get_logger, get_misc
+from cogs.misc.exceptions import HoNCompatibilityError
 from cogs.handlers.events import stop_event
 import phpserialize
 import hashlib
 
 LOGGER = get_logger()
+MISC = get_misc()
 
 class MasterServerHandler:
 
@@ -126,8 +128,14 @@ class MasterServerHandler:
 
         try:
             # Read the file content as a string with specified encoding
-            with open(file_path, 'r', encoding='utf-16-le') as f:
-                file_content = f.read().lstrip('\ufeff')
+            if MISC.get_os_platform() == "win32":
+                with open(file_path, 'r', encoding='utf-16-le') as f:
+                    file_content = f.read().lstrip('\ufeff')
+            elif MISC.get_os_platform() == "linux":
+                with open(file_path, 'r', encoding='utf-8') as f:
+                    file_content = f.read().lstrip('\ufeff')
+            else:
+                raise HoNCompatibilityError(f"OS is reported as {MISC.get_os_platform()} however only 'win32' or 'linux' are supported.")
 
             # Manually construct the request payload
             payload = "f=resubmit_stats"
