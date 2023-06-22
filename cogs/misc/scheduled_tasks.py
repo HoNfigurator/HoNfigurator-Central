@@ -1,4 +1,5 @@
 import threading
+import traceback
 import functools
 import schedule
 from datetime import datetime, timedelta
@@ -99,7 +100,8 @@ class HonfiguratorSchedule():
         get_replaysnew_scheduled_time_str = get_replaysnew_scheduled_time.strftime("%H:%M")
 
         schedule.every().day.at(get_replaysnew_scheduled_time_str, pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
-        schedule.every().day.at(self.config['application_data']['timers']['replay_cleaner']['scheduled_time'], pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_or_move_files)
+        # schedule.every().day.at(self.config['application_data']['timers']['replay_cleaner']['scheduled_time'], pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_or_move_files)
+        schedule.every(1).minutes.do(self.delete_or_move_files)
         LOGGER.info("Success!")
 
     def stop(self):
@@ -196,13 +198,13 @@ class ReplayCleaner(HonfiguratorSchedule):
                 try:
                     shutil.move(file_path, self.longterm_storage_replay_path)
                     success += 1
-                except FileExistsError:
+                except shutil.Error:
                     try:
                         os.remove(file_path)
                     except:
                         pass
                 except Exception as e:
-                    LOGGER.error(f"Error moving replay file: {file_path}. {e}")
+                    LOGGER.error(f"Error moving replay file: {file_path}. {traceback.format_exc()}")
                     fail+=1
         return success,fail
 
