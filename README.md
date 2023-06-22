@@ -37,8 +37,29 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 <summary>Linux</summary>
 <installer here>
 # Install Server <br>
-1. curl https://games.superbjorn.de/install-server.py | sudo python3 -<br>
-2. Install Launcher (this repo)
+1. Install: curl sudo screen (e.g. apt install curl sudo screen -y)
+2. curl https://kongor.superbjorn.de/scripts/las/installer.sh | sudo bash -
+3. git clone git@github.com:HoNfigurator/HoNfigurator-Central.git
+> **Warning** its strongly recommended to run the manager in a screen
+4. Switch to your HoNfigurator-Central directory and execute ./main.py
+
+- Building Distribution:
+  - CentOS 7 &cross; 
+  - Debian 10 &cross;
+  - Debian 11 &check;
+  - Debian 12 &check;
+  - Ubuntu 22.04 &check;
+  - Ubuntu 22.10 &check;
+  - Ubuntu 23.04 &check;
+
+- Tested Distributions
+  - CentOS 7 &cross;
+  - Debian 10 &cross;
+  - Debian 11 &check;
+  - Debian 12 _
+  - Ubuntu 22.04 _
+  - Ubuntu 22.10 _
+  - Ubuntu 23.04 _
 
 </details>
 
