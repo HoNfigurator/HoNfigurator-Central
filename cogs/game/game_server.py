@@ -69,7 +69,7 @@ class GameServer:
 
         if existing_task is not None:
             if not isinstance(existing_task, asyncio.Task):
-                LOGGER.error(f"GameServer {self.id} Item '{name}' in tasks is not a Task object.")
+                LOGGER.error(f"GameServer #{self.id} Item '{name}' in tasks is not a Task object.")
                 # Choose one of the following lines, depending on your requirements:
                 # raise ValueError(f"Item '{name}' in tasks is not a Task object.")  # Option 1: raise an error
                 existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
@@ -80,12 +80,12 @@ class GameServer:
                     # If the task has finished and was not cancelled, retrieve any possible exception to avoid 'unretrieved exception' warnings
                     exception = existing_task.exception()
                     if exception:
-                        LOGGER.error(f"GameServer {self.id} The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+                        LOGGER.error(f"GameServer #{self.id} The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
                 else:
-                    LOGGER.info(f"GameServer {self.id}The previous task '{name}' was cancelled.")
+                    LOGGER.info(f"GameServer #{self.id} The previous task '{name}' was cancelled.")
             else:
                 # Task is still running
-                LOGGER.warning(f"GameServer {self.id}Task '{name}' is still running, new task not scheduled.")
+                LOGGER.warning(f"GameServer #{self.id} Task '{name}' is still running, new task not scheduled.")
                 return existing_task  # Return existing task
 
         # Create and register the new task
@@ -522,7 +522,7 @@ class GameServer:
                 LOGGER.warning(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
                 return False
         except Exception as e:
-            LOGGER.error(f"GameServer {self.id} Unexpected error occurred: {e}")
+            LOGGER.error(f"GameServer #{self.id} Unexpected error occurred: {e}")
             return False
     
     def mark_for_deletion(self):
@@ -610,7 +610,7 @@ class GameServer:
                 self.schedule_task(coro,'proxy_task', coro_bracket=True)
                 return True
             except Exception:
-                LOGGER.exception(f"GameServer {self.id} {traceback.format_exc()}")
+                LOGGER.exception(f"GameServer #{self.id} {traceback.format_exc()}")
         else:
             return False
     async def set_server_priority_reduce(self):
@@ -668,7 +668,7 @@ region=naeu
                 raise HoNCompatibilityError(f"Unknown OS: {MISC.get_os_platform()}. We cannot run the proxy.")
         except HoNCompatibilityError:
             LOGGER.warn(traceback.format_exc())
-            LOGGER.warn(f"GameServer {self.id} Setting the proxy to OFF.")
+            LOGGER.warn(f"GameServer #{self.id} Setting the proxy to OFF.")
             self.config.local['params']['man_enableProxy'] = False
             return
 
@@ -691,19 +691,19 @@ region=naeu
                 # Check if the process command line matches the one you're using to start the proxy
                 if proxy_config_path in " ".join(process.cmdline()):
                     self._proxy_process = process
-                    LOGGER.debug(f"GameServer {self.id} Proxy process found: {self._proxy_process}")
+                    LOGGER.debug(f"GameServer #{self.id} Proxy process found: {self._proxy_process}")
                 else:
-                    LOGGER.debug(f"GameServer {self.id} Proxy pid found however the process description didn't match. Not the right PID, just a collision.")
+                    LOGGER.debug(f"GameServer #{self.id} Proxy pid found however the process description didn't match. Not the right PID, just a collision.")
                     self._proxy_process = None
             except psutil.NoSuchProcess:
-                LOGGER.debug(f"GameServer {self.id} Previous proxy process with PID {proxy_pid} was not found.")
+                LOGGER.debug(f"GameServer #{self.id} Previous proxy process with PID {proxy_pid} was not found.")
                 self._proxy_process = None
                 self._proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path), 'proxy.exe')
-                if self._proxy_process: LOGGER.debug(f"GameServer {self.id} Found existing proxy PID via a proxy process with a matching description.")
+                if self._proxy_process: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
             except Exception:
                 LOGGER.error(f"An error occurred while loading the PID from the last saved value: {proxy_pid}. {traceback.format_exc()}")
                 self._proxy_process = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path), 'proxy.exe')
-                if self._proxy_process: LOGGER.debug(f"GameServer {self.id} Found existing proxy PID via a proxy process with a matching description.")
+                if self._proxy_process: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
 
         while not stop_event.is_set() and self.enabled and self.config.local['params']['man_enableProxy']:
             if not self._proxy_process:
@@ -775,7 +775,7 @@ region=naeu
             # Propagate the cancellation
             raise
         except Exception as e:
-            LOGGER.error(f"GameServer {self.id} Unexpected error in monitor_process: {e}")
+            LOGGER.error(f"GameServer #{self.id} Unexpected error in monitor_process: {e}")
 
     def enable_server(self):
         self.enabled = True

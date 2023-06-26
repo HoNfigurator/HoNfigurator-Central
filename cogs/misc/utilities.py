@@ -338,6 +338,11 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
+    
+    def get_git_commit_date(self):
+        command = 'git log -1 --format="%cd" --date=format-local:"%Y-%m-%d %H:%M:%S"'
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        return result.stdout.strip()
 
     def get_all_branch_names(self):
         try:
