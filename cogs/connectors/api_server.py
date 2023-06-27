@@ -3,7 +3,11 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import serialization, hashes
 from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509.oid import NameOID
+import asyncio
 import datetime
+import os
+import time
+import math
 from fastapi import FastAPI, Request, Response, Body, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 import httpx
@@ -12,13 +16,14 @@ from typing import Any, Dict
 import uvicorn
 import asyncio
 from cogs.misc.logger import get_logger, get_misc, get_home, get_setup
+from cogs.handlers.events import stop_event
 from cogs.db.roles_db_connector import RolesDatabase
+from cogs.game.match_parser import MatchParser
 from typing import Any, Dict, List, Tuple
 import logging
 from os.path import exists
 import json
 from pydantic import BaseModel
-import os
 from datetime import datetime, timedelta
 import traceback
 
@@ -41,6 +46,9 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+@app.exception_handler(Exception)
+async def generic_exception_handler(request: Request, exc: Exception):
+    LOGGER.error(traceback.format_exc())
 
 def get_config_item_by_key(k):
     for d in global_config.values():
@@ -140,12 +148,60 @@ class GlobalConfigResponse(BaseModel):
 async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return global_config
 
+@app.get("/api/get_hon_version")
+async def get_hon_version(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"data":MISC.hon_version}
+
+@app.get("/api/get_commit_date", description="Return the date of the last commit / the last update time.")
+async def get_commit_date(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"data":MISC.get_git_commit_date()}
+
+@app.get("/api/get_replay/{match_id}", description="Searches the server for the specified replay")
+async def get_replay(match_id: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    def convert_size(size_bytes):
+        if size_bytes == 0:
+            return "0B"
+        size_name = ("B", "KB", "MB")
+        i = int(math.floor(math.log(size_bytes, 1024)))
+        p = math.pow(1024, i)
+        s = round(size_bytes / p, 2)
+        return f"{s} {size_name[i]}"
+    if not match_id:
+        return JSONResponse(status_code=500,content="Invalid match ID")
+    match_id = match_id.replace("M",'')
+    match_id = match_id.replace("m",'')
+    match_id = match_id.replace(".honreplay",'')
+    replay_exists,path = await manager_find_replay_callback(f"M{match_id}.honreplay")
+    if replay_exists:
+        # Get the file size in bytes
+        file_size = os.path.getsize(path)
+        
+        # Convert file size to a human readable format
+        file_size = convert_size(file_size)
+        
+        # Get the creation time
+        creation_time = os.path.getctime(path)
+        
+        # Convert the creation time to a readable format
+        creation_time = time.ctime(creation_time)
+        
+        return {
+            'match_id': str(match_id),
+            'path': str(path),
+            'server': global_config['hon_data']['svr_name'],
+            'file_size': file_size,
+            'creation_time': creation_time
+        }
+    else:
+        return JSONResponse(status_code=404,content="Replay not found")
+
 @app.post("/api/set_hon_data", description="Sets the 'hon_data' key within the global manager data dictionary")
 async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     try:
         validation = SETUP.validate_hon_data(hon_data=hon_data)
         if validation:
             global_config['hon_data'] = hon_data
+            await manager_event_bus.emit('update_server_start_semaphore')
             await manager_event_bus.emit('check_for_restart_required')
     except ValueError as e:
         return JSONResponse(status_code=501, content=str(e))
@@ -178,10 +234,13 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
             if task is None:
                 continue
             if task.done():
-                if task.exception() is not None:
-                    task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception())}
-                else:
-                    task_summary[task_name] = {'status': 'Done'}
+                try:
+                    if task.exception() is not None:
+                        task_summary[task_name] = {'status': 'Done', 'exception': str(task.exception()), 'end_time': task.end_time}
+                    else:
+                        task_summary[task_name] = {'status': 'Done', 'end_time': task.end_time}
+                except asyncio.CancelledError:
+                    task_summary[task_name] = {'status': 'Cancelled'}
             else:
                 task_summary[task_name] = {'status': 'Running'}
         return task_summary
@@ -194,8 +253,10 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
 
     temp['manager'] = task_status(manager_tasks)
     temp['game_servers'] = temp_gameserver_tasks
+    temp['health_checks'] = task_status(health_check_tasks)
 
     return {"tasks_status": temp}
+
 class CurrentGithubBranch(BaseModel):
     branch: str
 @app.get("/api/get_current_github_branch", response_model=CurrentGithubBranch)
@@ -419,7 +480,20 @@ def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_per
     # return the contents of the current log file
     with open(HOME_PATH / "logs" / "server.log", 'r') as f:
         file_content = f.readlines()
+    
+    # Remove the newlines from each string in the list
+    file_content = [line.strip() for line in file_content]
     return file_content[-num:][::-1]
+
+# @app.get("/api/get_chat_logs/{match_id}", description="Retrieve a list of chat entries from a given match id")
+# def get_chat_logs(match_id: str):
+#     log_path = global_config['hon_data']['hon_logs_directory'] / f"{match_id}.log"
+
+#     if not exists(log_path):
+#         return JSONResponse(status_code=404, content="Log file not found.")
+    
+#     match_parser = MatchParser(match_id, log_path)
+#     return match_parser.parse_chat()
 
 @app.get("/api/get_honfigurator_log_file", description="Returns the HoNfigurator log file completely, for download.")
 def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
@@ -623,10 +697,10 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
     if port != "all":
         game_server = game_servers.get(int(port),None)
         if game_server is None: return JSONResponse(status_code=404, content={"error":"Server not managed by manager."})
-        await manager_event_bus.emit('start_game_servers', game_server)
+        await manager_event_bus.emit('start_game_servers', [game_server])
     else:
         for game_server in game_servers.values():
-            await manager_event_bus.emit('start_game_servers', game_server)
+            await manager_event_bus.emit('start_game_servers', [game_server])
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
@@ -703,56 +777,78 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
     except Exception as e:
         LOGGER.error(f"Error checking certificate expiration: {e}")
 
+def signal_handler(*_):
+    stop_event.set()
 
-async def start_api_server(config, game_servers_dict, game_manager_tasks, event_bus, host="0.0.0.0", port=5000):
-    global global_config, game_servers, manager_event_bus, manager_tasks
+def start_uvicorn(app, host, port, log_level, lifespan, use_colors, ssl_keyfile=None, ssl_certfile=None):
+    if ssl_keyfile and ssl_certfile:
+        uvicorn.run(
+            app,
+            host=host,
+            port=port,
+            log_level=log_level,
+            lifespan=lifespan,
+            use_colors=use_colors,
+            ssl_keyfile=ssl_keyfile,
+            ssl_certfile=ssl_certfile
+        )
+    else:
+        uvicorn.run(
+            app,
+            host=host,
+            port=port,
+            log_level=log_level,
+            lifespan=lifespan,
+            use_colors=use_colors
+        )
+
+async def asgi_server(app, host, port):
+    ssl_keyfile = HOME_PATH / "localhost.key"
+    ssl_certfile = HOME_PATH / "localhost.crt"
+
+    if not exists(ssl_certfile) or not exists(ssl_keyfile):
+        create_self_signed_certificate(ssl_certfile, ssl_keyfile)
+    else:
+        check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile)
+
+    config = uvicorn.Config(
+        app,
+        host=host,
+        port=port,
+        log_level="warning",
+        lifespan="on",
+        use_colors=False,
+        ssl_keyfile=ssl_keyfile if exists(ssl_keyfile) else None,
+        ssl_certfile=ssl_certfile if exists(ssl_certfile) else None,
+    )
+    server = uvicorn.Server(config)
+    server_task = asyncio.create_task(server.serve())
+
+    try:
+        await stop_event.wait()
+    finally:
+        server.should_exit = True  # this flag tells Uvicorn to wrap up and exit
+        LOGGER.info("Shutting down API Server")
+        await server_task
+
+async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, host="0.0.0.0", port=5000):
+    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback
     global_config = config
     game_servers = game_servers_dict
     manager_event_bus = event_bus
     manager_tasks = game_manager_tasks
+    health_check_tasks = health_tasks
+    manager_find_replay_callback = find_replay_callback
 
-    async def asgi_server():
-        try:
-            # Create a new logger for uvicorn
-            uvicorn_logger = logging.getLogger("uvicorn")
+    # Create a new logger for uvicorn
+    uvicorn_logger = logging.getLogger("uvicorn")
 
-            # Set the handlers, log level, and propagation settings to match your existing logger
-            uvicorn_logger.handlers = LOGGER.handlers.copy()
+    # Set the handlers, log level, and propagation settings to match your existing logger
+    uvicorn_logger.handlers = LOGGER.handlers.copy()
+    uvicorn_logger.setLevel(logging.WARNING)
+    uvicorn_logger.propagate = LOGGER.propagate
 
-            uvicorn_logger.setLevel(logging.WARNING)
-            uvicorn_logger.propagate = LOGGER.propagate
-
-            # Specify the path to the certificate and key files
-            ssl_keyfile = HOME_PATH / "localhost.key"
-            ssl_certfile = HOME_PATH / "localhost.crt"
-
-            if not exists(ssl_certfile) or not exists(ssl_keyfile):
-                create_self_signed_certificate(ssl_certfile, ssl_keyfile)
-            else:
-                check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile)
-
-            if exists(ssl_keyfile) and exists(ssl_certfile):
-                return await uvicorn.run(
-                    app,
-                    host=host,
-                    port=port,
-                    log_level="warning",
-                    lifespan="on",
-                    use_colors=False,
-                    ssl_keyfile=ssl_keyfile,
-                    ssl_certfile=ssl_certfile
-                )
-            else:
-                return await uvicorn.run(
-                    app,
-                    host=host,
-                    port=port,
-                    log_level="warning",
-                    lifespan="on",
-                    use_colors=False
-                )
-        except Exception:
-            LOGGER.exception(traceback.format_exc())
-    # Create an asyncio task from the coroutine, and return the task
-    LOGGER.info(f"[*] HoNfigurator API - Listening on 0.0.0.0:{port} (PUBLIC)")
-    await asgi_server()
+    LOGGER.info(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
+    
+    # loop = asyncio.get_running_loop()
+    await asgi_server(app, host, port)

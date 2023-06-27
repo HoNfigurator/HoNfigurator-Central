@@ -24,8 +24,12 @@ class ConfigManagement():
         return None
     def get_local_by_key(self,k):
         for d in self.local.values():
-            try: return d[k]
-            except: pass
+            try: 
+                if k == 'svr_name':
+                    return d[k].replace(' 0','')
+                return d[k]
+            except:
+                pass
         return None
     def get_local_configuration(self):
         if MISC.get_os_platform() == "win32":
@@ -58,6 +62,7 @@ class ConfigManagement():
                 'man_enableProxy':self.get_global_by_key('man_enableProxy'),
                 'svr_location':self.get_global_by_key('svr_location'),
                 'svr_enableBotMatch': self.get_global_by_key('svr_enableBotMatch'),
+                'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
                 'svr_broadcast':True,
                 'upd_checkForUpdates':False,
                 'sv_autosaveReplay':True,
@@ -83,4 +88,8 @@ class ConfigManagement():
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
+
+        if self.get_global_by_key('svr_override_affinity'):
+            self.local['params'].pop('host_affinity', None)  # Remove 'host_affinity' key if svr_override_affinity is True
+
         return self.local

@@ -105,7 +105,8 @@ class AutoPingListener(asyncio.DatagramProtocol):
         while not stop_event.is_set():
             # TODO
             # Should we place a smaller sleep here? To stop "quit" command taking 10 sec
-            await asyncio.sleep(10)
+            await asyncio.sleep(1)
+        LOGGER.info("Stopping AutoPing Responder")
 
         self.transport.close()
 

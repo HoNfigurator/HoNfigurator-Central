@@ -1,4 +1,5 @@
 import threading
+import traceback
 import functools
 import schedule
 from datetime import datetime, timedelta
@@ -7,28 +8,32 @@ import tzlocal
 import shutil
 import time
 import pytz
+from json import JSONDecodeError
 import sys
 import os
 from pathlib import Path
 from tinydb import TinyDB, Query
 from cogs.misc.logger import get_logger, get_misc, get_home
+from cogs.handlers.events import stop_event
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
 # pip install: tinydb schedule tzlocal pytz
 
 def run_continuously(interval=60):
-    cease_continuous_run = threading.Event()
     class ScheduleThread(threading.Thread):
         @classmethod
         def run(cls):
-            while not cease_continuous_run.is_set():
+            while not stop_event.is_set():
                 schedule.run_pending()
-                time.sleep(interval) # execute every minute (for now..)
+                for _ in range(interval):
+                    if stop_event.is_set():
+                        LOGGER.info("Stopping scheduled tasks")
+                        break
+                    time.sleep(1)
 
     continuous_thread = ScheduleThread()
     continuous_thread.start()
-    return cease_continuous_run
 
 
 def catch_exceptions(cancel_on_failure=False):
@@ -37,7 +42,12 @@ def catch_exceptions(cancel_on_failure=False):
         def wrapper(*args, **kwargs):
             try:
                 return job_func(*args, **kwargs)
-            except:
+            except JSONDecodeError:
+                LOGGER.error('Json Decode Error. Clearing DB...')
+                clear_db()  # calling the clear_db function to clear the DB
+                if cancel_on_failure:
+                    return schedule.CancelJob
+            except Exception:
                 import traceback
                 LOGGER.error(traceback.format_exc())
                 if cancel_on_failure:
@@ -45,6 +55,13 @@ def catch_exceptions(cancel_on_failure=False):
         return wrapper
     return catch_exceptions_decorator
 
+def clear_db():
+    try:
+        with open(HOME_PATH / "cogs" / "db" / "stats.json", 'w') as db_file:
+            db_file.write('')
+        LOGGER.info('DB cleared successfully.')
+    except Exception as e:
+        LOGGER.error(f'Failed to clear DB: {str(e)}')
 
 class HonfiguratorSchedule():
     def __init__(self, config):
@@ -83,7 +100,8 @@ class HonfiguratorSchedule():
         get_replaysnew_scheduled_time_str = get_replaysnew_scheduled_time.strftime("%H:%M")
 
         schedule.every().day.at(get_replaysnew_scheduled_time_str, pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
-        schedule.every().day.at(self.config['application_data']['timers']['replay_cleaner']['scheduled_time'], pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_or_move_files)
+        # schedule.every().day.at(self.config['application_data']['timers']['replay_cleaner']['scheduled_time'], pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_or_move_files)
+        schedule.every(1).minutes.do(self.delete_or_move_files)
         LOGGER.info("Success!")
 
     def stop(self):
@@ -173,12 +191,22 @@ class ReplayCleaner(HonfiguratorSchedule):
         return counter
     
     def move_files_to_longterm_storage(self):
-        counter = 0
+        success = 0
+        fail = 0
         for file_path in self.path_to_replays_locally.glob("**/*.honreplay"):
             if time.time() - file_path.stat().st_mtime > 86400:
-                counter += 1
-                shutil.move(file_path, self.longterm_storage_replay_path)
-        return counter
+                try:
+                    shutil.move(file_path, self.longterm_storage_replay_path)
+                    success += 1
+                except shutil.Error:
+                    try:
+                        os.remove(file_path)
+                    except:
+                        pass
+                except Exception as e:
+                    LOGGER.error(f"Error moving replay file: {file_path}. {traceback.format_exc()}")
+                    fail+=1
+        return success,fail
 
     def clean(self):
         stats = {}
@@ -193,7 +221,9 @@ class ReplayCleaner(HonfiguratorSchedule):
             stats["deleted_temp_folders"] =  0
         
         if self.move_replays_to_longerm_storage:
-            stats["moved_replays"] = self.move_files_to_longterm_storage()
+            moved, failed = self.move_files_to_longterm_storage()
+            stats["moved_replays"] = moved
+            stats["failed_to_move_replays"] = failed
         else:
             stats["moved_replays"] = 0
 

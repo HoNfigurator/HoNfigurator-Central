@@ -3,6 +3,7 @@ import traceback, sys, os
 import time
 from os.path import isfile
 from pathlib import Path
+import subprocess
 
 MISC = None
 HOME_PATH = None
@@ -50,6 +51,9 @@ from cogs.misc.utilities import Misc
 MISC = Misc()
 set_misc(MISC)
 
+# check for update at launch
+MISC.update_github_repository()
+
 from cogs.misc.setup import SetupEnvironment
 CONFIG_FILE = HOME_PATH / 'config' / 'config.json'
 setup = SetupEnvironment(CONFIG_FILE)
@@ -91,14 +95,13 @@ async def main():
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
     jobs.setup_tasks()
-    stop_run_continuously = run_continuously()
+    # run_continuously()
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
 
     # The autoping responder port is set to be 1 less than the public game port. This is to keep ports grouped together for convenience.
-    if global_config['hon_data']['man_enableProxy']: udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1 + 10000
-    else: udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1
+    udp_ping_responder_port = global_config['hon_data']['svr_starting_gamePort'] - 1 + 10000 if 'man_enableProxy' in global_config['hon_data'] and global_config['hon_data']['man_enableProxy'] else global_config['hon_data']['svr_starting_gamePort'] - 1
 
     global_config['hon_data']['autoping_responder_port'] = udp_ping_responder_port
 
@@ -112,29 +115,31 @@ async def main():
 
     # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
     try:
-        auth_task = game_server_manager.create_handle_connections_task(udp_ping_responder_port)
-        api_task = game_server_manager.start_api_server()
-        game_server_listener_task = game_server_manager.start_game_server_listener_task(host, game_server_to_mgr_port)
-        auto_ping_listener_task = game_server_manager.start_autoping_listener_task(udp_ping_responder_port)
+        auth_coro = game_server_manager.manage_upstream_connections(udp_ping_responder_port)
+        auth_task = game_server_manager.schedule_task(auth_coro, 'authentication_handler')
+        
+        start_coro = game_server_manager.start_game_servers("all", launch=True)
+        start_task = game_server_manager.schedule_task(start_coro, 'gameserver_startup')
 
-        start_task = game_server_manager.start_game_servers_task("all")
+        api_coro = game_server_manager.start_api_server()
+        api_task = game_server_manager.schedule_task(api_coro, 'api_server')
 
-        stop_task = asyncio.create_task(stop_event.wait())
-        done, pending = await asyncio.wait(
-            [auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task, stop_task]
+        game_server_listener_coro = game_server_manager.start_game_server_listener(host, game_server_to_mgr_port)
+        game_server_listener_task = game_server_manager.schedule_task(game_server_listener_coro, 'gameserver_listener')
+
+        auto_ping_listener_coro = game_server_manager.start_autoping_listener()
+        auto_ping_listener_task = game_server_manager.schedule_task(auto_ping_listener_coro, 'autoping_listener')
+
+        await asyncio.gather(
+            auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task
         )
-        for task in pending:
-            LOGGER.warning(f"Task: {task} needs to be shut down by force..")
-            task.cancel()
-
     except asyncio.CancelledError:
         LOGGER.info("Tasks cancelled due to stop_event being set.")
     finally:
-        LOGGER.info("Stopping background job for scheduler")
-        stop_run_continuously.set()
-        LOGGER.info("Everything shut. Good bye!")
-        LOGGER.info("You can CTRL + C now..")
-        return
+        # Cancel all remaining tasks
+        for task in asyncio.all_tasks():
+            task.cancel()
+        LOGGER.info("Everything shut. Goodbye!")
 
 
 if __name__ == "__main__":
@@ -144,3 +149,6 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
         stop_event.set()
+    finally:
+        if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
+        sys.exit(0)

@@ -2,12 +2,14 @@ import traceback
 import aiohttp
 import os
 import urllib.parse
-from cogs.misc.logger import get_logger
+from cogs.misc.logger import get_logger, get_misc
+from cogs.misc.exceptions import HoNCompatibilityError
 from cogs.handlers.events import stop_event
 import phpserialize
 import hashlib
 
 LOGGER = get_logger()
+MISC = get_misc()
 
 class MasterServerHandler:
 
@@ -22,7 +24,8 @@ class MasterServerHandler:
         self.headers = {
             "User-Agent": f"S2 Games/Heroes of Newerth/{self.version}/was/x86_64",
             "Accept": "*/*",
-            "Content-Type": "application/x-www-form-urlencoded"
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Server-Launcher": "HoNfigurator"
         }
         self.session = aiohttp.ClientSession()
         self.server_id = None
@@ -98,9 +101,10 @@ class MasterServerHandler:
     
     async def send_stats_file(self, username, password, match_id, file_path):
         def generate_resubmission_key(match_id, session_cookie):
-            sha1 = hashlib.sha1()
-            sha1.update(f"{match_id}{session_cookie}".encode('utf-8'))
-            resubmission_key = sha1.hexdigest()
+            # sha1 = hashlib.sha1()
+            # sha1.update(f"{match_id}{session_cookie}".encode('utf-8'))
+            # resubmission_key = sha1.hexdigest()
+            resubmission_key = f"{match_id}_honfigurator"
             return resubmission_key
 
         if not self.cookie:
@@ -116,7 +120,7 @@ class MasterServerHandler:
         headers["Content-Type"] = "application/x-www-form-urlencoded"
 
         params = {
-            'svr_login': username,
+            'login': username,
             'pass': password,
             'resubmission_key': generate_resubmission_key(match_id, self.cookie),
             'server_id': self.server_id
@@ -124,8 +128,14 @@ class MasterServerHandler:
 
         try:
             # Read the file content as a string with specified encoding
-            with open(file_path, 'r', encoding='utf-16-le') as f:
-                file_content = f.read().lstrip('\ufeff')
+            if MISC.get_os_platform() == "win32":
+                with open(file_path, 'r', encoding='utf-16-le') as f:
+                    file_content = f.read().lstrip('\ufeff')
+            elif MISC.get_os_platform() == "linux":
+                with open(file_path, 'r', encoding='ascii') as f:
+                    file_content = f.read().lstrip('\ufeff')
+            else:
+                raise HoNCompatibilityError(f"OS is reported as {MISC.get_os_platform()} however only 'win32' or 'linux' are supported.")
 
             # Manually construct the request payload
             payload = "f=resubmit_stats"
@@ -137,6 +147,7 @@ class MasterServerHandler:
 
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, headers=headers, data=payload) as response:
+                    LOGGER.debug(f"[{response.status}] {match_id} stats resubmission")
                     return await response.text(), response.status
         except Exception:
             print(traceback.format_exc())
@@ -144,12 +155,14 @@ class MasterServerHandler:
     async def compare_upstream_patch(self):
         url = f"{self.base_url}/patcher/patcher.php"
         data = {"latest": "", "os": f"{self.was}", "arch": "x86_64"}
+        timeout = aiohttp.ClientTimeout(total=10)  # 10 seconds timeout for the entire operation
         try:
-            async with self.session.post(url, headers=self.headers, data=data) as response:
-                if response.status == 200:
-                    return await response.text(), response.status
-                else:
-                    return None
+            async with aiohttp.ClientSession(timeout=timeout) as session:
+                async with session.post(url, headers=self.headers, data=data) as response:
+                    if response.status == 200:
+                        return await response.text(), response.status
+                    else:
+                        return None
         except aiohttp.ClientError:
             LOGGER.exception(f"An error occurred while handling the compare_upstream_patch function: {traceback.format_exc()}")
 

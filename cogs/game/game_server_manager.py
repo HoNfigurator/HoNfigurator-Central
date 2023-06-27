@@ -5,10 +5,12 @@ import asyncio
 import hashlib
 import os.path
 import subprocess
-import sys
-import time
+import urllib
+from datetime import datetime, timedelta
 import inspect
-from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNUnexpectedVersionError, HoNPatchError, HoNInvalidServerBinaries
+import tempfile
+import shutil
+from cogs.misc.exceptions import HoNAuthenticationError, HoNServerError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
@@ -16,7 +18,7 @@ from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
-from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, HealthChecks, EventBus as ManagerEventBus
+from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
 from cogs.misc.logger import get_logger, get_misc, get_home
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
@@ -26,24 +28,11 @@ from os.path import exists
 LOGGER = get_logger()
 MISC = get_misc()
 HOME_PATH = get_home()
+HON_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+HON_UPDATE_X64_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
 
-# TCP Command definitions
-COMMAND_LEN_BYTES = b'\x01\x00'
-SHUTDOWN_BYTES = b'"'
-SLEEP_BYTES = b' '
-WAKE_BYTES = b'!'
-
-# Define a function to choose a health check based on its type
-# def choose_health_check(type):
-#     for health_check in HealthChecks:
-#         if type.lower() == health_check.name.lower():
-#             return health_check
-#     return None  # Return None if no matching health check is found
-
-# Define a class for managing game servers
 class GameServerManager:
     def __init__(self, global_config, setup):
-        self.update()
         """
         Initializes a new GameServerManager object.
 
@@ -68,18 +57,22 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_shutdown_server', self.cmd_shutdown_server)
         self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
+        self.event_bus.subscribe('cmd_custom_command', self.cmd_custom_command)
         self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
+        self.event_bus.subscribe('update_server_start_semaphore', self.update_server_start_semaphore)
         self.tasks = {
             'cli_handler':None,
             'health_checks':None,
             'autoping_listener':None,
             'gameserver_listener':None,
             'authentication_handler':None,
-            'gameserver_startup':None
+            'gameserver_startup':None,
+            'task_cleanup': None
         }
+        self.schedule_task(self.cleanup_tasks_every_30_minutes(), 'task_cleanup')
         # initialise the config validator in case we need it
         self.setup = setup
 
@@ -96,6 +89,8 @@ class GameServerManager:
 
         # Initialize a Commands object for sending commands to game servers
         self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.event_bus)
+        # Initialise the autoping listener object
+        self.auto_ping_listener = AutoPingListener(self.global_config, self.global_config['hon_data']['autoping_responder_port'])
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         self.create_all_game_servers()
@@ -106,13 +101,40 @@ class GameServerManager:
         # Start running health checks
 
         # Initialize MasterServerHandler and send requests
+        self.chat_server_handler = None
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
-        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.global_config)
+        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
-        self.schedule_task(coro, 'healthchecks')
+        self.schedule_task(coro, 'health_checks')
+
+        MISC.save_last_working_branch()
     
-    def schedule_task(self, coro, name):
+    def cleanup_tasks(self, tasks_dict, current_time):
+        for task_name, task in list(tasks_dict.items()):  # Use list() to avoid "dictionary changed size during iteration" error
+            if task is None:
+                continue
+            
+            if not isinstance(task, asyncio.Task):
+                LOGGER.error(f"Item '{task_name}' in tasks is not a Task object.")
+                return
+
+            if task.done() and task.exception() is None and task.end_time + timedelta(minutes=30) < current_time:
+                del tasks_dict[task_name]
+                
+    async def cleanup_tasks_every_30_minutes(self):
+        while True:
+            current_time = datetime.now()
+            # Iterate over all game servers and the manager
+            for game_server in self.game_servers.values():
+                self.cleanup_tasks(game_server.tasks, current_time)
+            self.cleanup_tasks(self.tasks, current_time)
+            for _ in range(30 * 60):  # Monitor process every 5 seconds
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
+    
+    def schedule_task(self, coro, name, override = False):
         existing_task = self.tasks.get(name)  # Get existing task if any
 
         if existing_task is not None:
@@ -123,18 +145,23 @@ class GameServerManager:
                 existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
 
         if existing_task:
-            if not existing_task.done():
-                # Task is still running
-                LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
-                return existing_task  # Return existing task
+            if existing_task.done():
+                if not existing_task.cancelled():
+                    # If the task has finished and was not cancelled, retrieve any possible exception to avoid 'unretrieved exception' warnings
+                    exception = existing_task.exception()
+                    if exception:
+                        LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+                else:
+                    LOGGER.info(f"The previous task '{name}' was cancelled.")
             else:
-                # If the task has finished, retrieve any possible exception to avoid 'unretrieved exception' warnings
-                exception = existing_task.exception()
-                if exception:
-                    LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+                if not override:
+                    # Task is still running
+                    LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                    return existing_task  # Return existing task
 
         # Create and register the new task
         task = asyncio.create_task(coro)
+        task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
                     
@@ -145,19 +172,19 @@ class GameServerManager:
             await asyncio.sleep(delay)
             if client_connection:
                 if force:
-                    client_connection.writer.write(COMMAND_LEN_BYTES)
-                    client_connection.writer.write(SHUTDOWN_BYTES)
+                    client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
+                    client_connection.writer.write(GameServerCommands.SHUTDOWN_BYTES.value)
                     await client_connection.writer.drain()
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
                     return True
                 else:
-                    game_server.schedule_task(game_server.schedule_shutdown_server(client_connection, (COMMAND_LEN_BYTES, SHUTDOWN_BYTES), delete=delete, disable=disable),'scheduled_shutdown')
-                    await asyncio.sleep(0)  # allow the scheduled task to be executed
+                    game_server.schedule_task(game_server.schedule_shutdown_server(delete=delete, disable=disable),'scheduled_shutdown')
+                    # await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
                     return True
             else:
                 # this server hasn't connected to the manager yet
-                await game_server.stop_server_exe(disable=disable)
+                await game_server.stop_server_exe(disable=disable, delete=delete)
                 game_server.reset_game_state()
                 return True
         except Exception as e:
@@ -168,8 +195,8 @@ class GameServerManager:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
 
-            client_connection.writer.write(COMMAND_LEN_BYTES)
-            client_connection.writer.write(WAKE_BYTES)
+            client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
+            client_connection.writer.write(GameServerCommands.WAKE_BYTES.value)
             await client_connection.writer.drain()
 
             LOGGER.info(f"Command - Wake command sent to GameServer #{game_server.id}.")
@@ -181,8 +208,8 @@ class GameServerManager:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
 
-            client_connection.writer.write(COMMAND_LEN_BYTES)
-            client_connection.writer.write(SLEEP_BYTES)
+            client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
+            client_connection.writer.write(GameServerCommands.SLEEP_BYTES.value)
             await client_connection.writer.drain()
 
             LOGGER.info(f"Command - Sleep command sent to GameServer #{game_server.id}.")
@@ -196,7 +223,7 @@ class GameServerManager:
                 return
 
             if isinstance(message, list): message = (' ').join(message)
-            message_bytes = b'$' + message.encode('ascii') + b'\x00'
+            message_bytes = GameServerCommands.MESSAGE_BYTES.value + message.encode('ascii') + b'\x00'
             length = len(message_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
 
@@ -205,7 +232,26 @@ class GameServerManager:
             await client_connection.writer.drain()
             LOGGER.info(f"Command - Message command sent to GameServer #{game_server.id}.")
         except Exception:
-            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")         
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def cmd_custom_command(self, game_server, command, delay = 0):
+        try:
+            client_connection = self.client_connections.get(game_server.port, None)
+            if client_connection is None:
+                return
+            await asyncio.sleep(delay)
+
+            if isinstance(command, list): command = (' ').join(command)
+            command_bytes = GameServerCommands.COMMAND_BYTES.value + command.encode('ascii') + b'\x00'
+            length = len(command_bytes)
+            length_bytes = length.to_bytes(2, byteorder='little')
+
+            client_connection.writer.write(length_bytes)
+            client_connection.writer.write(command_bytes)
+            await client_connection.writer.drain()
+            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
+        except Exception:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
         
     async def check_upstream_patch(self):
         if self.patching:
@@ -235,23 +281,13 @@ class GameServerManager:
         except Exception:
             LOGGER.error(f"{traceback.format_exc()}")
 
-    def start_autoping_listener_task(self, port):
-        LOGGER.info("Starting AutoPingListener...")
-        self.auto_ping_listener = AutoPingListener(self.global_config, port)
-        coro = self.auto_ping_listener.start_listener()
-        task = self.schedule_task(coro, 'autoping_listener')
-        return task
+    async def start_autoping_listener(self):
+        LOGGER.debug("Starting AutoPingListener...")
+        await self.auto_ping_listener.start_listener()
 
-    def start_game_server_listener_task(self,*args):
-        coro = self.start_game_server_listener(*args)
-        task = self.schedule_task(coro, 'gameserver_listener')
-        return task
-
-    def start_api_server(self):
-        coro = start_api_server(self.global_config, self.game_servers, self.tasks, self.event_bus, port=self.global_config['hon_data']['svr_api_port'])
-        task = self.schedule_task(coro, 'api_server')
-        return task
-
+    async def start_api_server(self):
+        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
+    
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
         Starts a listener for incoming client connections on the specified host and port
@@ -283,16 +319,37 @@ class GameServerManager:
 
         await self.master_server_handler.close_session()
 
-        LOGGER.info("Server stopped.")
+        LOGGER.info("Stopping HoNfigurator manager listener.")
 
     def update(self):
         MISC.update_github_repository()
         MISC.save_last_working_branch()
 
-    def create_handle_connections_task(self, *args):
-        coro = self.manage_upstream_connections(*args)
-        task = self.schedule_task(coro, 'authentication_handler')
-        return task
+    async def send_auth_request_to_masterserver(self):
+        """
+        Send a request to the master server to authenticate the game server.
+
+        This function sends a request to the master server to authenticate the game server using the
+        replay_auth method. If the authentication is successful, it returns the parsed response.
+
+        Returns:
+            dict: A dictionary containing the parsed response from the master server.
+
+        Raises:
+            HoNAuthenticationError: If the authentication fails.
+        """
+        mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
+        if mserver_auth_response[1] != 200:
+            LOGGER.error(f"[{mserver_auth_response[1]}] Authentication to MasterServer failed.")
+            raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
+        LOGGER.info("Authenticated to MasterServer.")
+        parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
+        parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
+        self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
+        self.master_server_handler.set_cookie(parsed_mserver_auth_response['session'])
+
+        return parsed_mserver_auth_response
+
 
     async def manage_upstream_connections(self, udp_ping_responder_port, retry=30):
         """
@@ -316,41 +373,14 @@ class GameServerManager:
                 # Connect to the chat server and authenticate
                 await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
 
-            except (HoNAuthenticationError, ConnectionResetError ) as e:
+            except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
+                # LOGGER.error(traceback.format_exc())
                 await asyncio.sleep(retry)  # Replace x with the desired number of seconds
-            except Exception:
-                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
-                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
-
-    async def send_auth_request_to_masterserver(self):
-        """
-        Send a request to the master server to authenticate the game server.
-
-        This function sends a request to the master server to authenticate the game server using the
-        replay_auth method. If the authentication is successful, it returns the parsed response.
-
-        Returns:
-            dict: A dictionary containing the parsed response from the master server.
-
-        Raises:
-            HoNAuthenticationError: If the authentication fails.
-        """
-        mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
-        if mserver_auth_response[1] != 200:
-            LOGGER.error(f"[{mserver_auth_response[1]}] Authentication to MasterServer failed. {mserver_auth_response[0]}")
-            raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error. {mserver_auth_response[0]}")
-        LOGGER.info("Authenticated to MasterServer.")
-        parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
-        parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
-        self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
-        self.master_server_handler.set_cookie(parsed_mserver_auth_response['session'])
-
-        return parsed_mserver_auth_response
-
+        LOGGER.info("Stopping authentication handlers")
     async def authenticate_and_handle_chat_server(self, parsed_mserver_auth_response, udp_ping_responder_port):
         # Create a new ChatServerHandler instance and connect to the chat server
-        chat_server_handler = ChatServerHandler(
+        self.chat_server_handler = ChatServerHandler(
             parsed_mserver_auth_response["chat_address"],
             parsed_mserver_auth_response["chat_port"],
             parsed_mserver_auth_response["session"],
@@ -365,27 +395,28 @@ class GameServerManager:
         )
 
         # connect and authenticate to chatserver
-        chat_auth_response = await chat_server_handler.connect()
+        chat_auth_response = await self.chat_server_handler.connect()
 
         if not chat_auth_response:
-            raise HoNAuthenticationError(f"[{chat_auth_response[1]}] Authentication error")
+            raise HoNAuthenticationError(f"Chatserver authentication failure")
 
         LOGGER.info("Authenticated to ChatServer.")
 
         # Start handling packets from the chat server
-        await chat_server_handler.handle_packets()
+        await self.chat_server_handler.handle_packets()
 
     async def resubmit_match_stats_to_masterserver(self, match_id, file_path):
         mserver_stats_response = await self.master_server_handler.send_stats_file(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest(), match_id, file_path)
-        if mserver_stats_response[1] != 200 or mserver_stats_response[0] == '':
+        if not mserver_stats_response or mserver_stats_response[1] != 200 or mserver_stats_response[0] == '':
             # .stats submission will not work until KONGOR implements accepting .stats from the custom written manager.
             # TODO: Update below to .error once upstream is configured to accept our stats.
-            LOGGER.debug(f"[{mserver_stats_response[1]}] Stats submission failed. Response: {mserver_stats_response[0]}")
-            return
+            LOGGER.error(f"[{mserver_stats_response[1] if mserver_stats_response else 'unknown'}] Stats resubmission failed - {file_path}. Response: {mserver_stats_response[0] if mserver_stats_response else 'unknown'}")
+            return False
+        LOGGER.info(f"{match_id} Stats resubmission successful")
         parsed_mserver_stats_response = phpserialize.loads(mserver_stats_response[0].encode('utf-8'))
         parsed_mserver_stats_response = {key.decode() if isinstance(key, bytes) else key: (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_stats_response.items()}
 
-        return
+        return True
 
     def create_all_game_servers(self):
         for id in range (1,self.global_config['hon_data']['svr_total']+1):
@@ -457,15 +488,18 @@ class GameServerManager:
         num_servers_to_create = max(max_servers - total_num_servers, 0)
 
         if num_servers_to_create > 0:
+            start_servers = []
             for i in range(num_servers_to_create):
                 game_port = self.find_next_available_ports()
 
                 if game_port is not None:
                     game_server = self.create_game_server(game_port)
-                    asyncio.create_task(self.start_game_servers(game_server))
+                    start_servers.append(game_server)
                     LOGGER.info(f"Game server created at game_port: {game_port}")
                 else:
                     LOGGER.warn("No available ports for creating a new game server.")
+            coro = self.start_game_servers(start_servers)
+            self.schedule_task(coro, 'gameserver_startup', override = True)
         
         async def remove_servers(servers, server_type):
             servers_removed = 0
@@ -477,11 +511,13 @@ class GameServerManager:
                     servers_removed += 1
                     if servers_removed >= num_servers_to_remove:
                         break
-            for port in servers_to_remove:
-                if port in self.game_servers:
-                    del self.game_servers[port]
+            # for port in servers_to_remove:
+            #     await asyncio.sleep(0.1)
+            #     if port in self.game_servers:
+            #         game_server.cancel_tasks()
+            #         del self.game_servers[port]
             
-            LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {max_servers} game servers are now running.")
+            LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {total_num_servers - servers_removed} game servers are now running.")
             return servers_removed
 
         if num_servers_to_remove > 0:
@@ -506,15 +542,19 @@ class GameServerManager:
         if num_servers_to_create <= 0:
             return
 
+        start_servers = []
         for i in range(num_servers_to_create):
             game_port = self.find_next_available_ports()
 
             if game_port is not None:
                 game_server = self.create_game_server(game_port)
-                asyncio.create_task(self.start_game_servers(game_server))
+                start_servers.append(game_server)
                 LOGGER.info(f"Game server created at game_port: {game_port}")
             else:
                 LOGGER.warn("No available ports for creating a new game server.")
+        
+        coro = self.start_game_servers(start_servers)
+        self.schedule_task(coro, 'gameserver_startup', override = True)
 
     async def check_for_restart_required(self):
         for game_server in self.game_servers.values():
@@ -613,67 +653,85 @@ class GameServerManager:
             # this is in case game server doesn't exist (config change maybe)
             if game_server:
                 game_server.status_received.set()
+                game_server.set_client_connection(client_connection)
             # TODO
             # Create game server object here?
             # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
             # since the game server isn't actually off yet, it will keep creating a connection.
 
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-            await self.commands.initialise_commands()
+            # await self.commands.initialise_commands()
             self.commands.subcommands_changed.set()
             return True
         else:
             #TODO: raise error or happy with logger?
             LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
             return False
+    
+    async def find_replay_file(self,replay_file_name):
+        replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
+        if self.global_config['application_data']['longterm_storage']['active']:
+            replay_file_paths.append(Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
+
+        for replay_path in replay_file_paths:
+            file_exists = Path.exists(replay_path)
+            if file_exists:
+                replay_file_path = replay_path
+                return True,replay_file_path
 
     async def handle_replay_request(self, match_id, extension, account_id):
         replay_file_name = f"M{match_id}.{extension}"
-        replay_file_path = (Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name)
-        replay_file_path_longterm = (Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
-        file_exists = Path.exists(replay_file_path)
-        if not file_exists and self.global_config['application_data']['longterm_storage']['active']:
-            file_exists = Path.exists(replay_file_path_longterm)
-
         LOGGER.debug(f"Received replay upload request.\n\tFile Name: {replay_file_name}\n\tAccount ID (requestor): {account_id}")
 
+        replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
+        if self.global_config['application_data']['longterm_storage']['active']:
+            replay_file_paths.append(Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
+        file_exists,replay_file_path = await self.find_replay_file(replay_file_name)
+        
         if not file_exists:
             # Send the "does not exist" packet
-            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
-            LOGGER.warn(f"Replay file {replay_file_path} does not exist.")
+            # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
+            res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
+            non_existing_paths = [str(path) for path in replay_file_paths]
+            LOGGER.warn(f"Replay file {replay_file_name} does not exist. Checked: {non_existing_paths}")
             return
 
         # Send the "exists" packet
-        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.QUEUED)
-        LOGGER.debug(f"Replay file exists. Obtaining upload location information.")
+        # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.QUEUED)
+        res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.QUEUED)
+        LOGGER.debug(f"Replay file exists ({replay_file_name}). Obtaining upload location information.")
 
         # Upload the file and send status updates as required
         file_size = os.path.getsize(replay_file_path)
 
         upload_details = await self.master_server_handler.get_replay_upload_info(match_id, extension, self.global_config['hon_data']['svr_login'], file_size)
 
-
         if upload_details is None or upload_details[1] != 200:
-            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
-            LOGGER.error(f"Failed to obtain upload location information. HTTP Response ({upload_details[1]}):\n\t{upload_details[0]}")
+            # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            LOGGER.error(f"{replay_file_name} - Failed to obtain upload location information. HTTP Response ({upload_details[1]}):\n\t{upload_details[0]}")
             return
 
         upload_details_parsed = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in upload_details[0].items()}
-        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
+        LOGGER.debug(f"Uploading {replay_file_name} to {upload_details_parsed['TargetURL']}")
 
-        LOGGER.debug(f"Uploading replay to {upload_details_parsed['TargetURL']}")
+        LOGGER.debug(f"Uploading {replay_file_name} to {upload_details_parsed['TargetURL']}")
 
-        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
+        # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
+        res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.UPLOADING)
         try:
             upload_result = await self.master_server_handler.upload_replay_file(replay_file_path, replay_file_name, upload_details_parsed['TargetURL'])
         except Exception:
-            LOGGER.exception(f"Undefined Exception: {traceback.format_exc()}")
+            LOGGER.error(f"Error uploading replay file {replay_file_path}")
+            LOGGER.error(f"Undefined Exception: {traceback.format_exc()}")
 
         if upload_result[1] not in [204,200]:
-            await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
+            res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             LOGGER.error(f"Replay upload failed! HTTP Upload Response ({upload_result[1]})\n\t{upload_result[0]}")
             return
-        await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
+        # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
+        res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
         LOGGER.debug("Replay upload completed successfully.")
 
 
@@ -696,66 +754,110 @@ class GameServerManager:
                 #   This is in case game server doesn't exist intentionally (maybe config changed)
                 if game_server:
                     game_server.reset_game_state()
+                    game_server.unset_client_connection()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-                await self.commands.initialise_commands()
+                # await self.commands.initialise_commands()
                 self.commands.subcommands_changed.set()
                 return True
         return False
+    
+    def update_server_start_semaphore(self):
+        max_start_at_once = self.global_config['hon_data']['svr_max_start_at_once']
+        self.server_start_semaphore = asyncio.Semaphore(max_start_at_once)
 
-    def start_game_servers_task(self, *args, timeout=120):
-        coro = self.start_game_servers(*args)
-        task = self.schedule_task(coro, 'gameserver_startup')
-        return task
+    async def start_game_servers(self, game_servers, timeout=120, launch=False):
+        try:
+            timeout = self.global_config['hon_data']['svr_startup_timeout']
+            """
+            Start all game servers.
 
-    async def start_game_servers(self, game_server, timeout=120):
-        timeout = self.global_config['hon_data']['svr_startup_timeout']
-        """
-        Start all game servers.
+            This function starts all the game servers that were created by the GameServerManager. It
+            does this by calling the start_server method of each game server object.
 
-        This function starts all the game servers that were created by the GameServerManager. It
-        does this by calling the start_server method of each game server object.
+            Game servers are started using a "semaphore", to stagger their start to groups and not all at once.
+            The timeout value may be reached, for slow servers, it may need to be adjusted in the config file if required.
 
-        Game servers are started using a "semaphore", to stagger their start to groups and not all at once.
-        The timeout value may be reached, for slow servers, it may need to be adjusted in the config file if required.
+            This function does not return anything, but can log errors or other information.
+            """
+            if MISC.get_os_platform() == "win32":
+                # this is an atrocious fix until I find a better solution.
+                # on some systems, the compiled honfigurator.exe file, which is just launcher.py from cogs.misc causes issues for the opened hon_x64.exe. The exe is unable to locate one of the game dll resources.
+                # I wasted a lot of time trying to troubleshoot it, launching main.py directly works fine. This is my solution until a better one comes around. It's set within the scope of the script, and doesn't modify the systems environment.
+                path_list = os.environ["PATH"].split(os.pathsep)
+                if self.global_config['hon_data']['hon_install_directory'] not in path_list:
+                    os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
+            if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
+                if not await self.initialise_patching_procedure(source="startup"):
+                    return False
 
-        This function does not return anything, but can log errors or other information.
-        """
-        if MISC.get_os_platform() == "win32":
-            # this is an atrocious fix until I find a better solution.
-            # on some systems, the compiled honfigurator.exe file, which is just launcher.py from cogs.misc causes issues for the opened hon_x64.exe. The exe is unable to locate one of the game dll resources.
-            # I wasted a lot of time trying to troubleshoot it, launching main.py directly works fine. This is my solution until a better one comes around. It's set within the scope of the script, and doesn't modify the systems environment.
-            path_list = os.environ["PATH"].split(os.pathsep)
-            if self.global_config['hon_data']['hon_install_directory'] not in path_list:
-                os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
-        if MISC.get_os_platform() == "win32" and await self.check_upstream_patch():
-            if not await self.initialise_patching_procedure(source="startup"):
-                return False
+            else:
+                # Patch not required
+                pass
 
-        else:
-            # Patch not required
-            pass
+            async def start_game_server_with_semaphore(game_server, timeout):
+                game_server.game_state.update({'status':GameStatus.QUEUED.value})
+                async with self.server_start_semaphore:
+                    # Use the schedule_task method to start the server
+                    if game_server not in self.game_servers.values():
+                        return
+                    task = game_server.schedule_task(game_server.start_server(timeout=timeout), 'start_server')
+                    try:
+                        # Prepare the tasks
+                        tasks = [asyncio.wait_for(task, timeout), stop_event.wait()]
+                        # Wait for any task to complete
+                        done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+                        # If the stop_event was set, cancel the other task and return
+                        if stop_event.is_set():
+                            for task in pending:
+                                task.cancel()
+                            LOGGER.info(f"Shutting down uninitialised GameServer #{game_server.id} due to stop event.")
+                            await self.cmd_shutdown_server(game_server)
+                        else:
+                            # The game server start task completed successfully
+                            LOGGER.info(f"GameServer #{game_server.id} started successfully.")
+                    except asyncio.TimeoutError:
+                        LOGGER.error(f"GameServer #{game_server.id} failed to start within the timeout period.")
+                        await self.cmd_shutdown_server(game_server)
+                    except HoNServerError:
+                        # LOGGER.error(f"GameServer #{game_server.id} encountered a server error.")
+                        await self.cmd_shutdown_server(game_server)
 
-        async def start_game_server_with_semaphore(game_server, timeout):
-            game_server.game_state.update({'status':GameStatus.QUEUED.value})
-            async with self.server_start_semaphore:
-                started = await game_server.start_server(timeout=timeout)
-                if not started:
-                    LOGGER.error(f"GameServer #{game_server.id} failed to start.")
-                    await self.cmd_shutdown_server(game_server)
 
-        if game_server == "all":
             start_tasks = []
-            monitor_tasks = []
-            # Start all game servers using the semaphore
-            for game_server in self.game_servers.values():
+            if game_servers == "all":
+                game_servers = list(self.game_servers.values())
+                
+            for game_server in game_servers:
                 already_running = await game_server.get_running_server()
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
                 else:
+                    # Start all game servers using the semaphore
+                    if launch and not self.global_config['hon_data']['svr_start_on_launch']:
+                        LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
+                        return
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
-            await asyncio.gather(*start_tasks, *monitor_tasks)
-        else:
-            await start_game_server_with_semaphore(game_server, timeout)
+            await asyncio.gather(*start_tasks)
+            await self.check_for_restart_required()
+        except Exception:
+            print(traceback.format_exc())
+
+    async def patch_extract_crc_from_file(self, url):
+        try:
+            with urllib.request.urlopen(url) as response:
+                content = response.read().decode('utf-8')
+            # sample: 4.10.8.0;4.10.8.honpatch;B30B80D1;hon_update_x64.zip;4DFDFDD5
+            components = content.strip().split(';')
+            version = components[0]
+            patch = components[1]
+            hon_exe_crc = components[2]
+            filename = components[3]
+            hon_update_exe_crc = components[-1]
+            return hon_update_exe_crc
+        
+        except Exception as e:
+            LOGGER.error(f"Error occurred while extracting CRC from file: {e}")
+            return None
 
     async def initialise_patching_procedure(self, timeout=300, source=None):
         if self.patching:
@@ -767,28 +869,48 @@ class GameServerManager:
                 await self.cmd_message_server(game_server, "!! ANNOUNCEMENT !! This server will shutdown after the current match for patching.")
             await self.cmd_shutdown_server(game_server)
 
-        if MISC.get_proc(self.global_config['hon_data']['hon_executable_path']):
+        if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
             return
+        
+        hon_update_x64_crc = await self.patch_extract_crc_from_file(HON_VERSION_URL)
+        if (not exists(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe')) or (hon_update_x64_crc and hon_update_x64_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe').lower()):
+            try:
+                temp_folder = tempfile.TemporaryDirectory()
+                temp_path = temp_folder.name
+                temp_zip_path = Path(temp_path) / 'hon_update_x64.zip'
+                temp_update_x64_path = Path(temp_path) / 'hon_update_x64.exe'
+                
+                download_hon_update_x64 = urllib.request.urlretrieve(HON_UPDATE_X64_DOWNLOAD_URL, temp_zip_path)
+                if not download_hon_update_x64:
+                    LOGGER.warn(f"Newer hon_update_x64.zip is available, however the download failed.\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                    return
 
-        # begin patch
+                temp_extracted_path = temp_folder.name
+                MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
+
+                hon_update_x64_path = self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'
+
+                # Check if the file is in use before moving it
+                try:
+                    shutil.move(temp_update_x64_path, hon_update_x64_path)
+                except PermissionError:
+                    LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'} is currently in use. Closing the file..")
+                    process = MISC.get_proc(proc_name='hon_update_x64.exe')
+                    if process: process.terminate()
+                    try:
+                        shutil.move(temp_update_x64_path, hon_update_x64_path)
+                    except:
+                        LOGGER.error(f"HoN Update - Failed to copy downloaded hon_update_x64.exe into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                        return
+
+            except Exception as e:
+                LOGGER.error(f"Error occurred during file download or extraction: {e}")
+                LOGGER.error(traceback.format_exc())
+        
         patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
         # subprocess.run([patcher_exe, "-norun"])
         try:
-            subprocess.run([patcher_exe, "-manager"], timeout=timeout)
-            # the hon_update_x64.exe will launch the default k2 server manager, indicating patching is complete. We don't need it so close it.
-            wait_for_temp_manager = 0
-            max = 5
-
-            temp_manager_proc = None
-            while not temp_manager_proc:
-                await asyncio.sleep(1)
-                temp_manager_proc = MISC.find_process_by_cmdline_keyword("-manager", proc_name = self.global_config['hon_data']['hon_executable_name'])
-                wait_for_temp_manager +=1
-                if wait_for_temp_manager >= max:
-                    LOGGER.error(f"Patching failed as it exceeded {max} seconds waiting for patcher to open manager.")
-                    return False
-
-            temp_manager_proc.terminate()
+            subprocess.run([patcher_exe, "-norun"], timeout=timeout)
 
             svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
             if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:

@@ -1,12 +1,15 @@
 import subprocess, psutil
-import platform
 import os
+import hashlib
+import crcmod
+import zipfile
+import binascii
 from os.path import exists
 from pathlib import Path
 import sys
-import traceback
 from cpuinfo import get_cpu_info
-import urllib
+import requests
+import aiohttp
 from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
 
@@ -22,6 +25,9 @@ class Misc:
         self.total_allowed_servers = None
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
+        self.public_ip = self.lookup_public_ip()
+        self.hon_version = None
+
     def build_commandline_args(self,config_local, config_global):
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
         if self.get_os_platform() == "win32":
@@ -42,7 +48,8 @@ class Misc:
                 '-register',
                 f'127.0.0.1:{config_global["hon_data"]["svr_managerPort"]}'
             ]
-    def parse_linux_procs(proc_name, slave_id):
+        
+    def parse_linux_procs(self, proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():
                 if slave_id == '':
@@ -58,9 +65,10 @@ class Misc:
                                     if int(item.split(" ")[-1]) == slave_id:
                                         return [ proc ]
         return []
-    def get_proc(proc_name, slave_id=''):
+    
+    def get_proc(self, proc_name, slave_id=''):
         if sys.platform == "linux":
-            return Misc.parse_linux_procs(proc_name, slave_id)
+            return self.parse_linux_procs(proc_name, slave_id)
         procs = []
         for proc in psutil.process_iter():
             try:
@@ -80,6 +88,7 @@ class Misc:
             except psutil.NoSuchProcess:
                 pass
         return procs
+    
     def get_process_by_port(self,port):
         for conn in psutil.net_connections(kind='inet'):
             if conn.status == 'LISTEN' and conn.laddr.port == port:
@@ -89,14 +98,12 @@ class Misc:
                 except (psutil.NoSuchProcess, psutil.AccessDenied):
                     pass
         return None
-    def check_port(port):
-        command = subprocess.Popen(['netstat','-oanp','udp'],stdout=subprocess.PIPE)
-        result = command.stdout.read()
-        result = result.decode()
-        if f"0.0.0.0:{port}" in result:
-            return True
-        else:
-            return False
+    def check_port(self, port):
+        for conn in psutil.net_connections('udp'):
+            if conn.laddr.port == port:
+                return True
+        return False
+        
     def get_process_priority(proc_name):
         pid = False
         for proc in psutil.process_iter():
@@ -112,8 +119,10 @@ class Misc:
             elif prio == "256": prio = "REALTIME"
             return prio
         else: return "N/A"
+
     def get_cpu_count(self):
         return self.cpu_count
+    
     def get_cpu_name(self):
         if self.get_os_platform() == "win32":
             return self.cpu_name
@@ -123,6 +132,7 @@ class Misc:
                 for line in f:
                     if line.startswith('model name'):
                         return line.split(':')[1].strip()
+                    
     def format_memory(self,value):
         if value < 1:
             return round(value * 1024)  # Convert to MB and round
@@ -147,6 +157,7 @@ class Misc:
 
     def get_os_platform(self):
         return self.os_platform
+    
     def get_num_reserved_cpus(self):
         if self.cpu_count <=4:
             return 1
@@ -154,6 +165,7 @@ class Misc:
             return 2
         elif self.cpu_count >12:
             return 4
+        
     def get_total_allowed_servers(self,svr_total_per_core):
         total = svr_total_per_core * self.cpu_count
         if self.cpu_count <=4:
@@ -163,6 +175,7 @@ class Misc:
         elif self.cpu_count >12:
             total -= 4
         return total
+    
     def get_server_affinity(self,server_id,svr_total_per_core):
         server_id = int(server_id)
         affinity = []
@@ -181,24 +194,50 @@ class Misc:
             affinity.append(str(self.cpu_count - t))
 
         return affinity
+    
     def get_public_ip(self):
+        if self.public_ip:
+            return self.public_ip
+        return self.lookup_public_ip()
+    
+    def lookup_public_ip(self):
         try:
-            external_ip = urllib.request.urlopen('https://4.ident.me').read().decode('utf8')
+            self.public_ip = requests.get('https://4.ident.me').text
         except Exception:
-            external_ip = urllib.request.urlopen('http://api.ipify.org').read().decode('utf8')
-        return external_ip
+            try:
+                self.public_ip = requests.get('http://api.ipify.org').text
+            except Exception:
+                LOGGER.error("Failed to fetch public IP")
+                self.public_ip = None
+        return self.public_ip
+    
+    async def lookup_public_ip_async(self):
+        async with aiohttp.ClientSession() as session:
+            try:
+                async with session.get('https://4.ident.me') as response:
+                    self.public_ip = await response.text()
+            except Exception:
+                try:
+                    async with session.get('http://api.ipify.org') as response:
+                        self.public_ip = await response.text()
+                except Exception:
+                    self.public_ip = None
+        return self.public_ip
+    
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"
+    
     def find_process_by_cmdline_keyword(self, keyword, proc_name=None):
         for process in psutil.process_iter(['cmdline']):
             if process.info['cmdline']:
-                if any(keyword in arg.lower() for arg in process.info['cmdline']):
+                if keyword in process.info['cmdline']:
                     if proc_name:
                         if proc_name == process.name():
                             return process
                     else:
                         return process
         return None
+    
     def get_svr_version(self,hon_exe):
         def validate_version_format(version):
             version_parts = version.split('.')
@@ -228,11 +267,14 @@ class Misc:
 
             if not validate_version_format(version):
                 raise HoNUnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
-            else:
-                return version
+
         elif self.get_os_platform() == "linux":
             with open(Path(hon_exe).parent / "version.txt", 'r') as f:
-                return f.readline().rstrip('\n')
+                version = f.readline().rstrip('\n')
+        
+        self.hon_version = version
+        return version
+
     def update_github_repository(self):
         try:
             # Change the current working directory to the HOME_PATH
@@ -257,6 +299,30 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error updating the code: {e}")
     
+    def calculate_crc32(self, file_path):
+        crc32_func = crcmod.predefined.mkCrcFun('crc-32')
+        crc = 0
+
+        with open(file_path, 'rb') as file:
+            for chunk in iter(lambda: file.read(4096), b''):
+                crc = crc32_func(chunk, crc)
+
+        return binascii.hexlify(crc.to_bytes(4, 'big')).decode()
+    
+    def calculate_md5(self, file_path):
+        with open(file_path, "rb") as file:
+            md5_hash = hashlib.md5()
+            chunk_size = 4096
+
+            while chunk := file.read(chunk_size):
+                md5_hash.update(chunk)
+
+            return md5_hash.hexdigest()
+    
+    def unzip_file(self, source_zip, dest_unzip):
+        with zipfile.ZipFile(source_zip, 'r') as zip_ref:
+            zip_ref.extractall(dest_unzip)
+    
     def save_last_working_branch(self):
         with open(HOME_PATH / "logs" / ".last_working_branch", "w") as f:
             f.write(self.get_current_branch_name())
@@ -272,15 +338,26 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
+    
+    def get_git_commit_date(self):
+        command = 'git log -1 --format="%cd" --date=format-local:"%Y-%m-%d %H:%M:%S"'
+        result = subprocess.run(command, shell=True, capture_output=True, text=True)
+        return result.stdout.strip()
 
     def get_all_branch_names(self):
         try:
             os.chdir(HOME_PATH)
+            # Fetch the latest information from the remote repository
+            subprocess.run(['git', 'fetch'])
+
+            # Retrieve the branch names from the remote repository
             branch_names = subprocess.check_output(
-                ['git', 'branch', '--list'],
+                ['git', 'for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin/'],
                 universal_newlines=True
             ).strip()
-            return [branch.strip('* ') for branch in branch_names.split('\n')]
+
+            # Process the branch names, excluding "HEAD"
+            return [branch.strip() for branch in branch_names.split('\n') if branch.strip() != 'HEAD']
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None

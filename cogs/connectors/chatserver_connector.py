@@ -28,6 +28,7 @@ class ChatServerHandler:
         self.writer = None
         self.keepalive_task = None
         self.manager_chat_parser = ManagerChatParser(LOGGER)
+        self.chat_connection_lost_event = asyncio.Event()
 
     async def connect(self):
         try:
@@ -40,25 +41,25 @@ class ChatServerHandler:
 
             # The authentication response will now be handled by the handle_packets function
             return True
-
         except ConnectionRefusedError:
-            LOGGER.warn("Connection refused by the chat server. Retrying in 10 seconds...")
-            await asyncio.sleep(10)
+            LOGGER.warn("Connection refused by the chat server.")
         except OSError as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
 
     async def handle_packets(self):
         # Wait until we are connected to the chat server before starting to handle packets
-        while not self.reader:
+        while not self.reader and not stop_event.is_set():
             await asyncio.sleep(0.1)
 
         # Handle packets until the connection is closed
-        while stop_event.is_set() or not self.reader.at_eof():
+        while not self.reader.at_eof():
             try:
+                if stop_event.is_set():
+                    break
                 msg_len_data = await self.reader.read(2)
                 if len(msg_len_data) < 2:
-                    LOGGER.warn("Connection closed by the server.")
+                    LOGGER.warn("Connection closed by the chat server. For status updates check https://discord.com/channels/991034716360687637/1034679496990789692")
                     break
                 msg_len = int.from_bytes(msg_len_data, byteorder='little')
 
@@ -66,17 +67,20 @@ class ChatServerHandler:
                 while len(data) < msg_len:
                     chunk = await self.reader.read(msg_len - len(data))
                     if len(chunk) == 0:
-                        LOGGER.warn("Connection closed by the server.")
+                        LOGGER.warn("Connection closed by the chat server. For status updates check https://discord.com/channels/991034716360687637/1034679496990789692")
                         break
                     data.extend(chunk)
                 else:
                     msg_type = int.from_bytes(data[:2], byteorder='little')
                     await self.handle_received_packet(msg_len, msg_type, bytes(data))
+                    # if keepalive_task is not None: asyncio.create_task(keepalive_task)
             except asyncio.IncompleteReadError:
                 LOGGER.error(f"IncompleteReadError: {traceback.format_exc()}")
             except ConnectionResetError:
                 LOGGER.error("Connection reset by the server.")
                 break
+            # except Exception:  This causes spam errors. We should let it reconnect naturally if there's an issue
+            #     LOGGER.error(f"Other connection error. {traceback.format_exc()}")
 
     def create_handshake_packet(self, session_id, server_id):
         msg_type = 0x1600
@@ -135,8 +139,10 @@ class ChatServerHandler:
             # Send the packet to the chat server
             self.writer.write(packet_data)
             await self.writer.drain()
+            LOGGER.debug(f">>> [MGR|CHAT] Sending replay status update\n\tMatch ID: {match_id}\n\tRequested by player ID: {account_id}\n\tStatus update: {status}\n\tPacket: {packet_data}")
+            return True
         except ConnectionResetError:
-            LOGGER.error("Connection reset by the server.")
+            LOGGER.error(f">>> ERR [MGR|CHAT] Replay status update error: Connection reset by the server. Replay update request details:\n\tMatch ID: {match_id}\n\tRequested by: {account_id}\n\tStatus update: {status}\n\tPacket: {packet_data}")
 
     def get_headers(self, data):
         msg_len = int.from_bytes(data[0:2], byteorder='little')
@@ -158,9 +164,7 @@ class ChatServerHandler:
     async def handle_received_packet(self, msg_len, msg_type, data):
         parsed = await self.manager_chat_parser.handle_packet(msg_type,msg_len,data,"receiving")
 
-        print_prefix = f"<<< [CHAT|MGR] - [{hex(msg_type)}] "
         if msg_type == 0x1700:
-            LOGGER.debug(f"{print_prefix}Handshake accepted by the chat server.")
             len, server_info_packet = self.create_server_info_packet(self.server_id, username=self.username, region=self.region, server_name=self.server_name, version=self.version, ip_addr=self.ip_addr, udp_ping_responder_port=self.udp_ping_responder_port)
             self.writer.write(len)
             await self.writer.drain()
@@ -170,17 +174,17 @@ class ChatServerHandler:
             # start a timer to send two packets every 15 seconds
             async def send_keepalive():
                 while not stop_event.is_set():
-                    try:
-                        await asyncio.sleep(15)
-                        self.writer.write(b'\x02\x00')
-                        await self.writer.drain()
-                        self.writer.write(b'\x00*')
-                        await self.writer.drain()
-                    except ConnectionResetError:
-                        break
+                    for _ in range(15):
+                        if stop_event.is_set():
+                            break
+                        await asyncio.sleep(1)
+                    self.writer.write(b'\x02\x00')
+                    await self.writer.drain()
+                    self.writer.write(b'\x00*')
+                    await self.writer.drain()
 
             asyncio.create_task(send_keepalive())
-            return True
+            # return True, keepalive_task
         elif msg_type == 0x0400:
             # shutdown notice
             asyncio.create_task(self.close_connection())
@@ -189,6 +193,7 @@ class ChatServerHandler:
         elif msg_type == 0x1704:
             # replay request
             await self.manager_event_bus.emit('handle_replay_request', parsed['match_id'], parsed['extension'], parsed['account_id'])
+        # return None, None
 
 
     def close(self):
