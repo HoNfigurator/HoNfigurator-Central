@@ -286,8 +286,11 @@ class GameServerManager:
         await self.auto_ping_listener.start_listener()
 
     async def start_api_server(self):
-        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
+        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, self.check_match_stats, port=self.global_config['hon_data']['svr_api_port'])
     
+    async def check_match_stats(self, match_id):
+        self.master_server_handler.request_match_stats(match_id)
+
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
         Starts a listener for incoming client connections on the specified host and port
@@ -784,7 +787,7 @@ class GameServerManager:
                 # on some systems, the compiled honfigurator.exe file, which is just launcher.py from cogs.misc causes issues for the opened hon_x64.exe. The exe is unable to locate one of the game dll resources.
                 # I wasted a lot of time trying to troubleshoot it, launching main.py directly works fine. This is my solution until a better one comes around. It's set within the scope of the script, and doesn't modify the systems environment.
                 path_list = os.environ["PATH"].split(os.pathsep)
-                if self.global_config['hon_data']['hon_install_directory'] not in path_list:
+                if str(self.global_config['hon_data']['hon_install_directory']  / 'game') not in path_list:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
             if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
                 if not await self.initialise_patching_procedure(source="startup"):

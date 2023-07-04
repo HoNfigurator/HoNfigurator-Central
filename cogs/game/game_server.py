@@ -576,25 +576,28 @@ class GameServer:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
 
-    async def get_running_server(self):
+    async def get_running_server(self,timeout=15):
         """
             Check if existing hon server is running.
         """
         running_procs = MISC.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
         last_good_proc = None
+        i=0
         while len(running_procs) > 0:
+            i+=1
             last_good_proc = None
             for proc in running_procs[:]:
                 status = self.get_dict_value('status')
-                if status == 3:
+                if status:
                     last_good_proc = proc
-                elif status is None:
+                else:
                     if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
                         proc.terminate()
                         LOGGER.debug(f"Terminated GameServer #{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
                     else:
                         last_good_proc = proc
+            if i >= timeout: break
             if last_good_proc is not None:
                 break
 

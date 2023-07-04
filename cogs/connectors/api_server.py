@@ -156,6 +156,11 @@ async def get_hon_version(token_and_user_info: dict = Depends(check_permission_f
 async def get_commit_date(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"data":MISC.get_git_commit_date()}
 
+@app.get("/api/get_match_stats/{match_id}")
+async def get_match_stats(match_id):
+    stats_response = manager_check_game_stats_callback(match_id)
+    return
+
 @app.get("/api/get_replay/{match_id}", description="Searches the server for the specified replay")
 async def get_replay(match_id: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     def convert_size(size_bytes):
@@ -485,15 +490,15 @@ def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_per
     file_content = [line.strip() for line in file_content]
     return file_content[-num:][::-1]
 
-# @app.get("/api/get_chat_logs/{match_id}", description="Retrieve a list of chat entries from a given match id")
-# def get_chat_logs(match_id: str):
-#     log_path = global_config['hon_data']['hon_logs_directory'] / f"{match_id}.log"
+@app.get("/api/get_chat_logs/{match_id}", description="Retrieve a list of chat entries from a given match id")
+def get_chat_logs(match_id: str):
+    log_path = global_config['hon_data']['hon_logs_directory'] / f"{match_id}.log"
 
-#     if not exists(log_path):
-#         return JSONResponse(status_code=404, content="Log file not found.")
+    if not exists(log_path):
+        return JSONResponse(status_code=404, content="Log file not found.")
     
-#     match_parser = MatchParser(match_id, log_path)
-#     return match_parser.parse_chat()
+    match_parser = MatchParser(match_id, log_path)
+    return match_parser.parse_chat()
 
 @app.get("/api/get_honfigurator_log_file", description="Returns the HoNfigurator log file completely, for download.")
 def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
@@ -699,8 +704,9 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
         if game_server is None: return JSONResponse(status_code=404, content={"error":"Server not managed by manager."})
         await manager_event_bus.emit('start_game_servers', [game_server])
     else:
-        for game_server in game_servers.values():
-            await manager_event_bus.emit('start_game_servers', [game_server])
+        await manager_event_bus.emit('start_game_servers', "all")
+        # for game_server in game_servers.values():
+        #     await manager_event_bus.emit('start_game_servers', [game_server])
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
@@ -831,14 +837,15 @@ async def asgi_server(app, host, port):
         LOGGER.info("Shutting down API Server")
         await server_task
 
-async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, host="0.0.0.0", port=5000):
-    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback
+async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, request_match_stats_callback, host="0.0.0.0", port=5000):
+    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback, manager_check_game_stats_callback
     global_config = config
     game_servers = game_servers_dict
     manager_event_bus = event_bus
     manager_tasks = game_manager_tasks
     health_check_tasks = health_tasks
     manager_find_replay_callback = find_replay_callback
+    manager_check_game_stats_callback = request_match_stats_callback
 
     # Create a new logger for uvicorn
     uvicorn_logger = logging.getLogger("uvicorn")
