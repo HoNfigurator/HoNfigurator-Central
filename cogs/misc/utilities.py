@@ -371,7 +371,7 @@ class Misc:
                 LOGGER.info(f"Already on target branch '{target_branch}'")
                 return "Already on target branch"
 
-            subprocess.run(['git','pull','origin','target_branch'])
+            subprocess.run(['git','pull','origin',target_branch])
             result = subprocess.run(['git', 'checkout', target_branch], text=True, capture_output=True)
 
             # Log any errors encountered
