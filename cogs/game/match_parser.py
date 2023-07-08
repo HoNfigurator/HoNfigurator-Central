@@ -12,7 +12,8 @@ class MatchParser:
         pattern = r'PLAYER_CHAT player:(\d+) target:"(\w+)" msg:"(.*?)"'
         player_pattern = r'PLAYER_CONNECT player:(\d+) name:"(.*?)" id:(\d+) psr:(\d+\.\d+)'
 
-        with open(self.log_path, 'r', encoding='utf-16-le') as file:
+        # with open(self.log_path, 'r', encoding='utf-16-le') as file:
+        with open(self.log_path, 'r', encoding='utf-8') as file:
             log_content = file.read()
 
         matches = re.findall(pattern, log_content)

@@ -76,10 +76,10 @@ class MasterServerHandler:
                     return {"error": "Error fetching upload information", "status": response.status}, response.status
 
     async def request_match_stats(self, match_id):
-        url = f"{self.base_url}/get_match_stats.php"
+        url = f"{self.base_url}/client_requester.php?f=get_match_stats"
         data = {
-            "cookie": self.cookie,
             "match_id": match_id,
+            "cookie": self.cookie
         }
         LOGGER.debug(f"Request data: {data}")
         async with aiohttp.ClientSession() as session:
@@ -92,8 +92,8 @@ class MasterServerHandler:
                         LOGGER.exception(f"Error parsing PHP serialized response: {traceback.format_exc()}")
                         return {"error": "Error parsing PHP serialized response", "exception": str(traceback.format_exc())}, response.status
                 else:
-                    LOGGER.error(f"Error fetching upload information: {response.status}")
-                    return {"error": "Error fetching upload information", "status": response.status}, response.status
+                    LOGGER.error(f"Error fetching match stats: {response.status}")
+                    return {"error": "Error fetching match stats", "status": response.status}, response.status
                 
     async def upload_replay_file(self, file_path, file_name, url):
         async with aiohttp.ClientSession() as session:

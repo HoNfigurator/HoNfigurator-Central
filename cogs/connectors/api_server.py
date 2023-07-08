@@ -158,7 +158,7 @@ async def get_commit_date(token_and_user_info: dict = Depends(check_permission_f
 
 @app.get("/api/get_match_stats/{match_id}")
 async def get_match_stats(match_id):
-    stats_response = manager_check_game_stats_callback(match_id)
+    stats_response = await manager_check_game_stats_callback(match_id)
     return
 
 @app.get("/api/get_replay/{match_id}", description="Searches the server for the specified replay")
@@ -492,6 +492,8 @@ def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_per
 
 @app.get("/api/get_chat_logs/{match_id}", description="Retrieve a list of chat entries from a given match id")
 def get_chat_logs(match_id: str):
+    if 'm' not in match_id.lower():
+        match_id = f'M{match_id}'
     log_path = global_config['hon_data']['hon_logs_directory'] / f"{match_id}.log"
 
     if not exists(log_path):

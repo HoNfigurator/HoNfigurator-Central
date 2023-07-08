@@ -20,20 +20,6 @@ if (!
     exit
 }
 
-# Pin a .lnk file to the taskbar
-function PinToTaskbar($filePath) {
-    $shell = New-Object -ComObject "Shell.Application"
-    $namespace = $shell.Namespace((Split-Path $filePath))
-    $item = $namespace.ParseName((Split-Path $filePath -Leaf))
-    $verb = $item.Verbs() | Where-Object { $_.Name.Replace('&', '') -eq 'Pin to taskbar' }
-
-    if ($null -ne $verb) {
-        $verb.DoIt()
-    } else {
-        Write-Host "Unable to pin item to taskbar"
-    }
-}
-
 Write-Host("Current Directory: $PSScriptRoot")
 cd $PSScriptRoot
 ## Install Chocolatey package manager ##
@@ -102,6 +88,7 @@ try {
 $hf = Get-Location
 $hf = "$hf\HoNfigurator-Central"
 cd $hf
+git pull
 Write-Output "Honfigurator directory is $hf"
 try{
     if ($confirmation -eq 'y') {
@@ -128,16 +115,6 @@ try {
     $StartMenu.TargetPath = "$pwd\honfigurator.exe"
     $Shortcut.Save()
     $StartMenu.Save()
-
-    # Create a taskbar shortcut for the .exe file
-    $TaskbarShortcutPath = "$env:UserProfile\AppData\Roaming\Microsoft\Internet Explorer\Quick Launch\User Pinned\TaskBar\HoNfigurator.lnk"
-    $TaskbarShortcut = $WshShell.CreateShortcut($TaskbarShortcutPath)
-    $TaskbarShortcut.WorkingDirectory = "$hf"
-    $TaskbarShortcut.TargetPath = "$pwd\honfigurator.exe"
-    $TaskbarShortcut.Save()
-
-    # Pin the taskbar shortcut to the taskbar
-    PinToTaskbar $TaskbarShortcutPath
 } catch {
     Write-Host "Error creating and pinning shortcuts: $_"
 }
