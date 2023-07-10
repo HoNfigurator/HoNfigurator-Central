@@ -30,7 +30,7 @@ class SetupEnvironment:
             self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
-        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity']
+        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity','man_enableProxy']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()
@@ -331,7 +331,7 @@ class SetupEnvironment:
 
             if key in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
                 pass
-            elif key == "svr_enableProxy":
+            elif key == "svr_enableProxy":  # this is to resolve a misconfig where svr_enableProxy was used instead of man_enableProxy by accident.
                 self.hon_data["man_enableProxy"] = self.hon_data[key]
                 del self.hon_data[key]
             elif default_value_type is type(None):
