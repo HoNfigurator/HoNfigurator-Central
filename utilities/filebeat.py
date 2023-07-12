@@ -331,6 +331,7 @@ def restart_filebeat(filebeat_changed, silent):
         result = subprocess.run(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode == 0:
             print(success_message)
+            return True
         else:
             print("Command:", " ".join(command_list))
             print("Return code:", result.returncode)
@@ -340,7 +341,8 @@ def restart_filebeat(filebeat_changed, silent):
             process_name = "filebeat.exe"
             command_list = ["powershell.exe", "Restart-Service", "-Name", "filebeat"]
             success_message = "Filebeat service restarted successfully on Windows."
-            run_command(command_list, success_message)
+            if run_command(command_list, success_message):
+                return True
 
         else:  # Linux
             process_name = "filebeat"
@@ -348,11 +350,13 @@ def restart_filebeat(filebeat_changed, silent):
             start_command_list = ["sudo", "systemctl", "start", "filebeat"]
             if check_process(process_name):
                 run_command(stop_command_list, STOPPED_SUCCESSFULLY)
-            run_command(start_command_list, STARTED_SUCCESSFULLY)
+            if run_command(start_command_list, STARTED_SUCCESSFULLY):
+                return True
         
-    if filebeat_changed and (check_process("filebeat.exe") or check_process("filebeat")):
-        restart()
-    elif not silent and (not check_process("filebeat.exe") or not check_process("filebeat")):
+    if filebeat_changed and (operating_system == "Windows" and check_process("filebeat.exe") or operating_system == "Linux" and check_process("filebeat")):
+        if restart():
+            print("Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+    elif not silent and not (operating_system == "Windows" and check_process("filebeat.exe") or operating_system == "Linux" and check_process("filebeat")):
         while True:
             start = input("Would you like to start filebeat? (y/n): ")
             if start.lower() in ['y','n']:
