@@ -286,10 +286,7 @@ class GameServerManager:
         await self.auto_ping_listener.start_listener()
 
     async def start_api_server(self):
-        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, self.check_match_stats, port=self.global_config['hon_data']['svr_api_port'])
-    
-    async def check_match_stats(self, match_id):
-        return await self.master_server_handler.request_match_stats(match_id)
+        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
