@@ -268,6 +268,7 @@ def configure_filebeat(silent=False):
         
         request_client_certificate(svr_name, svr_location, Path(destination_folder))
         
+        existing_discord_id = None
         if os.path.exists(config_file_path):
             old_config_hash = calculate_file_hash(config_file_path)
             existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
@@ -276,7 +277,7 @@ def configure_filebeat(silent=False):
         
         # svr_name = svr_name[:-2]
         filebeat_config = filebeat_config.replace(b"$server_name", str.encode(svr_name))
-        filebeat_config = filebeat_config.replace(b"$id", str.encode(svr_name))
+        filebeat_config = filebeat_config.replace(b"$id", str.encode(svr_name.replace(" ", "-")))
         filebeat_config = filebeat_config.replace(b"$region", str.encode(svr_location))
         filebeat_config = filebeat_config.replace(b"$slave_log",str.encode(str(slave_log)))
         filebeat_config = filebeat_config.replace(b"$match_log",str.encode(str(match_log)))
