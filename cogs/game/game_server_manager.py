@@ -663,7 +663,7 @@ class GameServerManager:
             # since the game server isn't actually off yet, it will keep creating a connection.
 
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-            # await self.commands.initialise_commands()
+            await self.commands.initialise_commands()
             self.commands.subcommands_changed.set()
             return True
         else:
@@ -842,8 +842,6 @@ class GameServerManager:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
-            await self.commands.initialise_commands()
-            self.commands.subcommands_changed.set()
         except Exception:
             print(traceback.format_exc())
 
