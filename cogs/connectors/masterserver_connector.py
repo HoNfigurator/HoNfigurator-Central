@@ -74,7 +74,7 @@ class MasterServerHandler:
                 else:
                     LOGGER.error(f"Error fetching upload information: {response.status}")
                     return {"error": "Error fetching upload information", "status": response.status}, response.status
-
+                
     async def upload_replay_file(self, file_path, file_name, url):
         async with aiohttp.ClientSession() as session:
             try:

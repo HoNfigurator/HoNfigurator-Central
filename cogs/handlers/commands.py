@@ -137,7 +137,7 @@ class Commands:
             "wake": Command("wake", description="Wake up a GameServer", usage="wake <GameServer#>", function=None, sub_commands=await self.wake_subcommands()),
             "sleep": Command("sleep", description="Put a GameServer to sleep", usage="sleep <GameServer#>", function=None, sub_commands=await self.sleep_subcommands()),
             "message": Command("message", description="Send a message to a GameServer", usage="message <GameServer# / ALL> <message>", function=None, sub_commands=await self.message_subcommands(),args=["<type your message>"]),
-            "command": Command("message", description="Initiate a command on a GameServer as if you were typing into the console.", usage="command <GameServer# / ALL> <command>", function=None, sub_commands=await self.custom_command_subcommands()),
+            "command": Command("command", description="Initiate a command on a GameServer as if you were typing into the console.", usage="command <GameServer# / ALL> <command>", function=None, sub_commands=await self.custom_command_subcommands()),
             "startup": Command("startup", description="Start 1 or more game servers", usage="startup <GameServer# / ALL>", function=None, sub_commands=await self.startup_servers_subcommands()),
             "status": Command("status", description="Show status of connected GameServers", usage="status", function=self.status, sub_commands={}),
             "reconnect": Command("reconnect", description="Close all GameServer connections, forcing them to reconnect", usage="reconnect", function=self.reconnect, sub_commands={}),
