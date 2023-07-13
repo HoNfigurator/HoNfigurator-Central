@@ -205,8 +205,9 @@ def request_client_certificate(svr_name, svr_location, filebeat_path):
         print("Step CLI is not installed or not in the system's PATH.")
         sys.exit(1)
 
-def configure_filebeat(silent=False):
-    filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
+def configure_filebeat(silent=False,test=False):
+    if test: filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml"
+    else: filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
     if operating_system == "Windows":
         destination_folder = os.path.join(os.environ["ProgramFiles"], "filebeat")
@@ -399,10 +400,11 @@ step_certificate.main()
 # Parse command-line arguments
 parser = argparse.ArgumentParser()
 parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
+parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
 args = parser.parse_args()
 
 filebeat_changed = False
-if configure_filebeat(silent=args.silent):
+if configure_filebeat(silent=args.silent, test=args.test):
     filebeat_changed = True
     # Create scheduled task on Windows
     if not args.silent:
