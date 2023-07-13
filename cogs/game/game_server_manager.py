@@ -843,6 +843,7 @@ class GameServerManager:
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
             await self.commands.initialise_commands()
+            self.commands.subcommands_changed.set()
         except Exception:
             print(traceback.format_exc())
 
