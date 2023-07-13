@@ -842,6 +842,7 @@ class GameServerManager:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
+            await self.commands.initialise_commands()
         except Exception:
             print(traceback.format_exc())
 
