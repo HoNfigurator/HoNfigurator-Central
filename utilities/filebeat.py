@@ -210,8 +210,10 @@ def configure_filebeat(silent=False):
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
     if operating_system == "Windows":
         destination_folder = os.path.join(os.environ["ProgramFiles"], "filebeat")
+        config_folder = destination_folder
     else:
         destination_folder = "/usr/share/filebeat"
+        config_folder = "/etc/filebeat"
     
     if not os.path.exists(destination_folder): os.makedirs(destination_folder)
     
@@ -222,7 +224,7 @@ def configure_filebeat(silent=False):
 
     filebeat_config_response = requests.get(filebeat_config_url)
     if filebeat_config_response.status_code == 200:
-        config_file_path = os.path.join(destination_folder, "filebeat.yml")
+        config_file_path = os.path.join(config_folder, "filebeat.yml")
         filebeat_config = filebeat_config_response.content
 
         
