@@ -206,6 +206,8 @@ def request_client_certificate(svr_name, svr_location, filebeat_path):
         sys.exit(1)
 
 def configure_filebeat(silent=False,test=False):
+    external_ip = requests.get('https://api.ipify.org').text
+
     if test: filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml"
     else: filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
@@ -285,6 +287,7 @@ def configure_filebeat(silent=False,test=False):
         filebeat_config = filebeat_config.replace(b"$slave_log",str.encode(str(slave_log)))
         filebeat_config = filebeat_config.replace(b"$match_log",str.encode(str(match_log)))
         filebeat_config = filebeat_config.replace(b"$server_launcher",str.encode(launcher))
+        filebeat_config = filebeat_config.replace(b"$ip",str.encode(external_ip))
         if not silent:
             if existing_discord_id:
                 discord_id = input(f"What is your discord user name? ({existing_discord_id}): ")
