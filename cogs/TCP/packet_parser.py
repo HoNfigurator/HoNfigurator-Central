@@ -486,8 +486,9 @@ class ClientChatParser:
             0x1500: self.unhandled_packet,
             0x2a01: self.unhandled_packet,
             0x68: self.chat_online_counter,
-            0xbf: self.chat_replay_upload_status
-
+            0xbf: self.chat_replay_upload_status,
+            0x1c00: self.chat_authentication_ok,
+            0x1c01: self.chat_authentication_fail
         }
     def null(self,data):
         pass
@@ -506,10 +507,10 @@ class ClientChatParser:
             handler = self.chat_to_client_handlers.get(packet_type, self.unhandled_packet)
         # if packet_len != len(packet_data):
         #     self.log("warn",f"{self.print_prefix}LEN DOESNT MATCH PACKET: {packet_len} and {len(packet_data)}")
-        await handler(packet_data)
+        return await handler(packet_data)
 
     async def client_connect_request(self, packet_data):
-        offset = 4
+        offset = 2
         connect_request = {}
 
         connect_request['accountId'], offset = read_int(packet_data, offset)
@@ -534,10 +535,14 @@ class ClientChatParser:
 
         self.log("debug",f"{self.print_prefix}Client Connect\n\t{connect_request}")
 
+        return connect_request
+
     async def chat_online_counter(self,packet_data):
         offset = 2
         online_count, offset = read_int(packet_data,offset)
         self.log("debug",f"{self.print_prefix}Online count: {online_count}")
+
+        return online_count
 
     async def client_replay_request(self,packet_data):
         offset = 2
@@ -563,7 +568,18 @@ class ClientChatParser:
             self.log("info",f"Replay available: http://api.kongor.online/replays/M{replay_status['match_id']}.honreplay")
 
         self.log("debug",f"{self.print_prefix}Replay status update\n\tMatch ID: {replay_status['match_id']}\n\tStatus: {status}")
-        self.log("debug",packet_data)
+
+        return replay_status
+
+    async def chat_authentication_ok(self,packet_data):
+        offset = 2
+        status, offset = read_int(packet_data, offset)
+        return status
+    
+    async def chat_authentication_fail(self,packet_data):
+        offset = 2
+        status, offset = read_int(packet_data, offset)
+        return status
 
 
     async def unhandled_packet(self,packet_data):
