@@ -6,6 +6,21 @@ import asyncio
 import struct
 import datetime
 
+def read_int(data, offset):
+    val = int.from_bytes(data[offset:offset+4], byteorder='little')
+    offset += 4
+    return val, offset
+
+def read_byte(data, offset):
+    val = data[offset]
+    offset += 1
+    return val, offset
+
+def read_string(data, offset):
+    str, _, remaining_data = data[offset:].partition(b'\x00')
+    offset += len(str) + 1
+    return str.decode('utf-8'), offset
+
 class GameManagerParser:
     def __init__(self, client_id,logger=None):
         self.logger = logger
@@ -460,7 +475,122 @@ class GameChatParser:
     async def unhandled_packet(self,packet_data):
         self.log("warn",f"Unhandled: {self.print_prefix}{packet_data}")
 
+class ClientChatParser:
+    def __init__(self, logger=None):
+        self.logger = logger
+        self.client_to_chat_handlers = {
+            0xC00: self.client_connect_request,
+            0xbe: self.client_replay_request,
+        }
+        self.chat_to_client_handlers = {
+            0x1500: self.unhandled_packet,
+            0x2a01: self.unhandled_packet,
+            0x68: self.chat_online_counter,
+            0xbf: self.chat_replay_upload_status,
+            0x1c00: self.chat_authentication_ok,
+            0x1c01: self.chat_authentication_fail
+        }
+    def null(self,data):
+        pass
+    def log(self,level,message):
+        if self.logger:
+            getattr(self.logger, level)(message)
+        else:
+            print(message)
 
+    async def handle_packet(self, packet_type, packet_len, packet_data, direction):
+        if direction == "sending":
+            self.print_prefix = f">>> [CLIENT|CHAT] - [{hex(packet_type)}] "
+            handler = self.client_to_chat_handlers.get(packet_type, self.unhandled_packet)
+        elif direction == "receiving":
+            self.print_prefix = f"<<< [CLIENT|CHAT] - [{hex(packet_type)}] "
+            handler = self.chat_to_client_handlers.get(packet_type, self.unhandled_packet)
+        # if packet_len != len(packet_data):
+        #     self.log("warn",f"{self.print_prefix}LEN DOESNT MATCH PACKET: {packet_len} and {len(packet_data)}")
+        return await handler(packet_data)
+
+    async def client_connect_request(self, packet_data):
+        offset = 2
+        connect_request = {}
+
+        connect_request['accountId'], offset = read_int(packet_data, offset)
+        connect_request['sessionCookie'], offset = read_string(packet_data, offset)
+        connect_request['externalIp'], offset = read_string(packet_data, offset)
+        connect_request['sessionAuthHash'], offset = read_string(packet_data, offset)
+        connect_request['chatProtocolVersion'], offset = read_int(packet_data, offset)
+        connect_request['operatingSystem'], offset = read_byte(packet_data, offset)
+        connect_request['osMajorVersion'], offset = read_byte(packet_data, offset)
+        connect_request['osMinorVersion'], offset = read_byte(packet_data, offset)
+        connect_request['osMicroVersion'], offset = read_byte(packet_data, offset)
+        connect_request['osBuildCode'], offset = read_string(packet_data, offset)
+        connect_request['osArchitecture'], offset = read_string(packet_data, offset)
+        connect_request['clientVersionMajor'], offset = read_byte(packet_data, offset)
+        connect_request['clientVersionMinor'], offset = read_byte(packet_data, offset)
+        connect_request['clientVersionMicro'], offset = read_byte(packet_data, offset)
+        connect_request['clientVersionHotfix'], offset = read_byte(packet_data, offset)
+        connect_request['lastKnownClientState'], offset = read_byte(packet_data, offset)
+        connect_request['clientChatModeState'], offset = read_byte(packet_data, offset)
+        connect_request['clientRegion'], offset = read_string(packet_data, offset)
+        connect_request['clientLanguage'], offset = read_string(packet_data, offset)
+
+        self.log("debug",f"{self.print_prefix}Client Connect\n\t{connect_request}")
+
+        return connect_request
+
+    async def chat_online_counter(self,packet_data):
+        offset = 2
+        online_count, offset = read_int(packet_data,offset)
+        self.log("debug",f"{self.print_prefix}Online count: {online_count}")
+
+        return online_count
+
+    async def client_replay_request(self,packet_data):
+        offset = 2
+        match_id, offset = read_int(packet_data, offset)
+        file_format, offset = read_string(packet_data, offset)
+
+        self.log("debug",f"{self.print_prefix}Replay Request\n\tMatch ID: {match_id}\n\tfile format: {file_format}")
+    
+    async def chat_replay_upload_status(self, packet_data):
+        offset = 2
+        replay_status = {}
+
+        replay_status['match_id'], offset = read_int(packet_data, offset)
+        replay_status['status'], offset = read_byte(packet_data, offset)
+        if replay_status['status'] == 7:  # "UPLOAD_COMPLETE"
+            replay_status['extra_byte'], offset = read_byte(packet_data, offset)
+        
+        status = None
+        if replay_status['status'] == -1: status = 'None'
+        if replay_status['status'] == 0: status = 'GENERAL_FAILURE'
+        if replay_status['status'] == 1: status = 'DOES_NOT_EXIST'
+        if replay_status['status'] == 2: status = 'INVALID_HOST'
+        if replay_status['status'] == 3: status = 'ALREADY_UPLOADED'
+        if replay_status['status'] == 4: status = 'ALREADY_QUEUED'
+        if replay_status['status'] == 5: status = 'QUEUED'
+        if replay_status['status'] == 6: status = 'UPLOADING'
+        if replay_status['status'] == 7:
+            status = 'DONE'
+            self.log("info",f"Replay available: http://api.kongor.online/replays/M{replay_status['match_id']}.honreplay")
+
+        self.log("debug",f"{self.print_prefix}Replay status update\n\tMatch ID: {replay_status['match_id']}\n\tStatus: {status}")
+
+        return replay_status
+
+    async def chat_authentication_ok(self,packet_data):
+        offset = 2
+        status, offset = read_int(packet_data, offset)
+        return status
+    
+    async def chat_authentication_fail(self,packet_data):
+        offset = 2
+        status, offset = read_int(packet_data, offset)
+        return status
+
+
+    async def unhandled_packet(self,packet_data):
+        self.log("warn",f"Unhandled: {self.print_prefix}{packet_data}")
+        pass
 
 """
 class GameHTTPParser:
