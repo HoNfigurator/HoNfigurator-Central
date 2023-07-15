@@ -171,10 +171,11 @@ def extract_settings_from_commandline(commandline, setting):
 
     return result
 
-def request_client_certificate(svr_name, svr_location, filebeat_path):
+def request_client_certificate(svr_name, filebeat_path):
 
     try:
         # Check if the certificate files already exist
+        csr_file_path = filebeat_path / 'client.csr'
         crt_file_path = filebeat_path / 'client.crt'
         key_file_path = filebeat_path / 'client.key'
         certificate_exists = crt_file_path.is_file() and key_file_path.is_file()
@@ -186,28 +187,25 @@ def request_client_certificate(svr_name, svr_location, filebeat_path):
                 "step", "ca", "renew", crt_file_path, key_file_path,
                 "--force"
             ]
+
+            # Run the command
+            result = subprocess.run(command, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                # Certificate request successful
+                certificate_data = result.stdout.strip()
+                # Do something with the certificate data
+                print("Client certificate request successful.")
+            else:
+                # Certificate request failed
+                error_message = result.stderr.strip()
+                print(f"Error: {error_message}")
+                sys.exit(1)
         else:
-            token = input(f"Enter the authentication token for {svr_name}: ")
             print("Requesting new client certificate...")
             # Construct the command for new certificate request
-            command = [
-                "step", "ca", "certificate", f'{svr_name}',
-                crt_file_path, key_file_path, "--token", token, "--not-after", "200h", "--provisioner", "step"
-            ]
+            step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
 
-        # Run the command
-        result = subprocess.run(command, capture_output=True, text=True)
-
-        if result.returncode == 0:
-            # Certificate request successful
-            certificate_data = result.stdout.strip()
-            # Do something with the certificate data
-            print("Client certificate request successful.")
-        else:
-            # Certificate request failed
-            error_message = result.stderr.strip()
-            print(f"Error: {error_message}")
-            sys.exit(1)
     except FileNotFoundError:
         print("Step CLI is not installed or not in the system's PATH.")
         sys.exit(1)
@@ -256,6 +254,7 @@ def configure_filebeat(silent=False,test=False):
 
     filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml" if test else "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
+    honfigurator_ca_chain_bundle_url = "https://honfigurator.app/honfigurator-chain-bundle.pem"
 
     destination_folder = os.path.join(os.environ["ProgramFiles"], "filebeat") if operating_system == "Windows" else "/usr/share/filebeat"
     config_folder = destination_folder if operating_system == "Windows" else "/etc/filebeat"
@@ -266,6 +265,10 @@ def configure_filebeat(silent=False,test=False):
     if honfigurator_ca_chain_response.status_code == 200:
         with open(Path(destination_folder) / "honfigurator-chain.pem", 'wb') as chain_file:
             chain_file.write(honfigurator_ca_chain_response.content)
+    honfigurator_ca_chain_bundle_response = requests.get(honfigurator_ca_chain_bundle_url)
+    if honfigurator_ca_chain_bundle_response.status_code == 200:
+        with open(Path(destination_folder) / "honfigurator-chain-bundle.pem", 'wb') as chain_file:
+            chain_file.write(honfigurator_ca_chain_bundle_response.content)
 
     filebeat_config_response = requests.get(filebeat_config_url)
     if filebeat_config_response.status_code != 200:
@@ -304,7 +307,7 @@ def configure_filebeat(silent=False,test=False):
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
     print(f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
 
-    request_client_certificate(svr_name, svr_location, Path(destination_folder))
+    request_client_certificate(svr_name, Path(destination_folder))
         
     existing_discord_id, old_config_hash = None, None
     if os.path.exists(config_file_path):
