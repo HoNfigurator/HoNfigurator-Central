@@ -115,11 +115,11 @@ def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, not_afte
 
     # Step 1: Redirect to Discord OAuth2 endpoint
     oauth_url = f'https://discord.com/api/oauth2/authorize?client_id={discord_client_id}&redirect_uri={server_url}/callback&response_type=code&scope=identify&state={token}'
-    try:
-        print("You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
+    print("You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
+    if system == "Windows":
         # Try to open the URL in a web browser
         webbrowser.open_new(oauth_url)
-    except webbrowser.Error:
+    else:
         # If it fails (because there's no web browser), print the URL instead
         print("Please navigate to the following URL in a web browser to authenticate your request:")
         print(oauth_url)
