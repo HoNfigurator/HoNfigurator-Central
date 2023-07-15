@@ -54,7 +54,7 @@ async def handle_chatserver_to_manager_packet(msg_len, msg_type, original_packet
     
 async def transfer_data(src_reader, dst_writer, handle_packet_fn, src_name, dst_name):
     while True:
-        data = await src_reader.read(8192)
+        data = await src_reader.read(4096)
         if len(data) == 0:
             break
 

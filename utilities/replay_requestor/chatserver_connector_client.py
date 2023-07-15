@@ -60,7 +60,7 @@ class ChatServerHandler:
         self.client_chat_parser = ClientChatParser()
         self.chat_connection_lost_event = asyncio.Event()
 
-        self.replay_status = 0
+        self.replay_status = -2
         self.authenticated = False
         self.authentication_response_received = False
     
@@ -165,7 +165,7 @@ class ChatServerHandler:
         packet_len = len(packet_data)
         packet_data = struct.pack('<H', packet_len) + packet_data
 
-        self.replay_status = 0 # set this back to 0
+        self.replay_status = -2 # set this back to None
 
         await self.send_packet(packet_data)
 

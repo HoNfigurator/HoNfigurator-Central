@@ -561,6 +561,12 @@ class ClientChatParser:
             replay_status['extra_byte'], offset = read_byte(packet_data, offset)
         
         status = None
+        if replay_status['status'] == -1: status = 'None'
+        if replay_status['status'] == 0: status = 'GENERAL_FAILURE'
+        if replay_status['status'] == 1: status = 'DOES_NOT_EXIST'
+        if replay_status['status'] == 2: status = 'INVALID_HOST'
+        if replay_status['status'] == 3: status = 'ALREADY_UPLOADED'
+        if replay_status['status'] == 4: status = 'ALREADY_QUEUED'
         if replay_status['status'] == 5: status = 'QUEUED'
         if replay_status['status'] == 6: status = 'UPLOADING'
         if replay_status['status'] == 7:

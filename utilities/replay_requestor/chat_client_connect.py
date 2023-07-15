@@ -1,4 +1,8 @@
 from chatserver_connector_client import ChatServerHandler
+import sys, os
+project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+sys.path.append(project_root)
+from cogs.handlers.events import ReplayStatus
 import asyncio
 import argparse
 import sys
@@ -51,8 +55,37 @@ class ClientConnect:
         await self.create_replay_request(match_id)
 
         # Wait for response
-        while not self.chat_server_handler.replay_status == 7:
-            await asyncio.sleep(1)
+        while True:  # Loop until a break statement is encountered
+            if self.chat_server_handler.replay_status == -2:
+                pass
+            else:
+                replay_status = ReplayStatus(self.chat_server_handler.replay_status)
+                if replay_status == ReplayStatus.UPLOAD_COMPLETE:
+                    print("Replay upload completed successfully.")
+                    break  # Stop the loop
+                elif replay_status == ReplayStatus.UPLOADING:
+                    print("Replay is currently being uploaded...")
+                elif replay_status == ReplayStatus.QUEUED:
+                    print("Replay is queued for upload...")
+                elif replay_status == ReplayStatus.ALREADY_QUEUED:
+                    print("Replay is already queued for upload.")
+                    break
+                elif replay_status == ReplayStatus.ALREADY_UPLOADED:
+                    print("Replay has already been uploaded.")
+                    break
+                elif replay_status == ReplayStatus.INVALID_HOST:
+                    print("Invalid host.")
+                    break
+                elif replay_status == ReplayStatus.DOES_NOT_EXIST:
+                    print("Replay does not exist.")
+                    break
+                elif replay_status == ReplayStatus.GENERAL_FAILURE:
+                    print("General failure while uploading replay.")
+                    break
+                elif replay_status == ReplayStatus.NONE:
+                    print("Unknown error.")
+                    break
+            await asyncio.sleep(1)  # Sleep for a bit before checking again
         
         # Close connection
         await self.chat_server_handler.close_connection()
