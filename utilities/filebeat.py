@@ -431,7 +431,6 @@ async def configure_filebeat(silent=False,test=False):
         existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
         
     filebeat_config = perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
-
     temp_dir = tempfile.TemporaryDirectory()
     temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
     async with aiofiles.open(temp_file_path, 'wb') as temp_file:
