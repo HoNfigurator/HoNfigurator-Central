@@ -13,6 +13,7 @@ import tempfile
 import requests
 import webbrowser
 import time
+import json
 
 version = "0.24.3"
 system = platform.system()
@@ -129,30 +130,35 @@ def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, not_afte
         response = requests.get(f'{server_url}/status', headers={'x-auth-token': token}, verify=Path(cert_path).parent / "honfigurator-chain-bundle.pem")
 
         if response.status_code == 200:
+            response_content = response.json()
+
             # Server has validated the user and instructed the client to generate a CSR
+            if response_content['status'] == 200:
 
-            # Step 3: Generate CSR using Step CLI
-            csr_command = f'{step_location} certificate create --force --no-password --insecure --csr "{cert_name}" "{str(csr_path)}" "{str(key_path)}"'
-            subprocess.run(csr_command, shell=True)
+                # Step 3: Generate CSR using Step CLI
+                csr_command = f'{step_location} certificate create --force --no-password --insecure --csr "{cert_name}" "{str(csr_path)}" "{str(key_path)}"'
+                subprocess.run(csr_command, shell=True)
 
-            # Step 4: Send CSR to server
-            with open(str(csr_path), "r") as file:
-                csr = file.read()
-            response = requests.post(f'{server_url}/csr', data={'csr': csr, 'name':cert_name}, headers={'x-auth-token': token}, verify=Path(cert_path).parent / "honfigurator-chain-bundle.pem")
+                # Step 4: Send CSR to server
+                with open(str(csr_path), "r") as file:
+                    csr = file.read()
+                response = requests.post(f'{server_url}/csr', data={'csr': csr, 'name':cert_name}, headers={'x-auth-token': token}, verify=Path(cert_path).parent / "honfigurator-chain-bundle.pem")
 
-            if response.status_code == 200:
-                # Step 5: Receive and save certificate from server
-                with open(cert_path, 'w') as cert_file:
-                    cert_file.write(response.text)
+                if response.status_code == 200:
+                    # Step 5: Receive and save certificate from server
+                    with open(cert_path, 'w') as cert_file:
+                        cert_file.write(response.text)
 
-                print('Certificate received and saved.')
-                return True
+                    print('Certificate received and saved.')
+                    return response_content["username"]
+                else:
+                    print('Failed to send CSR to server.')
             else:
-                print('Failed to send CSR to server.')
-                return False
+                print('Waiting for server authentication...')
+                time.sleep(5)  # Wait for 5 seconds before checking again
         else:
-            print('Waiting for server authentication...')
-            time.sleep(5)  # Wait for 5 seconds before checking again
+            print('Error from server.')
+            return False
 
 def request_certificate(provisioner_name, provisioner_password_file):
     print("Requesting a certificate...")

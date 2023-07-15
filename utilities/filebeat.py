@@ -204,7 +204,7 @@ def request_client_certificate(svr_name, filebeat_path):
         else:
             print("Requesting new client certificate...")
             # Construct the command for new certificate request
-            step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
+            return step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
 
     except FileNotFoundError:
         print("Step CLI is not installed or not in the system's PATH.")
@@ -222,7 +222,7 @@ def configure_filebeat(silent=False,test=False):
         return slave_log, match_log
 
 
-    def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, destination_folder):
+    def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         encoding = "utf-16-le" if operating_system == "Windows" else "BINARY"
 
         replacements = {
@@ -239,10 +239,14 @@ def configure_filebeat(silent=False,test=False):
             b"$client_key": str.encode(str(Path(destination_folder) / "client.key"))
         }
 
-        if existing_discord_id != "$discord_id":
-            discord_id = input(f"What is your discord user name? ({existing_discord_id}): ") or existing_discord_id
-        else:
+        if looked_up_discord_username:
+            discord_id = looked_up_discord_username
+        elif existing_discord_id == "$discord_id":
             discord_id = input(f"What is your discord user name?: ")
+        elif existing_discord_id:
+            discord_id = existing_discord_id
+
+        print(f"Discord Name: {discord_id}")
         replacements[b"$discord_id"] = str.encode(discord_id)
 
         for old, new in replacements.items():
@@ -307,16 +311,14 @@ def configure_filebeat(silent=False,test=False):
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
     print(f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
 
-    request_client_certificate(svr_name, Path(destination_folder))
+    looked_up_discord_username = request_client_certificate(svr_name, Path(destination_folder))
         
     existing_discord_id, old_config_hash = None, None
     if os.path.exists(config_file_path):
         old_config_hash = calculate_file_hash(config_file_path)
         existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
-        if existing_discord_id != "$discord_id":
-            print("Existing Discord ID:", existing_discord_id)
         
-    filebeat_config = perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, destination_folder)
+    filebeat_config = perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
     
     temp_dir = tempfile.TemporaryDirectory()
     temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
