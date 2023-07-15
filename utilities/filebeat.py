@@ -287,7 +287,7 @@ def configure_filebeat(silent=False,test=False):
         filebeat_config = filebeat_config.replace(b"$slave_log",str.encode(str(slave_log)))
         filebeat_config = filebeat_config.replace(b"$match_log",str.encode(str(match_log)))
         filebeat_config = filebeat_config.replace(b"$server_launcher",str.encode(launcher))
-        filebeat_config = filebeat_config.replace(b"$ip",str.encode(external_ip))
+        filebeat_config = filebeat_config.replace(b"0.0.0.0",str.encode(external_ip))
         if not silent:
             if existing_discord_id:
                 discord_id = input(f"What is your discord user name? ({existing_discord_id}): ")
