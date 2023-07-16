@@ -37,6 +37,12 @@ logger = logging.getLogger()
 operating_system = platform.system()
 
 def install_filebeat_linux():
+    # Check if filebeat is already installed
+    result = subprocess.run(["dpkg-query", "-W", "-f='${Status}'", "filebeat"], stdout=subprocess.PIPE, text=True)
+    if "install ok installed" in result.stdout:
+        print("Filebeat is already installed. Skipping installation.")
+        return
+
     # Update package lists for upgrades for packages that need upgrading
     subprocess.run(["sudo", "apt-get", "update"], check=True)
 
@@ -54,6 +60,7 @@ def install_filebeat_linux():
 def install_filebeat_windows():
     filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
     if os.path.exists(Path(filebeat_install_dir) / "filebeat.exe"):
+        print("Filebeat is already installed. Skipping installation.")
         return
     # Download and install Filebeat using Python
     with tempfile.TemporaryDirectory() as temp_dir:
@@ -164,10 +171,11 @@ def extract_settings_from_commandline(commandline, setting):
 
     return result
 
-def request_client_certificate(svr_name, svr_location, filebeat_path):
+def request_client_certificate(svr_name, filebeat_path):
 
     try:
         # Check if the certificate files already exist
+        csr_file_path = filebeat_path / 'client.csr'
         crt_file_path = filebeat_path / 'client.crt'
         key_file_path = filebeat_path / 'client.key'
         certificate_exists = crt_file_path.is_file() and key_file_path.is_file()
@@ -179,147 +187,153 @@ def request_client_certificate(svr_name, svr_location, filebeat_path):
                 "step", "ca", "renew", crt_file_path, key_file_path,
                 "--force"
             ]
+
+            # Run the command
+            result = subprocess.run(command, capture_output=True, text=True)
+
+            if result.returncode == 0:
+                # Certificate request successful
+                certificate_data = result.stdout.strip()
+                # Do something with the certificate data
+                print("Client certificate request successful.")
+            else:
+                # Certificate request failed
+                error_message = result.stderr.strip()
+                print(f"Error: {error_message}")
+                sys.exit(1)
         else:
-            token = input(f"Enter the authentication token for {svr_name} - {svr_location}: ")
             print("Requesting new client certificate...")
             # Construct the command for new certificate request
-            command = [
-                "step", "ca", "certificate", f'{svr_name} - {svr_location}',
-                crt_file_path, key_file_path, "--token", token, "--not-after", "200h", "--provisioner", "step"
-            ]
+            return step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
 
-        # Run the command
-        result = subprocess.run(command, capture_output=True, text=True)
-
-        if result.returncode == 0:
-            # Certificate request successful
-            certificate_data = result.stdout.strip()
-            # Do something with the certificate data
-            print("Client certificate request successful.")
-        else:
-            # Certificate request failed
-            error_message = result.stderr.strip()
-            print(f"Error: {error_message}")
-            sys.exit(1)
     except FileNotFoundError:
         print("Step CLI is not installed or not in the system's PATH.")
         sys.exit(1)
 
 def configure_filebeat(silent=False,test=False):
-    if test: filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml"
-    else: filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
-    honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
-    if operating_system == "Windows":
-        destination_folder = os.path.join(os.environ["ProgramFiles"], "filebeat")
-        config_folder = destination_folder
-    else:
-        destination_folder = "/usr/share/filebeat"
-        config_folder = "/etc/filebeat"
-    
-    if not os.path.exists(destination_folder): os.makedirs(destination_folder)
-    
-    honfigurator_ca_chain_response = requests.get(honfigurator_ca_chain_url)
-    if honfigurator_ca_chain_response.status_code == 200:
-        with open(Path(destination_folder) / "honfigurator-chain.pem", 'wb') as chain_file:
-            chain_file.write(honfigurator_ca_chain_response.content)
-
-    filebeat_config_response = requests.get(filebeat_config_url)
-    if filebeat_config_response.status_code == 200:
-        config_file_path = os.path.join(config_folder, "filebeat.yml")
-        filebeat_config = filebeat_config_response.content
-
-        
-        exclude = []
-        while True:
-            print("Scanning for running hon executable..")
-            time.sleep(1)
-            if operating_system == "Windows":
-                process = check_process("hon_x64.exe",exclude)
-            else: process = check_process("hon-x86_64-server",exclude)
-            if process and len(process.cmdline()) > 4:
-                break
-            elif process and len(process.cmdline()) < 4:
-                if process not in exclude:
-                    exclude.append(process)
-                    print(f"Excluded {process.pid}\n\t{process.cmdline()}")
-
-        # Perform text replacements
-        svr_name = extract_settings_from_commandline(process.cmdline(), "svr_name")
-        space_count = 0
-        index = len(svr_name) - 1
-
-        # Find the index of the second space from the end of the string
-        while index >= 0 and space_count < 2:
-            if svr_name[index] == ' ':
-                space_count += 1
-            index -= 1
-
-        # Remove the portion of the string from the index found until the end
-        svr_name = svr_name[:index+1]
-        svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
+    def get_log_paths(process):
         if operating_system == "Windows":
             slave_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "*.clog"
             match_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "M*.log"
         else:
             slave_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "*.clog"
             match_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "M*.log"
-        svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
-        if svr_desc: launcher = "HoNfigurator"
-        else: launcher = "COMPEL"
-        print(f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
+        
+        return slave_log, match_log
 
-        
-        request_client_certificate(svr_name, svr_location, Path(destination_folder))
-        
-        existing_discord_id = None
-        if os.path.exists(config_file_path):
-            old_config_hash = calculate_file_hash(config_file_path)
-            existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
-            if existing_discord_id:
-                print("Existing Discord ID:", existing_discord_id)
-        
-        # svr_name = svr_name[:-2]
-        filebeat_config = filebeat_config.replace(b"$server_name", str.encode(svr_name))
-        filebeat_config = filebeat_config.replace(b"$id", str.encode(svr_name.replace(" ", "-")))
-        filebeat_config = filebeat_config.replace(b"$region", str.encode(svr_location))
-        filebeat_config = filebeat_config.replace(b"$slave_log",str.encode(str(slave_log)))
-        filebeat_config = filebeat_config.replace(b"$match_log",str.encode(str(match_log)))
-        filebeat_config = filebeat_config.replace(b"$server_launcher",str.encode(launcher))
-        if not silent:
-            if existing_discord_id:
-                discord_id = input(f"What is your discord user name? ({existing_discord_id}): ")
-                if discord_id == "": discord_id = existing_discord_id
-            else: discord_id = input(f"What is your discord user name?: ")
-        filebeat_config = filebeat_config.replace(b"$discord_id", str.encode(discord_id))
-        if operating_system == "Windows":
-            encoding = "utf-16-le"
-        else: encoding = "BINARY"
-        filebeat_config = filebeat_config.replace(b"$encoding", str.encode(encoding))
-        filebeat_config = filebeat_config.replace(b"$ca_chain", str.encode(str(Path(destination_folder) / "honfigurator-chain.pem")))
-        filebeat_config = filebeat_config.replace(b"$client_cert", str.encode(str(Path(destination_folder) / "client.crt")))
-        filebeat_config = filebeat_config.replace(b"$client_key", str.encode(str(Path(destination_folder) / "client.key")))
 
-        new_config_hash = None
-        old_config_hash = None
-        
-        if os.path.exists(config_file_path):
-            old_config_hash = calculate_file_hash(config_file_path)
-        temp_dir = tempfile.TemporaryDirectory()
-        temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
-        with open(temp_file_path, 'wb') as temp_file:
-            temp_file.write(filebeat_config)
-        new_config_hash = calculate_file_hash(temp_file_path)
+    def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
+        encoding = "utf-16-le" if operating_system == "Windows" else "BINARY"
 
-        if old_config_hash != new_config_hash:
-            shutil.move(temp_file_path, config_file_path)
-            print("Filebeat configuration file downloaded and placed at:", config_file_path)
-            return True
-        else:
-            print("No configuration changes required")
-            return False
+        replacements = {
+            b"$server_name": str.encode(svr_name),
+            b"$id": str.encode(svr_name.replace(" ", "-")),
+            b"$region": str.encode(svr_location),
+            b"$slave_log": str.encode(str(slave_log)),
+            b"$match_log": str.encode(str(match_log)),
+            b"$server_launcher": str.encode(launcher),
+            b"0.0.0.0": str.encode(external_ip),
+            b"$encoding": str.encode(encoding),
+            b"$ca_chain": str.encode(str(Path(destination_folder) / "honfigurator-chain.pem")),
+            b"$client_cert": str.encode(str(Path(destination_folder) / "client.crt")),
+            b"$client_key": str.encode(str(Path(destination_folder) / "client.key"))
+        }
+
+        if looked_up_discord_username:
+            discord_id = looked_up_discord_username
+        elif existing_discord_id == "$discord_id":
+            discord_id = input(f"What is your discord user name?: ")
+        elif existing_discord_id:
+            discord_id = existing_discord_id
+
+        print(f"Discord Name: {discord_id}")
+        replacements[b"$discord_id"] = str.encode(discord_id)
+
+        for old, new in replacements.items():
+            filebeat_config = filebeat_config.replace(old, new)
         
-    else:
+        return filebeat_config
+    
+    external_ip = requests.get('https://api.ipify.org').text
+
+    filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml" if test else "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
+    honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
+    honfigurator_ca_chain_bundle_url = "https://honfigurator.app/honfigurator-chain-bundle.pem"
+
+    destination_folder = os.path.join(os.environ["ProgramFiles"], "filebeat") if operating_system == "Windows" else "/usr/share/filebeat"
+    config_folder = destination_folder if operating_system == "Windows" else "/etc/filebeat"
+    
+    os.makedirs(destination_folder, exist_ok=True)
+    
+    honfigurator_ca_chain_response = requests.get(honfigurator_ca_chain_url)
+    if honfigurator_ca_chain_response.status_code == 200:
+        with open(Path(destination_folder) / "honfigurator-chain.pem", 'wb') as chain_file:
+            chain_file.write(honfigurator_ca_chain_response.content)
+    honfigurator_ca_chain_bundle_response = requests.get(honfigurator_ca_chain_bundle_url)
+    if honfigurator_ca_chain_bundle_response.status_code == 200:
+        with open(Path(destination_folder) / "honfigurator-chain-bundle.pem", 'wb') as chain_file:
+            chain_file.write(honfigurator_ca_chain_bundle_response.content)
+
+    filebeat_config_response = requests.get(filebeat_config_url)
+    if filebeat_config_response.status_code != 200:
         print("Failed to download Filebeat configuration file.")
+        return
+    
+    config_file_path = os.path.join(config_folder, "filebeat.yml")
+    filebeat_config = filebeat_config_response.content
+
+    exclude = []
+
+    i=0
+    while True:
+        i+=1
+        print(f"Scanning for running hon executable.. timeout {i}/30 seconds")
+        time.sleep(1)
+        process = check_process("hon_x64.exe", exclude) if operating_system == "Windows" else check_process("hon-x86_64-server", exclude)
+        if process and len(process.cmdline()) > 4:
+            break
+        elif process and len(process.cmdline()) < 4 and process not in exclude:
+            exclude.append(process)
+            print(f"Excluded {process.pid}\n\t{process.cmdline()}")
+        if i >=30:
+            print("Please ensure your hon server is running prior to launching the script.")
+            sys.exit(1)
+            
+
+    # Perform text replacements
+    svr_name = extract_settings_from_commandline(process.cmdline(), "svr_name")
+    space_count = svr_name.count(' ')
+    svr_name = svr_name.rsplit(' ', 2)[0] if space_count >= 2 else svr_name
+    svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
+
+    slave_log, match_log = get_log_paths(process)
+    svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
+    launcher = "HoNfigurator" if svr_desc else "COMPEL"
+    print(f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
+
+    looked_up_discord_username = request_client_certificate(svr_name, Path(destination_folder))
+        
+    existing_discord_id, old_config_hash = None, None
+    if os.path.exists(config_file_path):
+        old_config_hash = calculate_file_hash(config_file_path)
+        existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
+        
+    filebeat_config = perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
+    
+    temp_dir = tempfile.TemporaryDirectory()
+    temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
+    with open(temp_file_path, 'wb') as temp_file:
+        temp_file.write(filebeat_config)
+
+    new_config_hash = calculate_file_hash(temp_file_path)
+
+    if old_config_hash != new_config_hash:
+        shutil.move(temp_file_path, config_file_path)
+        print("Filebeat configuration file downloaded and placed at:", config_file_path)
+        return True
+    else:
+        print("No configuration changes required")
+        return False
     
 
 # Constants for repeated strings
@@ -357,15 +371,21 @@ def restart_filebeat(filebeat_changed, silent):
             if run_command(start_command_list, STARTED_SUCCESSFULLY):
                 return True
         
-    if filebeat_changed and (operating_system == "Windows" and check_process("filebeat.exe") or operating_system == "Linux" and check_process("filebeat")):
-        if restart():
-            print("Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
-    elif not silent and not (operating_system == "Windows" and check_process("filebeat.exe") or operating_system == "Linux" and check_process("filebeat")):
-        while True:
-            start = input("Would you like to start filebeat? (y/n): ")
-            if start.lower() in ['y','n']:
-                break
-        if start.lower() == 'y':
+    filebeat_running = False
+    if (operating_system == "Windows" and check_process("filebeat.exe")) or (operating_system == "Linux" and check_process("filebeat")):
+        filebeat_running = True
+
+    if silent:
+        # If silent, only restart filebeat if config has changed and it's currently running
+        if filebeat_changed and filebeat_running:
+            if restart():
+                print("Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+    else:
+        # If not silent, start filebeat if stopped, or restart if config changed
+        if filebeat_changed and filebeat_running:
+            if restart():
+                print("Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+        elif not filebeat_running:
             restart()
 
 def add_cron_job(command):
@@ -413,10 +433,14 @@ if configure_filebeat(silent=args.silent, test=args.test):
             script_path = os.path.abspath(__file__)
             command = f"python {script_path} -silent"
 
-            # Create the scheduled task
-            subprocess.run(["schtasks", "/create", "/tn", task_name, "/tr", command, "/sc", "daily", "/st", "00:00"])
-
-            print("Scheduled task created successfully.")
+            # Check if the task already exists
+            task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
+            if "ERROR: The system cannot find the file specified." in task_query.stderr:
+                # Create the scheduled task
+                subprocess.run(["schtasks", "/create", "/tn", task_name, "/tr", command, "/sc", "daily", "/st", "00:00"])
+                print("Scheduled task created successfully.")
+            else:
+                print("Task already scheduled.")
 
         # Create cron job on Linux
         if operating_system == "Linux":
@@ -424,5 +448,6 @@ if configure_filebeat(silent=args.silent, test=args.test):
             command = f"python3 {script_path} -silent"
             add_cron_job(command)
             print("Cron job created successfully.")
+
 # if filebeat_changed:
 restart_filebeat(filebeat_changed, silent=args.silent)
