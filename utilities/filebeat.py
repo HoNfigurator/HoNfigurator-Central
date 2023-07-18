@@ -223,7 +223,7 @@ def configure_filebeat(silent=False,test=False):
 
 
     def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
-        encoding = "utf-16-le" if operating_system == "Windows" else "BINARY"
+        encoding = "encoding: utf-16le" if operating_system == "Windows" else "charset: BINARY"
 
         replacements = {
             b"$server_name": str.encode(svr_name),
@@ -233,7 +233,7 @@ def configure_filebeat(silent=False,test=False):
             b"$match_log": str.encode(str(match_log)),
             b"$server_launcher": str.encode(launcher),
             b"0.0.0.0": str.encode(external_ip),
-            b"$encoding": str.encode(encoding),
+            b"charset: $encoding": str.encode(encoding),
             b"$ca_chain": str.encode(str(Path(destination_folder) / "honfigurator-chain.pem")),
             b"$client_cert": str.encode(str(Path(destination_folder) / "client.crt")),
             b"$client_key": str.encode(str(Path(destination_folder) / "client.key"))
