@@ -22,6 +22,7 @@ This guide provides steps for linking the configured HoNfigurator server to a mo
 	- Hosting private game servers could have legal issues as it requires server files not public to original HoN. They are not provided in this repository.
 1. You must be willing to submit match logs to upstream services. These are logs of occurances during games played on your server.
 	- We want to ensure that trends from games can be analysed in monitoring tools, and that a fair experienced is had by all players.
+ 	- How it works: [Monitoring](docs/monitoring.md)
 
 ## Installation
 <details>
