@@ -25,9 +25,9 @@ The following covers setting up the required agents in order to have your server
 Monitoring servers provides many benefits. Some of them are listed below:
 - Server Performance
     - Lag (skipped server frames)
-    - Network Packet Loss (deprecated)
-    - Server CPU/RAM/Disk Usage (deprecated)
-    - Server Network Throughput and Disk IO (deprecated)
+    - (deprecated) Network Packet Loss
+    - (deprecated) Server CPU/RAM/Disk Usage
+    - (deprecated) Server Network Throughput and Disk IO
 - Configuration Overviews
 - Player and Server location plotting
 - Bandwidth Estimation requirements, based on player activity on your server. (deprecated)
@@ -42,7 +42,7 @@ Monitoring servers provides many benefits. Some of them are listed below:
 
 [FileBeat](https://www.elastic.co/guide/en/beats/filebeat/current/filebeat-overview.html#:~:text=Filebeat%20is%20a%20lightweight%20shipper,Elasticsearch%20or%20Logstash%20for%20indexing.) - Lightweight log collecter
 
-[MetricBeat](https://www.google.com/search?q=what+is+metricbeat&oq=what+is+metricbeat&aqs=edge..69i57j0i512l3j0i22i30i625j0i22i30j0i22i30i625l2j69i64.2892j0j4&sourceid=chrome&ie=UTF-8) - Lightweight metrics collecter (deprecated)
+(deprecated) [MetricBeat](https://www.google.com/search?q=what+is+metricbeat&oq=what+is+metricbeat&aqs=edge..69i57j0i512l3j0i22i30i625j0i22i30j0i22i30i625l2j69i64.2892j0j4&sourceid=chrome&ie=UTF-8) - Lightweight metrics collecter
 
 ---
 
