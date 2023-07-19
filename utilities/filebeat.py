@@ -75,9 +75,6 @@ global_config = None
 if operating_system == "Windows":
     windows_filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
 
-if operating_system == "windows":
-    windows_filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
-
 def check_filebeat_installed():
     if operating_system == "Linux":
         # Check if filebeat is already installed
