@@ -14,6 +14,7 @@ import requests
 import webbrowser
 import time
 import json
+import datetime
 
 version = "0.24.3"
 system = platform.system()
@@ -104,7 +105,7 @@ def bootstrap_ca():
         p.communicate()
 
 
-def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, not_after="200h"):
+def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path):
     # Config
     discord_client_id = '1096750568388702228'
     server_url = 'https://hon-elk.honfigurator.app:8443'
@@ -160,14 +161,31 @@ def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, not_afte
             print('Error from server.')
             return False
 
-def request_certificate(provisioner_name, provisioner_password_file):
+def is_certificate_expired(cert_path):
+    print("Checking if certificate is expired...")
+    # Fetch certificate information
+    cert_info = run_command([step_location, "certificate", "inspect", cert_path])
+    # Convert cert_info string into a dictionary
+    cert_info = json.loads(cert_info)
+    # Fetch the expiration date from the certificate info
+    not_after = cert_info.get('validity', {}).get('notAfter')
+    # Convert the expiration date string into a datetime object
+    not_after = datetime.strptime(not_after, '%Y-%m-%dT%H:%M:%S%z')
+    # Return True if the certificate is expired, False otherwise
+    return datetime.now(tz=not_after.tzinfo) > not_after
+
+def request_certificate(provisioner_name, provisioner_password_file, cert_path):
     print("Requesting a certificate...")
-    run_command([
-        "step", "ca", "certificate",
-        "--provisioner", provisioner_name,
-        "--provisioner-password-file", provisioner_password_file,
-        "example.com", "example.com.crt", "example.com.key"
-    ])
+    if os.path.isfile(cert_path) and not is_certificate_expired(cert_path):
+        print("Certificate already exists and it's valid.")
+    else:
+        run_command([
+            step_location, "ca", "certificate",
+            "--provisioner", provisioner_name,
+            "--provisioner-password-file", provisioner_password_file,
+            "example.com", cert_path, "example.com.key"
+        ])
+        print("New certificate has been requested.")
 
 def main():
     install_step_cli()

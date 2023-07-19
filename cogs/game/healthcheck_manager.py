@@ -47,7 +47,7 @@ class HealthCheckManager:
             else:
                 if not override:
                     # Task is still running
-                    LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                    LOGGER.debug(f"Task '{name}' is still running, new task not scheduled.")
                     return existing_task  # Return existing task
 
         # Create and register the new task

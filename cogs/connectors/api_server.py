@@ -26,6 +26,7 @@ import json
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import traceback
+from utilities.filebeat import check_filebeat_installed
 
 app = FastAPI()
 LOGGER = get_logger()
@@ -135,8 +136,25 @@ API Endpoints below
 class PingResponse(BaseModel):
     status: str
 @app.get("/api/ping", response_model=PingResponse, description="Responds with the a simple pong to indicate server is alive.")
-async def ping(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+async def ping():
     return {"status":"OK"}
+
+@app.get("/api/check_filebeat_installed", summary="Check whether Filebeat is installed and configured to send server logs.")
+def filebeat_installed():
+    installed = check_filebeat_installed()
+    if installed:
+        if MISC.get_os_platform() == "linux":
+            if MISC.get_proc('filebeat'):
+                return JSONResponse(status_code=200, content={"installed": "OK", "running": "OK"})
+            else:
+                return JSONResponse(status_code=400, content={"installed": "OK", "running": "NO"})
+        else:
+            if MISC.get_proc('filebeat.exe'):
+                return JSONResponse(status_code=200, content={"installed": "OK", "running": "OK"})
+            else:
+                return JSONResponse(status_code=400, content={"installed": "OK", "running": "NO"})
+    else:
+        return JSONResponse(status_code=404, content={"installed": "NO", "running": "NO"})
 
 """Protected Endpoints"""
 

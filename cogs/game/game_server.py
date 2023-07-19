@@ -85,7 +85,7 @@ class GameServer:
                     LOGGER.info(f"GameServer #{self.id} The previous task '{name}' was cancelled.")
             else:
                 # Task is still running
-                LOGGER.warning(f"GameServer #{self.id} Task '{name}' is still running, new task not scheduled.")
+                LOGGER.debug(f"GameServer #{self.id} Task '{name}' is still running, new task not scheduled.")
                 return existing_task  # Return existing task
 
         # Create and register the new task
@@ -163,24 +163,24 @@ class GameServer:
             self.idle_disconnect_timer += 1
             if self.idle_disconnect_timer >= 60:
                 await self.manager_event_bus.emit('cmd_message_server', self, "Removing idle players. Players have remained connected when game is over for 60+ seconds.")
-                LOGGER.info(f"GameServer #{self.id} - Server is shutting down. Players have remained connected when game is over for 60+ seconds.\n\tGame Phase: {self.game_state['game_phase']}\n\tMatch Started: {self.game_state['match_started']}\n\tStatus: {self.game_state['status']}")
-                
-                for player in self.game_state['players']:
-                    player_name = player['name']
-                    player_name = re.sub(r'\[.*?\]', '', player_name)
-                    LOGGER.info(f"GameServer #{self.id} - Terminating player: {player_name}")
-                    await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
-                # experimental setting to verify that players got removed
+                LOGGER.info(f"GameServer #{self.id} - Removing idle players. Players have remained connected when game is over for 60+ seconds.\n\tGame Phase: {GamePhase(self.game_state['game_phase']).name}")
+
                 i = 0
-                while len(self.game_state['players']) > 0:
-                    LOGGER.info(f"GameServer #{self.id} - {self.game_state['players']} are still connected. Waiting for termination of idle players.")
+                while len(self.game_state['players']) > 0 and i < 12:
                     for player in list(self.game_state['players']):
-                        i+=1
-                        # TODO: Verify that this doesn't cause "Quit" command to wait on this loop forever
+                        player_name = player['name']
+                        player_name = re.sub(r'\[.*?\]', '', player_name)
+                        LOGGER.info(f"GameServer #{self.id} - Attempting to terminate player: {player_name}")
+                        await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
+                        
+                    LOGGER.info(f"GameServer #{self.id} - {self.game_state['players']} are still connected. Waiting for termination of idle players.")
                     await asyncio.sleep(5)
-                    if i >=12:
-                        LOGGER.info(f"GameServer #{self.id} - Waited 1 minute. Players still connected. TEST (terminating server)")
-                        break
+                    i += 1
+                    
+                if len(self.game_state['players']) > 0:
+                    LOGGER.info(f"GameServer #{self.id} - Waited 1 minute. Players still connected. Resetting server.")
+                    await self.manager_event_bus.emit('cmd_custom_command', self, "serverreset", delay=5)
+                    
                 break
             await asyncio.sleep(1)
 
