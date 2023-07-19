@@ -11,10 +11,27 @@ from pathlib import Path
 import psutil
 import time
 import re
-import step_certificate
 import hashlib
 from tempfile import NamedTemporaryFile
 import logging
+
+# if code is launched independtly
+if __name__ == "__main__":
+    import step_certificate
+    LOGGER = None
+else:
+    # if imported into honfigurator main
+    import utilities.step_certificate as step_certificate
+    from cogs.misc.logger import get_logger
+    LOGGER = get_logger()
+
+windows_filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
+
+def print_or_log(log_lvl='info', msg=''):
+    if LOGGER:
+        getattr(LOGGER, log_lvl)(msg)
+    else:
+        print(msg)
 
 def calculate_file_hash(file_path):
     with open(file_path, "rb") as file:
@@ -32,17 +49,22 @@ def read_admin_value_from_filebeat_config(config_path):
             admin_value = match.group(1).strip()
     return admin_value
 
-logging.basicConfig(level=logging.INFO, format="[%(levelname)s] %(message)s")
-logger = logging.getLogger()
 operating_system = platform.system()
 
-def install_filebeat_linux():
-    # Check if filebeat is already installed
-    result = subprocess.run(["dpkg-query", "-W", "-f='${Status}'", "filebeat"], stdout=subprocess.PIPE, text=True)
-    if "install ok installed" in result.stdout:
-        print("Filebeat is already installed. Skipping installation.")
-        return
+def check_filebeat_installed():
+    if operating_system == "Linux":
+        # Check if filebeat is already installed
+        result = subprocess.run(["dpkg-query", "-W", "-f='${Status}'", "filebeat"], stdout=subprocess.PIPE, text=True)
+        if "install ok installed" in result.stdout:
+            print_or_log('info',"Filebeat is already installed. Skipping installation.")
+            return True
+    else:
+        if os.path.exists(Path(windows_filebeat_install_dir) / "filebeat.exe"):
+            print_or_log('info',"Filebeat is already installed. Skipping installation.")
+            return True
 
+
+def install_filebeat_linux():
     # Update package lists for upgrades for packages that need upgrading
     subprocess.run(["sudo", "apt-get", "update"], check=True)
 
@@ -55,13 +77,10 @@ def install_filebeat_linux():
     # Update the system and install filebeat
     # subprocess.run(["sudo", "apt-get", "update"], check=True)
     subprocess.run(["sudo", "apt-get", "install", "filebeat"], check=True)
+    return True
 
 
 def install_filebeat_windows():
-    filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
-    if os.path.exists(Path(filebeat_install_dir) / "filebeat.exe"):
-        print("Filebeat is already installed. Skipping installation.")
-        return
     # Download and install Filebeat using Python
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_file = os.path.join(temp_dir, "filebeat-8.8.2-windows-x86_64.zip")
@@ -72,44 +91,45 @@ def install_filebeat_windows():
         if response.status_code == 200:
             with open(zip_file, "wb") as file:
                 file.write(response.content)
-            print("Filebeat ZIP file downloaded successfully.")
+            print_or_log('info',"Filebeat ZIP file downloaded successfully.")
         else:
-            print("Failed to download Filebeat ZIP file.")
+            print_or_log('error',"Failed to download Filebeat ZIP file.")
 
         # Extract ZIP contents to temporary folder
         temp_extract_folder = os.path.join(temp_dir, "filebeat-extract")
         with zipfile.ZipFile(zip_file, "r") as zip_ref:
             zip_ref.extractall(temp_extract_folder)
-        print("Filebeat ZIP file extracted successfully.")
+        print_or_log('info',"Filebeat ZIP file extracted successfully.")
 
         # Move extracted files to destination folder
         extracted_folder = os.listdir(temp_extract_folder)[0]
         source_folder = os.path.join(temp_extract_folder, extracted_folder)
 
         # Create destination folder if it doesn't exist
-        if not os.path.exists(filebeat_install_dir):
-            os.makedirs(filebeat_install_dir)
-            print("Created destination folder:", filebeat_install_dir)
+        if not os.path.exists(windows_filebeat_install_dir):
+            os.makedirs(windows_filebeat_install_dir)
+            print_or_log('info',"Created destination folder:", windows_filebeat_install_dir)
 
         extracted_files = os.listdir(source_folder)
         for file in extracted_files:
             source_path = os.path.join(source_folder, file)
-            destination_path = os.path.join(filebeat_install_dir, os.path.basename(file))
+            destination_path = os.path.join(windows_filebeat_install_dir, os.path.basename(file))
             shutil.move(source_path, destination_path)
-        print("Filebeat installed successfully at:", filebeat_install_dir)
+        print_or_log('info',"Filebeat installed successfully at:", windows_filebeat_install_dir)
         command = [
             "powershell.exe",
             "-ExecutionPolicy",
             "Bypass",
             "-File",
-            str(Path(filebeat_install_dir) / "install-service-filebeat.ps1")
+            str(Path(windows_filebeat_install_dir) / "install-service-filebeat.ps1")
         ]
 
         result = subprocess.run(command, capture_output=True, text=True)
 
         # Remove the extracted folder
         os.rmdir(source_folder)
-        print("Extracted folder removed.")
+        print_or_log('info',"Extracted folder removed.")
+        return True
 
 def uninstall_filebeat_linux():
     # Uninstall Filebeat on Linux
@@ -131,11 +151,11 @@ def uninstall_filebeat_windows():
 
         if result.returncode == 0:
             shutil.rmtree(filebeat_install_dir)
-            print("Filebeat uninstalled successfully.")
+            print_or_log('info',"Filebeat uninstalled successfully.")
         else:
-            print("Failed to uninstall Filebeat.")
+            print_or_log('info',"Failed to uninstall Filebeat.")
     else:
-        print("Filebeat is not installed.")
+        print_or_log('info',"Filebeat is not installed.")
 
 def get_process_environment(process,var):
     # process = psutil.Process(pid)
@@ -181,7 +201,7 @@ def request_client_certificate(svr_name, filebeat_path):
         certificate_exists = crt_file_path.is_file() and key_file_path.is_file()
 
         if certificate_exists:
-            print("Renewing existing client certificate...")
+            print_or_log('info',"Renewing existing client certificate...")
             # Construct the command for certificate renewal
             command = [
                 "step", "ca", "renew", crt_file_path, key_file_path,
@@ -195,20 +215,19 @@ def request_client_certificate(svr_name, filebeat_path):
                 # Certificate request successful
                 certificate_data = result.stdout.strip()
                 # Do something with the certificate data
-                print("Client certificate request successful.")
+                print_or_log('info',"Client certificate request successful.")
+                return True
             else:
                 # Certificate request failed
                 error_message = result.stderr.strip()
-                print(f"Error: {error_message}")
-                sys.exit(1)
+                print_or_log('info',f"Error: {error_message}")
         else:
-            print("Requesting new client certificate...")
+            print_or_log('info',"Requesting new client certificate...")
             # Construct the command for new certificate request
             return step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
 
-    except FileNotFoundError:
-        print("Step CLI is not installed or not in the system's PATH.")
-        sys.exit(1)
+    except Exception as e:
+        print_or_log('error',f"Encountered an error while requesting a client certificate. {e}")
 
 def configure_filebeat(silent=False,test=False):
     def get_log_paths(process):
@@ -239,14 +258,14 @@ def configure_filebeat(silent=False,test=False):
             b"$client_key": str.encode(str(Path(destination_folder) / "client.key"))
         }
 
-        if looked_up_discord_username:
+        if looked_up_discord_username and not isinstance(looked_up_discord_username,bool):
             discord_id = looked_up_discord_username
         elif existing_discord_id == "$discord_id":
             discord_id = input(f"What is your discord user name?: ")
         elif existing_discord_id:
             discord_id = existing_discord_id
 
-        print(f"Discord Name: {discord_id}")
+        print_or_log('info',f"Discord Name: {discord_id}")
         replacements[b"$discord_id"] = str.encode(discord_id)
 
         for old, new in replacements.items():
@@ -276,7 +295,7 @@ def configure_filebeat(silent=False,test=False):
 
     filebeat_config_response = requests.get(filebeat_config_url)
     if filebeat_config_response.status_code != 200:
-        print("Failed to download Filebeat configuration file.")
+        print_or_log('info',"Failed to download Filebeat configuration file.")
         return
     
     config_file_path = os.path.join(config_folder, "filebeat.yml")
@@ -287,16 +306,16 @@ def configure_filebeat(silent=False,test=False):
     i=0
     while True:
         i+=1
-        print(f"Scanning for running hon executable.. timeout {i}/30 seconds")
+        print_or_log('info',f"Scanning for running hon executable.. timeout {i}/30 seconds")
         time.sleep(1)
         process = check_process("hon_x64.exe", exclude) if operating_system == "Windows" else check_process("hon-x86_64-server", exclude)
         if process and len(process.cmdline()) > 4:
             break
         elif process and len(process.cmdline()) < 4 and process not in exclude:
             exclude.append(process)
-            print(f"Excluded {process.pid}\n\t{process.cmdline()}")
+            print_or_log('info',f"Excluded {process.pid}\n\t{process.cmdline()}")
         if i >=30:
-            print("Please ensure your hon server is running prior to launching the script.")
+            print_or_log('info',"Please ensure your hon server is running prior to launching the script.")
             sys.exit(1)
             
 
@@ -309,9 +328,12 @@ def configure_filebeat(silent=False,test=False):
     slave_log, match_log = get_log_paths(process)
     svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
-    print(f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
+    print_or_log('info',f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
 
     looked_up_discord_username = request_client_certificate(svr_name, Path(destination_folder))
+    if not looked_up_discord_username:
+        print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
+        return
         
     existing_discord_id, old_config_hash = None, None
     if os.path.exists(config_file_path):
@@ -329,10 +351,10 @@ def configure_filebeat(silent=False,test=False):
 
     if old_config_hash != new_config_hash:
         shutil.move(temp_file_path, config_file_path)
-        print("Filebeat configuration file downloaded and placed at:", config_file_path)
+        print_or_log('info',"Filebeat configuration file downloaded and placed at:", config_file_path)
         return True
     else:
-        print("No configuration changes required")
+        print_or_log('info',"No configuration changes required")
         return False
     
 
@@ -348,12 +370,12 @@ def restart_filebeat(filebeat_changed, silent):
     def run_command(command_list, success_message):
         result = subprocess.run(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         if result.returncode == 0:
-            print(success_message)
+            print_or_log('info',success_message)
             return True
         else:
-            print("Command:", " ".join(command_list))
-            print("Return code:", result.returncode)
-            print("Error:", result.stderr.decode())
+            print_or_log('info',"Command:", " ".join(command_list))
+            print_or_log('info',"Return code:", result.returncode)
+            print_or_log('info',"Error:", result.stderr.decode())
     def restart():
         if operating_system == "Windows":
             process_name = "filebeat.exe"
@@ -379,12 +401,12 @@ def restart_filebeat(filebeat_changed, silent):
         # If silent, only restart filebeat if config has changed and it's currently running
         if filebeat_changed and filebeat_running:
             if restart():
-                print("Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+                print_or_log('info',"Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
     else:
         # If not silent, start filebeat if stopped, or restart if config changed
         if filebeat_changed and filebeat_running:
             if restart():
-                print("Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+                print_or_log('info',"Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
         elif not filebeat_running:
             restart()
 
@@ -408,46 +430,58 @@ def add_cron_job(command):
     os.unlink(tmp.name)
 
 # Check the system
-if operating_system == "Windows":
-    install_filebeat_windows()
-elif operating_system == "Linux":
-    install_filebeat_linux()
-else:
-    print("Unsupported operating system.")
-    sys.exit(1)
-step_certificate.main()
+def install_filebeat():
+    if operating_system == "Windows":
+        installed = install_filebeat_windows()
+        return installed
+    elif operating_system == "Linux":
+        installed = install_filebeat_linux()
+        return installed
+    else:
+        print_or_log('info',"Unsupported operating system.")
+        return False
 
-# Parse command-line arguments
-parser = argparse.ArgumentParser()
-parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
-parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
-args = parser.parse_args()
+def main():
+    # Parse command-line arguments
+    parser = argparse.ArgumentParser()
+    parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
+    parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
+    args = parser.parse_args()
 
-filebeat_changed = False
-if configure_filebeat(silent=args.silent, test=args.test):
-    filebeat_changed = True
-    # Create scheduled task on Windows
-    if not args.silent:
-        if operating_system == "Windows":
-            task_name = "Filebeat Task"
-            script_path = os.path.abspath(__file__)
-            command = f"python {script_path} -silent"
+    print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
+    if not check_filebeat_installed():
+        install_filebeat()
+        
+    step_certificate.main()
 
-            # Check if the task already exists
-            task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
-            if "ERROR: The system cannot find the file specified." in task_query.stderr:
-                # Create the scheduled task
-                subprocess.run(["schtasks", "/create", "/tn", task_name, "/tr", command, "/sc", "daily", "/st", "00:00"])
-                print("Scheduled task created successfully.")
-            else:
-                print("Task already scheduled.")
+    filebeat_changed = False
+    if configure_filebeat(silent=args.silent, test=args.test):
+        filebeat_changed = True
+        # Create scheduled task on Windows
+        if not args.silent:
+            if operating_system == "Windows":
+                task_name = "Filebeat Task"
+                script_path = os.path.abspath(__file__)
+                command = f"python {script_path} -silent"
 
-        # Create cron job on Linux
-        if operating_system == "Linux":
-            script_path = os.path.abspath(__file__)
-            command = f"python3 {script_path} -silent"
-            add_cron_job(command)
-            print("Cron job created successfully.")
+                # Check if the task already exists
+                task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
+                if "ERROR: The system cannot find the file specified." in task_query.stderr:
+                    # Create the scheduled task
+                    subprocess.run(["schtasks", "/create", "/tn", task_name, "/tr", command, "/sc", "daily", "/st", "00:00"])
+                    print_or_log('info',"Scheduled task created successfully.")
+                else:
+                    print_or_log('info',"Task already scheduled.")
 
-# if filebeat_changed:
-restart_filebeat(filebeat_changed, silent=args.silent)
+            # Create cron job on Linux
+            if operating_system == "Linux":
+                script_path = os.path.abspath(__file__)
+                command = f"python3 {script_path} -silent"
+                add_cron_job(command)
+                print_or_log('info',"Cron job created successfully.")
+
+    # if filebeat_changed:
+    restart_filebeat(filebeat_changed, silent=args.silent)
+
+if __name__ == "__main__":
+    main()

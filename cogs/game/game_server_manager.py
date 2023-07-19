@@ -24,6 +24,7 @@ from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
+from utilities.filebeat import main as filebeat
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -845,6 +846,10 @@ class GameServerManager:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
+
+            if launch:
+                # sets up mandatory server game log submission.
+                filebeat()
         except Exception:
             print(traceback.format_exc())
 
