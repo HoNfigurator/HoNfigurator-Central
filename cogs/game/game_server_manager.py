@@ -157,7 +157,7 @@ class GameServerManager:
             else:
                 if not override:
                     # Task is still running
-                    LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                    LOGGER.debug(f"Task '{name}' is still running, new task not scheduled.")
                     return existing_task  # Return existing task
 
         # Create and register the new task
@@ -250,7 +250,7 @@ class GameServerManager:
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(command_bytes)
             await client_connection.writer.drain()
-            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
+            LOGGER.info(f"Command - '{command}' sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
         

@@ -378,9 +378,14 @@ class Commands:
                 print_formatted_text("Usage: command <GameServer#> <command>")
                 return
             
+            if isinstance(command[0],str) and command[0].lower() not in ['message','terminateplayer','serverreset']:
+                LOGGER.warn("Command disallowed")
+                return
+            
             if game_server == "all":
                 for game_server in list(self.game_servers.values()):
                     await self.manager_event_bus.emit('cmd_custom_command', game_server, command)
+                return
 
             await self.manager_event_bus.emit('cmd_custom_command', game_server, command)
 
