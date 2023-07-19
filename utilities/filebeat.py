@@ -25,8 +25,6 @@ else:
     from cogs.misc.logger import get_logger
     LOGGER = get_logger()
 
-windows_filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
-
 def print_or_log(log_lvl='info', msg=''):
     if LOGGER:
         getattr(LOGGER, log_lvl)(msg)
@@ -50,6 +48,9 @@ def read_admin_value_from_filebeat_config(config_path):
     return admin_value
 
 operating_system = platform.system()
+
+if operating_system == "windows":
+    windows_filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
 
 def check_filebeat_installed():
     if operating_system == "Linux":
