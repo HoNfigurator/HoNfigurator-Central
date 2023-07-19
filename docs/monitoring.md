@@ -25,12 +25,12 @@ The following covers setting up the required agents in order to have your server
 Monitoring servers provides many benefits. Some of them are listed below:
 - Server Performance
     - Lag (skipped server frames)
-    - Network Packet Loss
-    - Server CPU/RAM/Disk Usage
-    - Server Network Throughput and Disk IO
+    - Network Packet Loss (deprecated)
+    - Server CPU/RAM/Disk Usage (deprecated)
+    - Server Network Throughput and Disk IO (deprecated)
 - Configuration Overviews
 - Player and Server location plotting
-- Bandwidth Estimation requirements, based on player activity on your server.
+- Bandwidth Estimation requirements, based on player activity on your server. (deprecated)
 
 ## How Does it Work?
 ### Hosted by Me
@@ -42,7 +42,7 @@ Monitoring servers provides many benefits. Some of them are listed below:
 
 [FileBeat](https://www.elastic.co/guide/en/beats/filebeat/current/filebeat-overview.html#:~:text=Filebeat%20is%20a%20lightweight%20shipper,Elasticsearch%20or%20Logstash%20for%20indexing.) - Lightweight log collecter
 
-[MetricBeat](https://www.google.com/search?q=what+is+metricbeat&oq=what+is+metricbeat&aqs=edge..69i57j0i512l3j0i22i30i625j0i22i30j0i22i30i625l2j69i64.2892j0j4&sourceid=chrome&ie=UTF-8) - Lightweight metrics collecter
+[MetricBeat](https://www.google.com/search?q=what+is+metricbeat&oq=what+is+metricbeat&aqs=edge..69i57j0i512l3j0i22i30i625j0i22i30j0i22i30i625l2j69i64.2892j0j4&sourceid=chrome&ie=UTF-8) - Lightweight metrics collecter (deprecated)
 
 ---
 
@@ -60,20 +60,13 @@ Monitoring servers provides many benefits. Some of them are listed below:
 - This is what everyone uses to monitor the servers.
 
 ## Setup
-The setup is simple. Estimated setup time is 5 minutes.
+The setup is simple and should have already been completed by running HoNfigurator-Central
 
-1. Download the [install beats](https://honfigurator.app/install-beats.bat) script
-1. Run the file ``install-beats.bat`` from anywhere
-    - This will download and install ``FileBeat`` & ``MetricBeat``
-1. Observe the output:
-    - You will be asked to provide the generated  [Certificate Signing Request](https://www.globalsign.com/en/blog/what-is-a-certificate-signing-request-csr) - ``client.csr`` to me.  
-      You can [contact me on Discord](https://discordapp.com/users/197967989964800000) to send me the file.
-    - I will provide the ``client.pem`` file requested by the script.
-1. Copy the ``client.pem`` file where the script has asked you to place it.
-1. Once done, press enter on the script window to finalise the installation.
+Registration is conducted by verifying that you are a member of the Project Kongor discord channel and have the appropriate hosting permissions.
 
-> **Note** A ``CSR`` (client.csr) is required to receive a ``certificate`` (client.pem), which is used for establishing encrypted communications between two endpoints.  
-This is how your server talks securely to mine.
+A certificate will have been issued to your server, which it uses to authenticate and provide log files over an encrypted mutual TLS connection.
+
+![mermaid-diagram-2023-07-19-144541](https://github.com/HoNfigurator/HoNfigurator-Central/assets/82205454/2f9958a8-58c3-4086-8e57-b81a937c3ea9)
 
 ## Start Monitoring!
 Visit [HoN ElasticSearch Server Monitoring](https://hon-elk.honfigurator.app:5601)  
