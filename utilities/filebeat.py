@@ -49,7 +49,7 @@ def read_admin_value_from_filebeat_config(config_path):
 
 operating_system = platform.system()
 
-if operating_system == "windows":
+if operating_system == "Windows":
     windows_filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
 
 def check_filebeat_installed():
