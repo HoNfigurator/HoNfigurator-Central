@@ -109,14 +109,14 @@ def install_filebeat_windows():
         # Create destination folder if it doesn't exist
         if not os.path.exists(windows_filebeat_install_dir):
             os.makedirs(windows_filebeat_install_dir)
-            print_or_log('info',"Created destination folder:", windows_filebeat_install_dir)
+            print_or_log('info',f"Created destination folder: {windows_filebeat_install_dir}")
 
         extracted_files = os.listdir(source_folder)
         for file in extracted_files:
             source_path = os.path.join(source_folder, file)
             destination_path = os.path.join(windows_filebeat_install_dir, os.path.basename(file))
             shutil.move(source_path, destination_path)
-        print_or_log('info',"Filebeat installed successfully at:", windows_filebeat_install_dir)
+        print_or_log('info',f"Filebeat installed successfully at: {windows_filebeat_install_dir}")
         command = [
             "powershell.exe",
             "-ExecutionPolicy",
@@ -204,20 +204,14 @@ def request_client_certificate(svr_name, filebeat_path):
         if certificate_exists:
             print_or_log('info',"Renewing existing client certificate...")
             # Construct the command for certificate renewal
-            command = [
-                "step", "ca", "renew", crt_file_path, key_file_path,
-                "--force"
-            ]
-
-            # Run the command
-            result = subprocess.run(command, capture_output=True, text=True)
-
+            result = step_certificate.renew_certificate(crt_file_path,key_file_path)
             if result.returncode == 0:
                 # Certificate request successful
                 certificate_data = result.stdout.strip()
                 # Do something with the certificate data
                 print_or_log('info',"Client certificate request successful.")
                 return True
+            
             else:
                 # Certificate request failed
                 error_message = result.stderr.strip()
@@ -352,7 +346,7 @@ def configure_filebeat(silent=False,test=False):
 
     if old_config_hash != new_config_hash:
         shutil.move(temp_file_path, config_file_path)
-        print_or_log('info',"Filebeat configuration file downloaded and placed at:", config_file_path)
+        print_or_log('info',f"Filebeat configuration file downloaded and placed at: {config_file_path}")
         return True
     else:
         print_or_log('info',"No configuration changes required")
@@ -374,9 +368,9 @@ def restart_filebeat(filebeat_changed, silent):
             print_or_log('info',success_message)
             return True
         else:
-            print_or_log('info',"Command:", " ".join(command_list))
-            print_or_log('info',"Return code:", result.returncode)
-            print_or_log('info',"Error:", result.stderr.decode())
+            print_or_log('info',f"Command: {' '.join(command_list)}")
+            print_or_log('info',f"Return code: {result.returncode}")
+            print_or_log('info',f"Error: {result.stderr.decode()}")
     def restart():
         if operating_system == "Windows":
             process_name = "filebeat.exe"

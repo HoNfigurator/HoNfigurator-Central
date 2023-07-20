@@ -91,17 +91,16 @@ def uninstall_step_cli():
 
 # Invoke-WebRequest "https://hon-elk.honfigurator.app/roots.pem" -outfile "$steppath\certs\root_ca.crt"
 # $fingerprint = & "$steppath\bin\step.exe" certificate fingerprint "$steppath\certs\root_ca.crt"
-def bootstrap_ca():
+def bootstrap_ca(ca_url):
     print("Bootstrapping the CA...")
-    ca_url = "https://hon-elk.honfigurator.app"
     with tempfile.TemporaryDirectory() as tempdir:
         tempdir_path = Path(tempdir)
 
         root_ca_download_location = tempdir_path / "root_ca.crt"
 
         urllib.request.urlretrieve(f"{ca_url}/roots.pem", root_ca_download_location)
-        ca_fingerprint = run_command(["step","certificate","fingerprint",root_ca_download_location])
-        p = subprocess.Popen(["step", "ca", "bootstrap", "--ca-url", ca_url, "--fingerprint", ca_fingerprint, '--force'], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
+        ca_fingerprint = run_command([step_location,"certificate","fingerprint",root_ca_download_location])
+        p = subprocess.Popen([step_location, "ca", "bootstrap", "--ca-url", ca_url, "--fingerprint", ca_fingerprint, '--force'], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
         p.communicate()
 
 
@@ -155,7 +154,7 @@ def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path):
                 else:
                     print('Failed to send CSR to server.')
             else:
-                print('Waiting for server authentication...')
+                print(f'Please follow the authentication steps at: {oauth_url}')
                 time.sleep(5)  # Wait for 5 seconds before checking again
         else:
             print('Error from server.')
@@ -174,6 +173,17 @@ def is_certificate_expired(cert_path):
     # Return True if the certificate is expired, False otherwise
     return datetime.now(tz=not_after.tzinfo) > not_after
 
+def renew_certificate(crt_file_path, key_file_path):
+    command = [
+        step_location, "ca", "renew", crt_file_path, key_file_path,
+        "--force"
+    ]
+
+    # Run the command
+    result = subprocess.run(command, capture_output=True, text=True)
+
+    return result
+
 def request_certificate(provisioner_name, provisioner_password_file, cert_path):
     print("Requesting a certificate...")
     if os.path.isfile(cert_path) and not is_certificate_expired(cert_path):
@@ -187,15 +197,39 @@ def request_certificate(provisioner_name, provisioner_password_file, cert_path):
         ])
         print("New certificate has been requested.")
 
+def is_step_installed():
+    try:
+        result = subprocess.run([step_location, "version"], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        return result.returncode == 0
+    except FileNotFoundError:
+        return False
+
+def is_ca_bootstrapped(ca_url):
+    try:
+        config_dir = run_command([step_location, "path"])
+        ca_config_file = Path(config_dir) / "config" / "defaults.json"
+        if not ca_config_file.is_file():
+            return False
+
+        with open(ca_config_file, 'r') as f:
+            ca_config = json.load(f)
+
+        return ca_config.get('ca-url') == ca_url
+    except FileNotFoundError:
+        return False
+
+
 def main():
-    install_step_cli()
-    bootstrap_ca()
+    if not is_step_installed():
+        install_step_cli()
+    else:
+        print("Step CLI is already installed.")
 
-    provisioner_name = "HoNfigurator"
-    provisioner_password_file = "provisioner_password.txt"
-    provisioner_password = ""
-
-    # request_certificate(provisioner_name, provisioner_password_file)
+    ca_url = "https://hon-elk.honfigurator.app"
+    if not is_ca_bootstrapped(ca_url):
+        bootstrap_ca(ca_url)
+    else:
+        print("The CA is already bootstrapped.")
 
 if __name__ == "__main__":
     main()
