@@ -807,14 +807,16 @@ class GameServerManager:
                     # Use the schedule_task method to start the server
                     if game_server not in self.game_servers.values():
                         return
+
                     # Ensure the task is actually a Task or Future
                     task = asyncio.ensure_future(game_server.schedule_task(game_server.start_server(timeout=timeout), 'start_server'))
                     try:
-                        # Ensure stop_event.wait() is a Task or Future
+                        # Ensure asyncio.wait_for(task, timeout) and stop_event.wait() are Tasks
+                        wait_for_task = asyncio.create_task(asyncio.wait_for(task, timeout))
                         stop_event_wait_task = asyncio.create_task(stop_event.wait())
 
                         # Prepare the tasks
-                        tasks = [asyncio.wait_for(task, timeout), stop_event_wait_task]
+                        tasks = [wait_for_task, stop_event_wait_task]
 
                         # Wait for any task to complete
                         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
