@@ -308,10 +308,12 @@ def configure_filebeat(silent=False,test=False):
 
     svr_name = None
     svr_location = None
+    svr_desc = None
 
     if global_config is not None and 'hon_data' in global_config:
         svr_name = global_config['hon_data'].get('svr_name')
         svr_location = global_config['hon_data'].get('svr_location')
+        svr_desc = 'using honfigurator' # this is a placeholder basically, so it knows it's honfigurator.
 
     if svr_name is None or svr_location is None:
     
@@ -331,13 +333,13 @@ def configure_filebeat(silent=False,test=False):
                 return
     
     # Perform text replacements
-    svr_name = extract_settings_from_commandline(process.cmdline(), "svr_name")
+    if not svr_name: svr_name = extract_settings_from_commandline(process.cmdline(), "svr_name")
     space_count = svr_name.count(' ')
     svr_name = svr_name.rsplit(' ', 2)[0] if space_count >= 2 else svr_name
-    svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
+    if not svr_location: svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
 
     slave_log, match_log = get_log_paths(process)
-    svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
+    if not svr_desc: svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
     print_or_log('info',f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
 
