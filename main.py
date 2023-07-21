@@ -4,7 +4,6 @@ import time
 from os.path import isfile
 from pathlib import Path
 import subprocess
-from utilities.filebeat import main as filebeat
 
 MISC = None
 HOME_PATH = None
@@ -64,6 +63,7 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
+from utilities.filebeat import main as filebeat
 
 LOGGER = get_logger()
 

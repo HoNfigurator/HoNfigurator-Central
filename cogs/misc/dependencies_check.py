@@ -5,7 +5,15 @@ import traceback
 class PrepareDependencies:
     def __init__(self, home_path):
         self.script_home = home_path
-        self.pip_requirements = home_path / 'requirements.txt'
+        self.python_version = sys.version_info[:2]
+        if self.python_version == (3, 9):
+            self.pip_requirements = home_path / "py3.9" / "requirements.txt"
+        if self.python_version == (3, 10):
+            self.pip_requirements = home_path / "py3.10" / "requirements.txt"
+        elif self.python_version == (3, 11):
+            self.pip_requirements = home_path / "py3.11" / "requirements.txt"
+        else:
+            raise RuntimeError(f"Unsupported Python version: {sys.version}")
 
     def get_required_packages(self):
         try:
