@@ -5,7 +5,6 @@ psutil==5.9.1
 requests==2.26.0
 prompt_toolkit==3.0.38
 nest_asyncio==1.5.6
-spacepy==0.4.0
 uvicorn==0.21.1
 fastapi==0.95.0
 tinydb==4.7.1
