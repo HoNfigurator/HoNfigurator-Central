@@ -73,7 +73,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
   - &#x2610; Debian 12
   - &#x2610; Ubuntu 22.04
   - &#x2610; Ubuntu 22.10
-  - &#x2610; Ubuntu 23.04
+  - &check; Ubuntu 23.04
 
 </details>
 
