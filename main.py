@@ -4,6 +4,7 @@ import time
 from os.path import isfile
 from pathlib import Path
 import subprocess
+from utilities.filebeat import main as filebeat
 
 os.system('')
 
@@ -130,6 +131,8 @@ async def main():
 
         auto_ping_listener_coro = game_server_manager.start_autoping_listener()
         auto_ping_listener_task = game_server_manager.schedule_task(auto_ping_listener_coro, 'autoping_listener')
+
+        filebeat_setup_task = asyncio.to_thread(filebeat(global_config))
 
         await asyncio.gather(
             auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task
