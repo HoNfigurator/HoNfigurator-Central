@@ -130,7 +130,7 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 self.cleanup_tasks(game_server.tasks, current_time)
             self.cleanup_tasks(self.tasks, current_time)
-            for _ in range(30 * 60):  # Monitor process every 5 seconds
+            for _ in range(30 * 60):
                 if stop_event.is_set():
                     break
                 await asyncio.sleep(1)
@@ -377,7 +377,11 @@ class GameServerManager:
             except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
                 # LOGGER.error(traceback.format_exc())
-                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
+                for _ in range(retry):
+                    if stop_event.is_set():
+                        break
+                    await asyncio.sleep(1)
+
         LOGGER.info("Stopping authentication handlers")
     async def authenticate_and_handle_chat_server(self, parsed_mserver_auth_response, udp_ping_responder_port):
         # Create a new ChatServerHandler instance and connect to the chat server
