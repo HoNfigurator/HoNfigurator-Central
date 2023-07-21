@@ -856,7 +856,7 @@ class GameServerManager:
 
             if launch:
                 # sets up mandatory server game log submission.
-                filebeat()
+                filebeat(self.global_config)
         except Exception:
             print(traceback.format_exc())
 
