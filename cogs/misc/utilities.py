@@ -350,6 +350,9 @@ class Misc:
             # Fetch the latest information from the remote repository
             subprocess.run(['git', 'fetch'])
 
+            # Remove any stale remote-tracking branches
+            subprocess.run(['git', 'remote', 'prune', 'origin'])
+
             # Retrieve the branch names from the remote repository
             branch_names = subprocess.check_output(
                 ['git', 'for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin/'],

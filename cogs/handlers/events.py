@@ -57,7 +57,7 @@ class GameStatus(Enum):
     QUEUED = 5 # Queued for start (added by me)
 
 class GamePhase(Enum):
-    # the 'status' object within the gameserver game_state dictionary
+    # the 'game_phase' object within the gameserver game_state dictionary
     IDLE = 0
     IN_LOBBY = 1
     ### = 2  there is never phase 2

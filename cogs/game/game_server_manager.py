@@ -24,6 +24,7 @@ from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
+from utilities.filebeat import main as filebeat
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -156,7 +157,7 @@ class GameServerManager:
             else:
                 if not override:
                     # Task is still running
-                    LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                    LOGGER.debug(f"Task '{name}' is still running, new task not scheduled.")
                     return existing_task  # Return existing task
 
         # Create and register the new task
@@ -249,7 +250,7 @@ class GameServerManager:
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(command_bytes)
             await client_connection.writer.drain()
-            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
+            LOGGER.info(f"Command - '{command}' sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
         
@@ -287,7 +288,7 @@ class GameServerManager:
 
     async def start_api_server(self):
         await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
-    
+
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
         Starts a listener for incoming client connections on the specified host and port
@@ -411,6 +412,12 @@ class GameServerManager:
             # .stats submission will not work until KONGOR implements accepting .stats from the custom written manager.
             # TODO: Update below to .error once upstream is configured to accept our stats.
             LOGGER.error(f"[{mserver_stats_response[1] if mserver_stats_response else 'unknown'}] Stats resubmission failed - {file_path}. Response: {mserver_stats_response[0] if mserver_stats_response else 'unknown'}")
+            if mserver_stats_response and mserver_stats_response[1] == 400 and 'title' in mserver_stats_response[0]:
+                if mserver_stats_response[0] == "One or more validation errors occurred.":
+                    try:
+                        shutil.move(file_path, f"{file_path}.failed")
+                    except Exception:
+                        LOGGER.error(traceback.format_exc())
             return False
         LOGGER.info(f"{match_id} Stats resubmission successful")
         parsed_mserver_stats_response = phpserialize.loads(mserver_stats_response[0].encode('utf-8'))
@@ -660,7 +667,7 @@ class GameServerManager:
             # since the game server isn't actually off yet, it will keep creating a connection.
 
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-            # await self.commands.initialise_commands()
+            await self.commands.initialise_commands()
             self.commands.subcommands_changed.set()
             return True
         else:
@@ -784,7 +791,7 @@ class GameServerManager:
                 # on some systems, the compiled honfigurator.exe file, which is just launcher.py from cogs.misc causes issues for the opened hon_x64.exe. The exe is unable to locate one of the game dll resources.
                 # I wasted a lot of time trying to troubleshoot it, launching main.py directly works fine. This is my solution until a better one comes around. It's set within the scope of the script, and doesn't modify the systems environment.
                 path_list = os.environ["PATH"].split(os.pathsep)
-                if self.global_config['hon_data']['hon_install_directory'] not in path_list:
+                if str(self.global_config['hon_data']['hon_install_directory']  / 'game') not in path_list:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
             if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
                 if not await self.initialise_patching_procedure(source="startup"):
@@ -839,6 +846,10 @@ class GameServerManager:
                     start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
+
+            if launch:
+                # sets up mandatory server game log submission.
+                filebeat()
         except Exception:
             print(traceback.format_exc())
 

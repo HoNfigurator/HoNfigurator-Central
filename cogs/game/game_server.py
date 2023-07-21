@@ -85,7 +85,7 @@ class GameServer:
                     LOGGER.info(f"GameServer #{self.id} The previous task '{name}' was cancelled.")
             else:
                 # Task is still running
-                LOGGER.warning(f"GameServer #{self.id} Task '{name}' is still running, new task not scheduled.")
+                LOGGER.debug(f"GameServer #{self.id} Task '{name}' is still running, new task not scheduled.")
                 return existing_task  # Return existing task
 
         # Create and register the new task
@@ -162,13 +162,25 @@ class GameServer:
         while True:
             self.idle_disconnect_timer += 1
             if self.idle_disconnect_timer >= 60:
-                await self.manager_event_bus.emit('cmd_message_server', self, "Server is shutting down. Players have remained connected when game is over for 60+ seconds.")
-                LOGGER.info(f"GameServer #{self.id} - Server is shutting down. Players have remained connected when game is over for 60+ seconds.\n\tGame Phase: {self.game_state['game_phase']}\n\tMatch Started: {self.game_state['match_started']}\n\tStatus: {self.game_state['status']}")
-                for player in self.game_state['players']:
-                    player_name = player['name']
-                    player_name = re.sub(r'\[.*?\]', '', player_name)
-                    LOGGER.info(f"GameServer #{self.id} - Terminating player: {player_name}")
-                    await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
+                await self.manager_event_bus.emit('cmd_message_server', self, "Removing idle players. Players have remained connected when game is over for 60+ seconds.")
+                LOGGER.info(f"GameServer #{self.id} - Removing idle players. Players have remained connected when game is over for 60+ seconds.\n\tGame Phase: {GamePhase(self.game_state['game_phase']).name}")
+
+                i = 0
+                while len(self.game_state['players']) > 0 and i < 12:
+                    for player in list(self.game_state['players']):
+                        player_name = player['name']
+                        player_name = re.sub(r'\[.*?\]', '', player_name)
+                        LOGGER.info(f"GameServer #{self.id} - Attempting to terminate player: {player_name}")
+                        await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
+                        
+                    LOGGER.info(f"GameServer #{self.id} - {self.game_state['players']} are still connected. Waiting for termination of idle players.")
+                    await asyncio.sleep(5)
+                    i += 1
+                    
+                if len(self.game_state['players']) > 0:
+                    LOGGER.info(f"GameServer #{self.id} - Waited 1 minute. Players still connected. Resetting server.")
+                    await self.manager_event_bus.emit('cmd_custom_command', self, "serverreset", delay=5)
+                    
                 break
             await asyncio.sleep(1)
 
@@ -576,25 +588,28 @@ class GameServer:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
 
-    async def get_running_server(self):
+    async def get_running_server(self,timeout=15):
         """
             Check if existing hon server is running.
         """
         running_procs = MISC.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
         last_good_proc = None
+        i=0
         while len(running_procs) > 0:
+            i+=1
             last_good_proc = None
             for proc in running_procs[:]:
                 status = self.get_dict_value('status')
-                if status == 3:
+                if status:
                     last_good_proc = proc
-                elif status is None:
+                else:
                     if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
                         proc.terminate()
                         LOGGER.debug(f"Terminated GameServer #{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
                     else:
                         last_good_proc = proc
+            if i >= timeout: break
             if last_good_proc is not None:
                 break
 
