@@ -36,7 +36,7 @@ class PrepareDependencies:
             missing = set(required) - set(installed_packages_list)
             python_path = sys.executable
             if missing:
-                result = sp.run([python_path, '-m', 'pip', 'install', *missing])
+                result = sp.run([python_path, '-m', 'pip', 'install', *missing, '--break-system-packages'])
                 if result.returncode == 0:
                     print(f"SUCCESS, upgraded the following packages: {', '.join(missing)}")
                     return result
