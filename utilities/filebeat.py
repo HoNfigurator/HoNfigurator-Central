@@ -13,7 +13,6 @@ import time
 import re
 import hashlib
 from tempfile import NamedTemporaryFile
-import logging
 
 # if code is launched independtly
 if __name__ == "__main__":

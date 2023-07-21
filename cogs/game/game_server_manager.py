@@ -858,9 +858,6 @@ class GameServerManager:
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
 
-            if launch:
-                # sets up mandatory server game log submission.
-                filebeat(self.global_config)
         except Exception:
             print(traceback.format_exc())
 
