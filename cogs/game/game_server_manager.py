@@ -811,7 +811,7 @@ class GameServerManager:
                     task = asyncio.ensure_future(game_server.schedule_task(game_server.start_server(timeout=timeout), 'start_server'))
                     try:
                         # Ensure stop_event.wait() is a Task or Future
-                        stop_event_wait_task = asyncio.ensure_future(stop_event.wait())
+                        stop_event_wait_task = asyncio.create_task(stop_event.wait())
 
                         # Prepare the tasks
                         tasks = [asyncio.wait_for(task, timeout), stop_event_wait_task]
