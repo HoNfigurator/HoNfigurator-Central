@@ -517,7 +517,11 @@ class GameServer:
 
         try:
             start_time = time.perf_counter()
-            done, pending = await asyncio.wait([self.status_received.wait(), self.server_closed.wait()], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
+            status_received_future = asyncio.ensure_future(self.status_received.wait())
+            server_closed_future = asyncio.ensure_future(self.server_closed.wait())
+
+            done, pending = await asyncio.wait([status_received_future, server_closed_future], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
+
 
             if len(pending) == 2: # both status_received and server_closed are not completed. This indicates a timeout
                 for task in pending:
