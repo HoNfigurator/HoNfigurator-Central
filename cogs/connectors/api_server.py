@@ -139,6 +139,19 @@ class PingResponse(BaseModel):
 async def ping():
     return {"status":"OK"}
 
+@app.get("/api/public/get_server_info", description="Returns basic server information.")
+async def public_serverinfo():
+    response = {}
+    for game_server in game_servers.values():
+        full_info = game_server.get_pretty_status_for_webui()
+        response[game_server.config.get_local_by_key('svr_name')] = {
+            "id" : full_info.get("ID"),
+            "status" : full_info.get("Status"),
+            "region" : full_info.get("Region"),
+            "gamephase" : full_info.get("Game Phase")
+        }
+    return JSONResponse(status_code = 200, content = response)
+
 @app.get("/api/check_filebeat_installed", summary="Check whether Filebeat is installed and configured to send server logs.")
 def filebeat_installed():
     installed = check_filebeat_installed()
@@ -155,6 +168,7 @@ def filebeat_installed():
                 return JSONResponse(status_code=400, content={"installed": "OK", "running": "NO"})
     else:
         return JSONResponse(status_code=404, content={"installed": "NO", "running": "NO"})
+
 
 """Protected Endpoints"""
 
