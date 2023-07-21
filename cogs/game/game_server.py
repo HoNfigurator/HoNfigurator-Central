@@ -534,7 +534,7 @@ class GameServer:
                 LOGGER.warning(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
                 return False
         except Exception as e:
-            LOGGER.error(f"GameServer #{self.id} Unexpected error occurred: {e}")
+            LOGGER.error(f"GameServer #{self.id} - Unexpected error occurred: {traceback.format_exc()}")
             return False
     
     def mark_for_deletion(self):
