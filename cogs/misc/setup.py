@@ -373,7 +373,7 @@ class SetupEnvironment:
         database = RolesDatabase()
         if not database.add_default_data():
             while True:
-                value = input("\tPlease provide your discord user ID\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q")
+                value = input("\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
                 try:
                     discord_id = int(value)
                     if len(str(discord_id)) < 10:

@@ -375,8 +375,7 @@ class GameServerManager:
                 await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
 
             except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
-                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
-                # LOGGER.error(traceback.format_exc())
+                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds... Please ensure you're username and password are correct in {HOME_PATH / 'config' / 'config.json'}")
                 for _ in range(retry):
                     if stop_event.is_set():
                         break
