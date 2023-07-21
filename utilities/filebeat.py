@@ -48,6 +48,7 @@ def read_admin_value_from_filebeat_config(config_path):
     return admin_value
 
 operating_system = platform.system()
+global_config = None
 
 if operating_system == "Windows":
     windows_filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
@@ -65,21 +66,27 @@ def check_filebeat_installed():
             return True
 
 
-def install_filebeat_linux():
-    # Update package lists for upgrades for packages that need upgrading
-    subprocess.run(["sudo", "apt-get", "update"], check=True)
+def is_elastic_source_added():
+    # Check if the Elastic source is already added to the apt sources list
+    check_sources_command = ["grep", "-q", "artifacts.elastic.co", "/etc/apt/sources.list"]
+    result = subprocess.run(check_sources_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return result.returncode == 0
 
+def install_filebeat_linux():
     # Download and install the Public Signing Key:
     subprocess.run("wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -", shell=True, check=True)
 
-    # Save the repository definition to /etc/apt/sources.list.d/elastic-7.x.list:
-    subprocess.run('echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-8.x.list', shell=True, check=True)
+    # Check if the Elastic source is already added before adding it
+    if not is_elastic_source_added():
+        # Save the repository definition to /etc/apt/sources.list.d/elastic-8.x.list:
+        subprocess.run('echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-8.x.list', shell=True, check=True)
 
-    # Update the system and install filebeat
-    # subprocess.run(["sudo", "apt-get", "update"], check=True)
+    # Update package lists for upgrades for packages that need upgrading
+    subprocess.run(["sudo", "apt-get", "update"], check=True)
+
+    # Install filebeat
     subprocess.run(["sudo", "apt-get", "install", "filebeat"], check=True)
     return True
-
 
 def install_filebeat_windows():
     # Download and install Filebeat using Python
@@ -235,7 +242,6 @@ def configure_filebeat(silent=False,test=False):
         
         return slave_log, match_log
 
-
     def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         encoding = "encoding: utf-16le" if operating_system == "Windows" else "charset: BINARY"
 
@@ -299,21 +305,31 @@ def configure_filebeat(silent=False,test=False):
     exclude = []
 
     i=0
-    while True:
-        i+=1
-        print_or_log('info',f"Scanning for running hon executable.. timeout {i}/30 seconds")
-        time.sleep(1)
-        process = check_process("hon_x64.exe", exclude) if operating_system == "Windows" else check_process("hon-x86_64-server", exclude)
-        if process and len(process.cmdline()) > 4:
-            break
-        elif process and len(process.cmdline()) < 4 and process not in exclude:
-            exclude.append(process)
-            print_or_log('info',f"Excluded {process.pid}\n\t{process.cmdline()}")
-        if i >=30:
-            print_or_log('info',"Please ensure your hon server is running prior to launching the script.")
-            sys.exit(1)
-            
 
+    svr_name = None
+    svr_location = None
+
+    if global_config is not None and 'hon_data' in global_config:
+        svr_name = global_config['hon_data'].get('svr_name')
+        svr_location = global_config['hon_data'].get('svr_location')
+
+    if svr_name is None or svr_location is None:
+    
+        while True:
+            print_or_log('info',f"Scanning for running hon executable.. timeout {i}/30 seconds")
+            i+=1
+            time.sleep(1)
+            process = check_process("hon_x64.exe", exclude) if operating_system == "Windows" else check_process("hon-x86_64-server", exclude)
+            if process and len(process.cmdline()) > 4:
+                break
+            elif process and len(process.cmdline()) < 4 and process not in exclude:
+                exclude.append(process)
+                print_or_log('info',f"Excluded {process.pid}\n\t{process.cmdline()}")
+
+            if i >=30:
+                print_or_log('info',"Please ensure your hon server is running prior to launching the script.")
+                return
+    
     # Perform text replacements
     svr_name = extract_settings_from_commandline(process.cmdline(), "svr_name")
     space_count = svr_name.count(' ')
@@ -436,7 +452,10 @@ def install_filebeat():
         print_or_log('info',"Unsupported operating system.")
         return False
 
-def main():
+def main(config=None):
+    global global_config
+
+    global_config = config
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
