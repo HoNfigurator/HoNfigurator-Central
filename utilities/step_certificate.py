@@ -14,7 +14,7 @@ import requests
 import webbrowser
 import time
 import json
-import datetime
+from datetime import datetime
 
 version = "0.24.3"
 system = platform.system()
@@ -160,14 +160,14 @@ def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path):
             print('Error from server.')
             return False
 
-def is_certificate_expired(cert_path):
+def is_certificate_expiring(cert_path):
     print("Checking if certificate is expired...")
     # Fetch certificate information
-    cert_info = run_command([step_location, "certificate", "inspect", cert_path])
+    cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
     # Convert cert_info string into a dictionary
     cert_info = json.loads(cert_info)
     # Fetch the expiration date from the certificate info
-    not_after = cert_info.get('validity', {}).get('notAfter')
+    not_after = cert_info.get('validity', {}).get('end')
     # Convert the expiration date string into a datetime object
     not_after = datetime.strptime(not_after, '%Y-%m-%dT%H:%M:%S%z')
     # Return True if the certificate is expired, False otherwise
@@ -186,8 +186,9 @@ def renew_certificate(crt_file_path, key_file_path):
 
 def request_certificate(provisioner_name, provisioner_password_file, cert_path):
     print("Requesting a certificate...")
-    if os.path.isfile(cert_path) and not is_certificate_expired(cert_path):
+    if os.path.isfile(cert_path) and not is_certificate_expiring(cert_path):
         print("Certificate already exists and it's valid.")
+        return True
     else:
         run_command([
             step_location, "ca", "certificate",

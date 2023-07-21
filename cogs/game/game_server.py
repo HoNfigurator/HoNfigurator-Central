@@ -473,7 +473,6 @@ class GameServer:
         if MISC.get_os_platform() == "win32":
             # Server instances write files to location dependent on USERPROFILE and APPDATA variables
             os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            # os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
             DETACHED_PROCESS = 0x00000008
 
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)

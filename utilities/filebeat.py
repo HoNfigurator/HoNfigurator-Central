@@ -208,15 +208,11 @@ def request_client_certificate(svr_name, filebeat_path):
         key_file_path = filebeat_path / 'client.key'
         certificate_exists = crt_file_path.is_file() and key_file_path.is_file()
 
-        if certificate_exists:
+        if certificate_exists and not step_certificate.is_certificate_expiring(crt_file_path):
             print_or_log('info',"Renewing existing client certificate...")
             # Construct the command for certificate renewal
             result = step_certificate.renew_certificate(crt_file_path,key_file_path)
-            if result.returncode == 0:
-                # Certificate request successful
-                certificate_data = result.stdout.strip()
-                # Do something with the certificate data
-                print_or_log('info',"Client certificate request successful.")
+            if (isinstance(result,bool) and result) or result.returncode == 0:
                 return True
             
             else:
@@ -230,6 +226,25 @@ def request_client_certificate(svr_name, filebeat_path):
 
     except Exception as e:
         print_or_log('error',f"Encountered an error while requesting a client certificate. {e}")
+
+def get_public_ip():
+    providers = ['https://api.ipify.org', 'https://ifconfig.me']
+    timeout = 5  # Set the timeout for the request in seconds
+
+    for provider in providers:
+        try:
+            response = requests.get(provider, timeout=timeout)
+            if response.status_code == 200:
+                return response.text.strip()
+        except requests.Timeout:
+            print(f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
+            continue
+        except requests.RequestException as e:
+            print(f"Error occurred when trying to fetch IP from {provider}: {e}")
+            continue
+
+    print("All providers failed to fetch the public IP.")
+    return None
 
 def configure_filebeat(silent=False,test=False):
     def get_log_paths(process):
@@ -274,7 +289,9 @@ def configure_filebeat(silent=False,test=False):
         
         return filebeat_config
     
-    external_ip = requests.get('https://api.ipify.org').text
+    external_ip = get_public_ip()
+    if not external_ip:
+        print_or_log('error','Obtaining public IP address failed.')
 
     filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml" if test else "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
@@ -309,11 +326,16 @@ def configure_filebeat(silent=False,test=False):
     svr_name = None
     svr_location = None
     svr_desc = None
+    slave_log = None
+    match_log = None
 
     if global_config is not None and 'hon_data' in global_config:
         svr_name = global_config['hon_data'].get('svr_name')
         svr_location = global_config['hon_data'].get('svr_location')
         svr_desc = 'using honfigurator' # this is a placeholder basically, so it knows it's honfigurator.
+        
+        slave_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "*.clog")
+        match_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "*.log")
 
     if svr_name is None or svr_location is None:
     
@@ -338,7 +360,7 @@ def configure_filebeat(silent=False,test=False):
     svr_name = svr_name.rsplit(' ', 2)[0] if space_count >= 2 else svr_name
     if not svr_location: svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
 
-    slave_log, match_log = get_log_paths(process)
+    if not slave_log: slave_log, match_log = get_log_paths(process)
     if not svr_desc: svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
     print_or_log('info',f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
