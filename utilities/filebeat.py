@@ -244,7 +244,7 @@ async def request_client_certificate(svr_name, filebeat_path):
         print_or_log('error',f"Encountered an error while requesting a client certificate. {e}")
 
 async def get_public_ip():
-    providers = ['https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
+    providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
     timeout = aiohttp.ClientTimeout(total=5)  # Set the timeout for the request in seconds
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
