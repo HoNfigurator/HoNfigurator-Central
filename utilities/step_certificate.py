@@ -172,7 +172,7 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
 
     # Step 1: Redirect to Discord OAuth2 endpoint
     status_code, response_content = await check_server_status(server_url, token)
-    if status_code != 200:
+    if response_content['status'] != 200:
         oauth_url = f'https://discord.com/api/oauth2/authorize?client_id={discord_client_id}&redirect_uri={server_url}/callback&response_type=code&scope=identify&state={token}'
         if set_auth_url_callback: set_auth_url_callback(oauth_url)
         navigate_to_url(oauth_url)
