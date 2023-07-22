@@ -54,7 +54,7 @@ def run_command(cmd, shell=False):
     return result.stdout.strip()
 
 async def install_step_cli():
-    async with tempfile.TemporaryDirectory() as tempdir:
+    with tempfile.TemporaryDirectory() as tempdir:
         tempdir_path = Path(tempdir)
         
         if system == "Windows":
