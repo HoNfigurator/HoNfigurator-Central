@@ -176,7 +176,7 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
         oauth_url = f'https://discord.com/api/oauth2/authorize?client_id={discord_client_id}&redirect_uri={server_url}/callback&response_type=code&scope=identify&state={token}'
         if set_auth_url_callback: set_auth_url_callback(oauth_url)
         navigate_to_url(oauth_url)
-
+    else: set_auth_url_callback(None)
     # Step 2: Poll server for status update
     while not stop_event.is_set():
         status_code, response_content = await check_server_status(server_url, token)
@@ -184,6 +184,7 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
         if status_code == 200:
             # Server has validated the user and instructed the client to generate a CSR
             if response_content['status'] == 200:
+                set_auth_url_callback(None)
                 # Step 3: Generate CSR using Step CLI
                 csr_command = f'{step_location} certificate create --force --no-password --insecure --csr "{cert_name}" "{str(csr_path)}" "{str(key_path)}"'
                 subprocess.run(csr_command, shell=True)
