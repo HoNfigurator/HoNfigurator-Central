@@ -13,6 +13,7 @@ import aiohttp
 from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
 import ipaddress
+import asyncio
 
 
 LOGGER = get_logger()
