@@ -430,11 +430,11 @@ FAILED_STOP = "Failed to stop Filebeat."
 ALREADY_STOPPED = "Filebeat is already stopped."
 
 
-async def run_command(command_list, success_message):
+async def run_command(command_list, success_message=None):
     process = await asyncio.create_subprocess_shell(' '.join(command_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     stdout, stderr = await process.communicate()
     if process.returncode == 0:
-        print(success_message)
+        if success_message: print(success_message)
         return process
     else:
         print(f"Command: {' '.join(command_list)}")
