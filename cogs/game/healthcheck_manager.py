@@ -112,7 +112,10 @@ class HealthCheckManager:
             try:
                 # self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')
                 coro = filebeat_setup(self.global_config)
-                self.schedule_task(coro,'spawned_filebeat_setup')
+                task = asyncio.create_task(coro)
+                task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
+                self.tasks['spawned_filebeat_setup'] = task
+                # self.schedule_task(coro,'spawned_filebeat_setup')
             except Exception:
                 LOGGER.error(traceback.format_exc())
             for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
