@@ -342,6 +342,10 @@ class GameServerManager:
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
         if mserver_auth_response[1] != 200:
             LOGGER.error(f"[{mserver_auth_response[1]}] Authentication to MasterServer failed.")
+            if mserver_auth_response[1] in [401, 403]:
+                LOGGER.error(f"Please ensure your username and password are correct in {HOME_PATH / 'config' / 'config.json'}")
+            elif mserver_auth_response[1] > 500 and mserver_auth_response[1] < 600:
+                LOGGER.error(f"The issue is most likely server side, and nothing wrong with your configuration.")
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
         LOGGER.info("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
@@ -375,7 +379,7 @@ class GameServerManager:
                 await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
 
             except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
-                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds... Please ensure your username and password are correct in {HOME_PATH / 'config' / 'config.json'}")
+                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
                 for _ in range(retry):
                     if stop_event.is_set():
                         break
