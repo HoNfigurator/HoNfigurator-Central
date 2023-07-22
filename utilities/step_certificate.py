@@ -13,6 +13,7 @@ import webbrowser
 import json
 from datetime import datetime
 import aiohttp
+from aiohttp import TCPConnector
 import asyncio
 
 version = "0.24.3"
@@ -26,18 +27,21 @@ ssl._create_default_https_context = ssl._create_unverified_context
 def set_ssl_context(path):
     sslcontext = ssl.create_default_context(cafile=path)
 
-async def async_get(url, headers=None):
-    async with aiohttp.ClientSession() as session:
+async def async_get(url, headers=None, ssl=False):
+    connector = TCPConnector(ssl=ssl)
+    async with aiohttp.ClientSession(connector=connector) as session:
         async with session.get(url, headers=headers) as resp:
             return await resp.text()
 
-async def async_post(url, data=None, headers=None):
-    async with aiohttp.ClientSession() as session:
+async def async_post(url, data=None, headers=None, ssl=False):
+    connector = TCPConnector(ssl=ssl)
+    async with aiohttp.ClientSession(connector=connector) as session:
         async with session.post(url, data=data, headers=headers) as resp:
             return await resp.text()
 
-async def download_file(url, destination):
-    async with aiohttp.ClientSession() as session:
+async def download_file(url, destination, ssl=False):
+    connector = TCPConnector(ssl=ssl)
+    async with aiohttp.ClientSession(connector=connector) as session:
         async with session.get(url) as resp:
             with open(destination, 'wb') as fd:
                 while not stop_event.is_set():
