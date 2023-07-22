@@ -239,7 +239,10 @@ async def request_client_certificate(svr_name, filebeat_path):
         else:
             print_or_log('info',"Requesting new client certificate...")
             # Construct the command for new certificate request
-            return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path, token=get_filebeat_auth_token())
+            if __name__ == "__main__":
+                return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
+            else:
+                return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path, token=get_filebeat_auth_token())
 
     except Exception as e:
         print_or_log('error',f"Encountered an error while requesting a client certificate. {traceback.format_exc()}")
@@ -509,6 +512,29 @@ async def install_filebeat():
         print_or_log('info',"Unsupported operating system.")
         return False
 
+def remove_cron_job(command):
+    try:
+        # output the current crontab to a temporary file
+        tmpfile = "/tmp/crontab.txt"
+        subprocess.run(["crontab", "-l"], stdout=open(tmpfile, 'w'))
+
+        # read the file, remove the line, and write it back out
+        with open(tmpfile, 'r') as f:
+            lines = f.readlines()
+        with open(tmpfile, 'w') as f:
+            for line in lines:
+                if command not in line:
+                    f.write(line)
+
+        # load the revised crontab
+        subprocess.run(["crontab", tmpfile])
+
+        # remove the temporary file
+        os.remove(tmpfile)
+
+    except Exception as e:
+        print_or_log('error',f"Failed to remove cron job: {e}")
+
 async def main(config=None):
     global global_config
 
@@ -522,34 +548,31 @@ async def main(config=None):
     print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
     if not check_filebeat_installed():
         await install_filebeat()
-        
-    await step_certificate.main(stop_event, set_filebeat_auth_token, set_filebeat_auth_url)
+    
+    if __name__ == "__main__":
+        await step_certificate.main(stop_event)
+    else: await step_certificate.main(stop_event, set_filebeat_auth_token, set_filebeat_auth_url)
 
     filebeat_changed = False
     if await configure_filebeat(silent=args.silent, test=args.test):
         filebeat_changed = True
-        # Create scheduled task on Windows
-        if not args.silent:
-            if operating_system == "Windows":
-                task_name = "Filebeat Task"
-                script_path = os.path.abspath(__file__)
-                command = f"python {script_path} -silent"
+        # Delete scheduled task on Windows
+        if operating_system == "Windows":
+            task_name = "Filebeat Task"
 
-                # Check if the task already exists
-                task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
-                if "ERROR: The system cannot find the file specified." in task_query.stderr:
-                    # Create the scheduled task
-                    subprocess.run(["schtasks", "/create", "/tn", task_name, "/tr", command, "/sc", "daily", "/st", "00:00"])
-                    print_or_log('info',"Scheduled task created successfully.")
-                else:
-                    print_or_log('info',"Task already scheduled.")
+            # Check if the task already exists
+            task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
+            if "ERROR: The system cannot find the file specified." not in task_query.stderr:
+                # Delete the scheduled task
+                subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
+                print_or_log('info',"Scheduled task deleted successfully.")
 
-            # Create cron job on Linux
-            if operating_system == "Linux":
-                script_path = os.path.abspath(__file__)
-                command = f"python3 {script_path} -silent"
-                add_cron_job(command)
-                print_or_log('info',"Cron job created successfully.")
+        # Delete cron job on Linux
+        if operating_system == "Linux":
+            script_path = os.path.abspath(__file__)
+            command = f"python3 {script_path} -silent"
+            remove_cron_job(command)
+            print_or_log('info',"Cron job deleted successfully.")
 
     # if filebeat_changed:
     await restart_filebeat(filebeat_changed, silent=args.silent)

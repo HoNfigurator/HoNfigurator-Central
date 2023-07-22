@@ -109,7 +109,8 @@ class SetupEnvironment:
                         "lag_healthcheck":120,
                         "check_for_hon_update": 120,
                         "check_for_honfigurator_update": 60,
-                        "resubmit_match_stats": 20
+                        "resubmit_match_stats": 20,
+                        "filebeat_verification": 10800
                     },
                     "replay_cleaner": {
                         "active": False,

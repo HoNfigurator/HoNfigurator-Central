@@ -86,6 +86,7 @@ def check_permission_factory(required_permission: str):
     async def check_permission(request: Request, token_and_user_info: dict = Depends(verify_token)):
         user_info = token_and_user_info["user_info"]
 
+        permission = has_permission(user_info, required_permission)
         if not has_permission(user_info, required_permission):
             LOGGER.warn(f"API Request from: {request.client.host} - Insufficient permissions")
             raise HTTPException(status_code=403, detail="Insufficient permissions")
@@ -139,7 +140,20 @@ class PingResponse(BaseModel):
 async def ping():
     return {"status":"OK"}
 
-@app.get("/api/check_filebeat_installed", summary="Check whether Filebeat is installed and configured to send server logs.")
+@app.get("/api/public/get_server_info", description="Returns basic server information.")
+async def public_serverinfo():
+    response = {}
+    for game_server in game_servers.values():
+        full_info = game_server.get_pretty_status_for_webui()
+        response[game_server.config.get_local_by_key('svr_name')] = {
+            "id" : full_info.get("ID"),
+            "status" : full_info.get("Status"),
+            "region" : full_info.get("Region"),
+            "gamephase" : full_info.get("Game Phase")
+        }
+    return JSONResponse(status_code = 200, content = response)
+
+@app.get("/api/public/check_filebeat_status", summary="Check whether Filebeat is installed and configured to send server logs.")
 async def filebeat_installed():
     installed = filebeat.check_filebeat_installed()
     if installed:
@@ -741,14 +755,18 @@ async def remove_all_servers(token_and_user_info: dict = Depends(check_permissio
 
 
 @app.get("/api/get_filebeat_oauth_url") # unsure if this endpoint will ever be used.
-async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permission_factory(required_permission="superadmin"))):
+async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     if 'filebeat_setup' in manager_tasks:
         if not manager_tasks['filebeat_setup'] or manager_tasks['filebeat_setup'].done():
-            return JSONResponse(status_code=400,content={"status":"filebeat setup task not currently running."})
-        
+            return JSONResponse(status_code=200,content={"status":"filebeat setup task not currently running."})
+
+    user = roles_database.get_user_by_discord_id(str(token_and_user_info['user_info']['id']))
+    if user['nickname'] != 'owner':
+        return JSONResponse(status_code=401,content={"status":"Only the server owner may process this command."})
+
     url = get_filebeat_auth_url()
     if url: return JSONResponse(status_code=200,content={"url":url})
-    else: return JSONResponse(status_code=404)
+    else: return JSONResponse(status_code=200,content={"status":"there is no OAUTH url available."})
 
 # @app.post("/api/start_filebeat_setup_task")  # unsure if this endpoint will ever be used.
 # async def start_filebeat_setup_task(token_and_user_info: dict = Depends(check_permission_factory(required_permission="superadmin"))):

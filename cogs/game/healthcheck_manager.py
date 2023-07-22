@@ -2,6 +2,7 @@
 from cogs.handlers.events import stop_event, get_logger
 from cogs.misc.logger import get_logger, get_misc
 from cogs.misc.exceptions import HoNPatchError
+from utilities.filebeat import main as filebeat_setup
 import asyncio
 import traceback
 import os
@@ -24,6 +25,7 @@ class HealthCheckManager:
             'honfigurator_update_check': None,
             'game_stats_resubmission': None,
             'public_ip_changed_check': None,
+            'filebeat_verification': None
         }
     
     def schedule_task(self, coro, name, override = False):
@@ -102,6 +104,18 @@ class HealthCheckManager:
                     await self.event_bus.emit('patch_server',source='healthcheck')
             except Exception:
                 print(traceback.format_exc())
+
+                
+    async def filebeat_verification(self):
+        while not stop_event.is_set():
+            for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
+            try:
+                await filebeat_setup(self.global_config)
+            except Exception:
+                LOGGER.error(traceback.format_exc())
     
     async def honfigurator_version_healthcheck(self):
         while not stop_event.is_set():
@@ -152,6 +166,7 @@ class HealthCheckManager:
         self.tasks['honfigurator_update_check'] = self.schedule_task(self.honfigurator_version_healthcheck(), 'honfigurator_update_check')
         self.tasks['game_stats_resubmission'] = self.schedule_task(self.poll_for_game_stats(), 'game_stats_resubmission')
         self.tasks['public_ip_changed_check'] = self.schedule_task(self.public_ip_healthcheck(), 'public_ip_changed_check')
+        self.tasks['filebeat_verification'] = self.schedule_task(self.filebeat_verification(), 'filebeat_verification')
 
         while not stop_event.is_set():
             for task_name, task in self.tasks.items():
