@@ -368,9 +368,10 @@ class Misc:
                 ['git', 'for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin/'],
                 universal_newlines=True
             ).strip()
+            branches = [branch.strip() for branch in branch_names.split('\n') if branch.strip() != 'HEAD']
 
             # Process the branch names, excluding "HEAD"
-            return [branch.strip() for branch in branch_names.split('\n') if branch.strip() != 'HEAD']
+            return branches
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None

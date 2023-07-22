@@ -756,8 +756,8 @@ async def remove_all_servers(token_and_user_info: dict = Depends(check_permissio
 
 @app.get("/api/get_filebeat_oauth_url") # unsure if this endpoint will ever be used.
 async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    if 'filebeat_setup' in manager_tasks:
-        if not manager_tasks['filebeat_setup'] or manager_tasks['filebeat_setup'].done():
+    if 'spawned_filebeat_setup' in health_check_tasks:
+        if not health_check_tasks['spawned_filebeat_setup'] or health_check_tasks['spawned_filebeat_setup'].done():
             return JSONResponse(status_code=200,content={"status":"filebeat setup task not currently running."})
 
     user = roles_database.get_user_by_discord_id(str(token_and_user_info['user_info']['id']))
@@ -770,8 +770,8 @@ async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permi
 
 # @app.post("/api/start_filebeat_setup_task")  # unsure if this endpoint will ever be used.
 # async def start_filebeat_setup_task(token_and_user_info: dict = Depends(check_permission_factory(required_permission="superadmin"))):
-#     if 'filebeat_setup' in manager_tasks:
-#         if manager_tasks['filebeat_setup'] and not manager_tasks['filebeat_setup'].done():
+#     if 'spawned_filebeat_setup' in health_check_tasks:
+#         if health_check_tasks['spawned_filebeat_setup'] and not health_check_tasks['spawned_filebeat_setup'].done():
 #             return JSONResponse(status_code=400,content={"status":"filebeat setup already running."})
     
 #     if not await filebeat.check_filebeat_installed():

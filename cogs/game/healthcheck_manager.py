@@ -25,7 +25,8 @@ class HealthCheckManager:
             'honfigurator_update_check': None,
             'game_stats_resubmission': None,
             'public_ip_changed_check': None,
-            'filebeat_verification': None
+            'filebeat_verification': None,
+            'spawned_filebeat_setup':None
         }
     
     def schedule_task(self, coro, name, override = False):
@@ -108,14 +109,14 @@ class HealthCheckManager:
                 
     async def filebeat_verification(self):
         while not stop_event.is_set():
+            try:
+                self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')
+            except Exception:
+                LOGGER.error(traceback.format_exc())
             for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
                 if stop_event.is_set():
                     break
                 await asyncio.sleep(1)
-            try:
-                await filebeat_setup(self.global_config)
-            except Exception:
-                LOGGER.error(traceback.format_exc())
     
     async def honfigurator_version_healthcheck(self):
         while not stop_event.is_set():
