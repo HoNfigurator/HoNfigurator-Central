@@ -473,7 +473,6 @@ class GameServer:
         if MISC.get_os_platform() == "win32":
             # Server instances write files to location dependent on USERPROFILE and APPDATA variables
             os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            # os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
             DETACHED_PROCESS = 0x00000008
 
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
@@ -517,7 +516,11 @@ class GameServer:
 
         try:
             start_time = time.perf_counter()
-            done, pending = await asyncio.wait([self.status_received.wait(), self.server_closed.wait()], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
+            status_received_future = asyncio.ensure_future(self.status_received.wait())
+            server_closed_future = asyncio.ensure_future(self.server_closed.wait())
+
+            done, pending = await asyncio.wait([status_received_future, server_closed_future], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
+
 
             if len(pending) == 2: # both status_received and server_closed are not completed. This indicates a timeout
                 for task in pending:
@@ -534,7 +537,7 @@ class GameServer:
                 LOGGER.warning(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
                 return False
         except Exception as e:
-            LOGGER.error(f"GameServer #{self.id} Unexpected error occurred: {e}")
+            LOGGER.error(f"GameServer #{self.id} - Unexpected error occurred: {traceback.format_exc()}")
             return False
     
     def mark_for_deletion(self):

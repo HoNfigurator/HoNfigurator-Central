@@ -80,7 +80,7 @@ class SetupEnvironment:
         return {
             "hon_data": {
                 "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - CLEAN\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
-                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/KONGOR/"),
+                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/"),
                 "svr_masterServer": "api.kongor.online",
                 "svr_login": "",
                 "svr_password": "",
@@ -334,6 +334,11 @@ class SetupEnvironment:
             elif key == "svr_enableProxy":  # this is to resolve a misconfig where svr_enableProxy was used instead of man_enableProxy by accident.
                 self.hon_data["man_enableProxy"] = self.hon_data[key]
                 del self.hon_data[key]
+            elif key == "hon_home_directory":
+                hon_home_directory = str(self.hon_data["hon_home_directory"])
+                if hon_home_directory.endswith('/KONGOR'):
+                    hon_home_directory = hon_home_directory.rstrip('/KONGOR')
+                self.hon_data["hon_home_directory"] = Path(hon_home_directory)
             elif default_value_type is type(None):
                 del self.hon_data[key]
                 minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
@@ -368,7 +373,7 @@ class SetupEnvironment:
         database = RolesDatabase()
         if not database.add_default_data():
             while True:
-                value = input("\tPlease provide your discord user ID\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q")
+                value = input("\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
                 try:
                     discord_id = int(value)
                     if len(str(discord_id)) < 10:
@@ -529,8 +534,8 @@ class SetupEnvironment:
             architecture = "was-crIac6LASwoafrl8FrOa"
         else:  # this should be "linux"
             hon_artefacts_directory = Path(self.hon_data["hon_home_directory"])
-            hon_replays_directory = hon_artefacts_directory / "replays"
-            hon_logs_directory = hon_artefacts_directory / "logs"
+            hon_replays_directory = hon_artefacts_directory / "KONGOR" / "replays"
+            hon_logs_directory = hon_artefacts_directory / "KONGOR" / "logs"
             executable = "hon-x86_64-server"
             file_name = executable
             architecture = 'las-crIac6LASwoafrl8FrOa'

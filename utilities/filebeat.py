@@ -1,28 +1,31 @@
 import argparse
+import traceback
 import platform
 import subprocess
-import sys
+import aiohttp
+import asyncio
+import aiofiles
 import os
 import shutil
-import requests
+import ipaddress
 import tempfile
 import zipfile
 from pathlib import Path
 import psutil
-import time
 import re
 import hashlib
 from tempfile import NamedTemporaryFile
-import logging
 
 # if code is launched independtly
 if __name__ == "__main__":
     import step_certificate
     LOGGER = None
+    stop_event = asyncio.Event()
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url
+    from cogs.handlers.events import stop_event
     LOGGER = get_logger()
 
 def print_or_log(log_lvl='info', msg=''):
@@ -48,6 +51,7 @@ def read_admin_value_from_filebeat_config(config_path):
     return admin_value
 
 operating_system = platform.system()
+global_config = None
 
 if operating_system == "Windows":
     windows_filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
@@ -65,36 +69,48 @@ def check_filebeat_installed():
             return True
 
 
-def install_filebeat_linux():
-    # Update package lists for upgrades for packages that need upgrading
-    subprocess.run(["sudo", "apt-get", "update"], check=True)
+def is_elastic_source_added():
+    # Check if the Elastic source is already added to the apt sources list
+    check_sources_command = ["grep", "-q", "artifacts.elastic.co", "/etc/apt/sources.list"]
+    result = subprocess.run(check_sources_command, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    return result.returncode == 0
 
+async def install_filebeat_linux():
     # Download and install the Public Signing Key:
-    subprocess.run("wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -", shell=True, check=True)
+    # subprocess.run("wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -", shell=True, check=True)
+    await run_command(["wget","-qO","-","https://artifacts.elastic.co/GPG-KEY-elasticsearch","|","sudo","apt-key","add","-"])
 
-    # Save the repository definition to /etc/apt/sources.list.d/elastic-7.x.list:
-    subprocess.run('echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-8.x.list', shell=True, check=True)
+    # Check if the Elastic source is already added before adding it
+    if not is_elastic_source_added():
+        # Save the repository definition to /etc/apt/sources.list.d/elastic-8.x.list:
+        # subprocess.run('echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-8.x.list', shell=True, check=True)
+        await run_command(["echo","'deb https://artifacts.elastic.co/packages/8.x/apt stable main'","|","sudo","tee","-a","/etc/apt/sources.list.d/elastic-8.x.list"])
 
-    # Update the system and install filebeat
+    # Update package lists for upgrades for packages that need upgrading
     # subprocess.run(["sudo", "apt-get", "update"], check=True)
-    subprocess.run(["sudo", "apt-get", "install", "filebeat"], check=True)
+    await run_command(["sudo","apt-get","update"])
+
+    # Install filebeat
+    # subprocess.run(["sudo", "apt-get", "install", "filebeat"], check=True)
+    await run_command(["sudo","apt-get","install","filebeat"])
     return True
 
-
-def install_filebeat_windows():
+async def install_filebeat_windows():
     # Download and install Filebeat using Python
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_file = os.path.join(temp_dir, "filebeat-8.8.2-windows-x86_64.zip")
         url = "https://artifacts.elastic.co/downloads/beats/filebeat/filebeat-8.8.2-windows-x86_64.zip"
 
         # Download the Filebeat ZIP file
-        response = requests.get(url)
-        if response.status_code == 200:
-            with open(zip_file, "wb") as file:
-                file.write(response.content)
-            print_or_log('info',"Filebeat ZIP file downloaded successfully.")
-        else:
-            print_or_log('error',"Failed to download Filebeat ZIP file.")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(url) as response:
+                if response.status == 200:
+                    content = await response.read()
+                    async with aiofiles.open(zip_file, "wb") as file:
+                        await file.write(content)
+                    print_or_log('info',"Filebeat ZIP file downloaded successfully.")
+                else:
+                    print_or_log('error',"Failed to download Filebeat ZIP file.")
 
         # Extract ZIP contents to temporary folder
         temp_extract_folder = os.path.join(temp_dir, "filebeat-extract")
@@ -125,19 +141,26 @@ def install_filebeat_windows():
             str(Path(windows_filebeat_install_dir) / "install-service-filebeat.ps1")
         ]
 
-        result = subprocess.run(command, capture_output=True, text=True)
+        process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        if process.returncode == 0:
+            print_or_log('info', "Filebeat service installed successfully.")
+        else:
+            print_or_log('error', f"Failed to install Filebeat service. Error: {stderr.decode()}")
 
         # Remove the extracted folder
         os.rmdir(source_folder)
         print_or_log('info',"Extracted folder removed.")
         return True
 
-def uninstall_filebeat_linux():
+async def uninstall_filebeat_linux():
     # Uninstall Filebeat on Linux
-    subprocess.run(["sudo", "systemctl", "stop", "filebeat"])
-    subprocess.run(["sudo", "apt-get", "remove", "filebeat"])
+    # subprocess.run(["sudo", "systemctl", "stop", "filebeat"])
+    await run_command(["sudo", "systemctl", "stop", "filebeat"])
+    # subprocess.run(["sudo", "apt-get", "remove", "filebeat"])
+    await run_command(["sudo", "apt-get", "remove", "filebeat"])
 
-def uninstall_filebeat_windows():
+async def uninstall_filebeat_windows():
     filebeat_install_dir = os.path.join(os.environ["ProgramFiles"], "FileBeat")
     if os.path.exists(Path(filebeat_install_dir) / "filebeat.exe"):
         command = [
@@ -148,7 +171,8 @@ def uninstall_filebeat_windows():
             str(Path(filebeat_install_dir) / "uninstall-service-filebeat.ps1")
         ]
 
-        result = subprocess.run(command, capture_output=True, text=True)
+        # result = subprocess.run(command, capture_output=True, text=True)
+        result = await run_command(command)
 
         if result.returncode == 0:
             shutil.rmtree(filebeat_install_dir)
@@ -192,7 +216,7 @@ def extract_settings_from_commandline(commandline, setting):
 
     return result
 
-def request_client_certificate(svr_name, filebeat_path):
+async def request_client_certificate(svr_name, filebeat_path):
 
     try:
         # Check if the certificate files already exist
@@ -201,15 +225,11 @@ def request_client_certificate(svr_name, filebeat_path):
         key_file_path = filebeat_path / 'client.key'
         certificate_exists = crt_file_path.is_file() and key_file_path.is_file()
 
-        if certificate_exists:
+        if certificate_exists and not step_certificate.is_certificate_expiring(crt_file_path):
             print_or_log('info',"Renewing existing client certificate...")
             # Construct the command for certificate renewal
             result = step_certificate.renew_certificate(crt_file_path,key_file_path)
-            if result.returncode == 0:
-                # Certificate request successful
-                certificate_data = result.stdout.strip()
-                # Do something with the certificate data
-                print_or_log('info',"Client certificate request successful.")
+            if (isinstance(result,bool) and result) or result.returncode == 0:
                 return True
             
             else:
@@ -219,12 +239,39 @@ def request_client_certificate(svr_name, filebeat_path):
         else:
             print_or_log('info',"Requesting new client certificate...")
             # Construct the command for new certificate request
-            return step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
+            return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path, token=get_filebeat_auth_token())
 
     except Exception as e:
-        print_or_log('error',f"Encountered an error while requesting a client certificate. {e}")
+        print_or_log('error',f"Encountered an error while requesting a client certificate. {traceback.format_exc()}")
 
-def configure_filebeat(silent=False,test=False):
+async def get_public_ip():
+    providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
+    timeout = aiohttp.ClientTimeout(total=5)  # Set the timeout for the request in seconds
+
+    async with aiohttp.ClientSession(timeout=timeout) as session:
+        for provider in providers:
+            try:
+                async with session.get(provider) as response:
+                    if response.status == 200:
+                        ip_str = await response.text()
+                        try:
+                            # Try to construct an IP address object. If it fails, this is not a valid IP.
+                            ipaddress.ip_address(ip_str)
+                            return ip_str
+                        except ValueError:
+                            print(f"Invalid IP received from {provider}. Trying another provider...")
+            except asyncio.TimeoutError:
+                print(f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
+                continue
+            except Exception as e:
+                print(f"Error occurred when trying to fetch IP from {provider}: {e}")
+                continue
+
+    print("All providers failed to fetch the public IP.")
+    return None
+
+
+async def configure_filebeat(silent=False,test=False):
     def get_log_paths(process):
         if operating_system == "Windows":
             slave_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "*.clog"
@@ -234,7 +281,6 @@ def configure_filebeat(silent=False,test=False):
             match_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "M*.log"
         
         return slave_log, match_log
-
 
     def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         encoding = "encoding: utf-16le" if operating_system == "Windows" else "charset: BINARY"
@@ -267,8 +313,10 @@ def configure_filebeat(silent=False,test=False):
             filebeat_config = filebeat_config.replace(old, new)
         
         return filebeat_config
-    
-    external_ip = requests.get('https://api.ipify.org').text
+
+    external_ip = await get_public_ip()
+    if not external_ip:
+        print_or_log('error','Obtaining public IP address failed.')
 
     filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml" if test else "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
@@ -276,56 +324,77 @@ def configure_filebeat(silent=False,test=False):
 
     destination_folder = os.path.join(os.environ["ProgramFiles"], "filebeat") if operating_system == "Windows" else "/usr/share/filebeat"
     config_folder = destination_folder if operating_system == "Windows" else "/etc/filebeat"
-    
-    os.makedirs(destination_folder, exist_ok=True)
-    
-    honfigurator_ca_chain_response = requests.get(honfigurator_ca_chain_url)
-    if honfigurator_ca_chain_response.status_code == 200:
-        with open(Path(destination_folder) / "honfigurator-chain.pem", 'wb') as chain_file:
-            chain_file.write(honfigurator_ca_chain_response.content)
-    honfigurator_ca_chain_bundle_response = requests.get(honfigurator_ca_chain_bundle_url)
-    if honfigurator_ca_chain_bundle_response.status_code == 200:
-        with open(Path(destination_folder) / "honfigurator-chain-bundle.pem", 'wb') as chain_file:
-            chain_file.write(honfigurator_ca_chain_bundle_response.content)
 
-    filebeat_config_response = requests.get(filebeat_config_url)
-    if filebeat_config_response.status_code != 200:
-        print_or_log('info',"Failed to download Filebeat configuration file.")
-        return
+    os.makedirs(destination_folder, exist_ok=True)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(honfigurator_ca_chain_url) as response:
+            if response.status == 200:
+                content = await response.read()
+                async with aiofiles.open(Path(destination_folder) / "honfigurator-chain.pem", 'wb') as chain_file:
+                    await chain_file.write(content)
+        async with session.get(honfigurator_ca_chain_bundle_url) as response:
+            if response.status == 200:
+                content = await response.read()
+                async with aiofiles.open(Path(destination_folder) / "honfigurator-chain-bundle.pem", 'wb') as chain_file:
+                    await chain_file.write(content)
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(filebeat_config_url) as response:
+            if response.status != 200:
+                print_or_log('info',"Failed to download Filebeat configuration file.")
+                return
+            filebeat_config = await response.read()
     
     config_file_path = os.path.join(config_folder, "filebeat.yml")
-    filebeat_config = filebeat_config_response.content
 
     exclude = []
 
     i=0
-    while True:
-        i+=1
-        print_or_log('info',f"Scanning for running hon executable.. timeout {i}/30 seconds")
-        time.sleep(1)
-        process = check_process("hon_x64.exe", exclude) if operating_system == "Windows" else check_process("hon-x86_64-server", exclude)
-        if process and len(process.cmdline()) > 4:
-            break
-        elif process and len(process.cmdline()) < 4 and process not in exclude:
-            exclude.append(process)
-            print_or_log('info',f"Excluded {process.pid}\n\t{process.cmdline()}")
-        if i >=30:
-            print_or_log('info',"Please ensure your hon server is running prior to launching the script.")
-            sys.exit(1)
-            
 
+    svr_name = None
+    svr_location = None
+    svr_desc = None
+    slave_log = None
+    match_log = None
+
+    if global_config is not None and 'hon_data' in global_config:
+        svr_name = global_config['hon_data'].get('svr_name')
+        svr_location = global_config['hon_data'].get('svr_location')
+        svr_desc = 'using honfigurator' # this is a placeholder basically, so it knows it's honfigurator.
+        
+        slave_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "*.clog")
+        match_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "*.log")
+
+    if svr_name is None or svr_location is None:
+    
+        while not stop_event.is_set():
+            print_or_log('info',f"Scanning for running hon executable.. timeout {i}/30 seconds")
+            i+=1
+            await asyncio.sleep(1)
+            process = check_process("hon_x64.exe", exclude) if operating_system == "Windows" else check_process("hon-x86_64-server", exclude)
+            if process and len(process.cmdline()) > 4:
+                break
+            elif process and len(process.cmdline()) < 4 and process not in exclude:
+                exclude.append(process)
+                print_or_log('info',f"Excluded {process.pid}\n\t{process.cmdline()}")
+
+            if i >=30:
+                print_or_log('info',"Please ensure your hon server is running prior to launching the script.")
+                return
+    
     # Perform text replacements
-    svr_name = extract_settings_from_commandline(process.cmdline(), "svr_name")
+    if not svr_name: svr_name = extract_settings_from_commandline(process.cmdline(), "svr_name")
     space_count = svr_name.count(' ')
     svr_name = svr_name.rsplit(' ', 2)[0] if space_count >= 2 else svr_name
-    svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
+    if not svr_location: svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
 
-    slave_log, match_log = get_log_paths(process)
-    svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
+    if not slave_log: slave_log, match_log = get_log_paths(process)
+    if not svr_desc: svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
     print_or_log('info',f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
 
-    looked_up_discord_username = request_client_certificate(svr_name, Path(destination_folder))
+    looked_up_discord_username = await request_client_certificate(svr_name, Path(destination_folder))
     if not looked_up_discord_username:
         print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
         return
@@ -336,11 +405,11 @@ def configure_filebeat(silent=False,test=False):
         existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
         
     filebeat_config = perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
-    
+
     temp_dir = tempfile.TemporaryDirectory()
     temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
-    with open(temp_file_path, 'wb') as temp_file:
-        temp_file.write(filebeat_config)
+    async with aiofiles.open(temp_file_path, 'wb') as temp_file:
+        await temp_file.write(filebeat_config)
 
     new_config_hash = calculate_file_hash(temp_file_path)
 
@@ -361,22 +430,26 @@ STOPPED_SUCCESSFULLY = "Filebeat stopped successfully."
 FAILED_STOP = "Failed to stop Filebeat."
 ALREADY_STOPPED = "Filebeat is already stopped."
 
-def restart_filebeat(filebeat_changed, silent):
-    def run_command(command_list, success_message):
-        result = subprocess.run(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        if result.returncode == 0:
-            print_or_log('info',success_message)
-            return True
-        else:
-            print_or_log('info',f"Command: {' '.join(command_list)}")
-            print_or_log('info',f"Return code: {result.returncode}")
-            print_or_log('info',f"Error: {result.stderr.decode()}")
-    def restart():
+
+async def run_command(command_list, success_message=None):
+    process = await asyncio.create_subprocess_shell(' '.join(command_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+    stdout, stderr = await process.communicate()
+    if process.returncode == 0:
+        if success_message: print(success_message)
+        return process
+    else:
+        print(f"Command: {' '.join(command_list)}")
+        print(f"Return code: {process.returncode}")
+        print(f"Error: {stderr.decode()}")
+        return process
+
+async def restart_filebeat(filebeat_changed, silent):
+    async def restart():
         if operating_system == "Windows":
             process_name = "filebeat.exe"
             command_list = ["powershell.exe", "Restart-Service", "-Name", "filebeat"]
             success_message = "Filebeat service restarted successfully on Windows."
-            if run_command(command_list, success_message):
+            if await run_command(command_list, success_message):
                 return True
 
         else:  # Linux
@@ -384,8 +457,8 @@ def restart_filebeat(filebeat_changed, silent):
             stop_command_list = ["sudo", "systemctl", "stop", "filebeat"]
             start_command_list = ["sudo", "systemctl", "start", "filebeat"]
             if check_process(process_name):
-                run_command(stop_command_list, STOPPED_SUCCESSFULLY)
-            if run_command(start_command_list, STARTED_SUCCESSFULLY):
+                await run_command(stop_command_list, STOPPED_SUCCESSFULLY)
+            if await run_command(start_command_list, STARTED_SUCCESSFULLY):
                 return True
         
     filebeat_running = False
@@ -395,15 +468,15 @@ def restart_filebeat(filebeat_changed, silent):
     if silent:
         # If silent, only restart filebeat if config has changed and it's currently running
         if filebeat_changed and filebeat_running:
-            if restart():
+            if await restart():
                 print_or_log('info',"Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
     else:
         # If not silent, start filebeat if stopped, or restart if config changed
         if filebeat_changed and filebeat_running:
-            if restart():
+            if await restart():
                 print_or_log('info',"Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
         elif not filebeat_running:
-            restart()
+            await restart()
 
 def add_cron_job(command):
     # Get current cron jobs
@@ -425,18 +498,21 @@ def add_cron_job(command):
     os.unlink(tmp.name)
 
 # Check the system
-def install_filebeat():
+async def install_filebeat():
     if operating_system == "Windows":
-        installed = install_filebeat_windows()
+        installed = await install_filebeat_windows()
         return installed
     elif operating_system == "Linux":
-        installed = install_filebeat_linux()
+        installed = await install_filebeat_linux()
         return installed
     else:
         print_or_log('info',"Unsupported operating system.")
         return False
 
-def main():
+async def main(config=None):
+    global global_config
+
+    global_config = config
     # Parse command-line arguments
     parser = argparse.ArgumentParser()
     parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
@@ -445,12 +521,12 @@ def main():
 
     print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
     if not check_filebeat_installed():
-        install_filebeat()
+        await install_filebeat()
         
-    step_certificate.main()
+    await step_certificate.main(stop_event, set_filebeat_auth_token, set_filebeat_auth_url)
 
     filebeat_changed = False
-    if configure_filebeat(silent=args.silent, test=args.test):
+    if await configure_filebeat(silent=args.silent, test=args.test):
         filebeat_changed = True
         # Create scheduled task on Windows
         if not args.silent:
@@ -476,7 +552,7 @@ def main():
                 print_or_log('info',"Cron job created successfully.")
 
     # if filebeat_changed:
-    restart_filebeat(filebeat_changed, silent=args.silent)
+    await restart_filebeat(filebeat_changed, silent=args.silent)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

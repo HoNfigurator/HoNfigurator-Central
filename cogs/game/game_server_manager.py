@@ -71,7 +71,8 @@ class GameServerManager:
             'gameserver_listener':None,
             'authentication_handler':None,
             'gameserver_startup':None,
-            'task_cleanup': None
+            'task_cleanup': None,
+            'filebeat_setup': None
         }
         self.schedule_task(self.cleanup_tasks_every_30_minutes(), 'task_cleanup')
         # initialise the config validator in case we need it
@@ -130,7 +131,7 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 self.cleanup_tasks(game_server.tasks, current_time)
             self.cleanup_tasks(self.tasks, current_time)
-            for _ in range(30 * 60):  # Monitor process every 5 seconds
+            for _ in range(30 * 60):
                 if stop_event.is_set():
                     break
                 await asyncio.sleep(1)
@@ -375,9 +376,12 @@ class GameServerManager:
                 await self.authenticate_and_handle_chat_server(parsed_mserver_auth_response, udp_ping_responder_port)
 
             except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
-                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
-                # LOGGER.error(traceback.format_exc())
-                await asyncio.sleep(retry)  # Replace x with the desired number of seconds
+                LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds... Please ensure your username and password are correct in {HOME_PATH / 'config' / 'config.json'}")
+                for _ in range(retry):
+                    if stop_event.is_set():
+                        break
+                    await asyncio.sleep(1)
+
         LOGGER.info("Stopping authentication handlers")
     async def authenticate_and_handle_chat_server(self, parsed_mserver_auth_response, udp_ping_responder_port):
         # Create a new ChatServerHandler instance and connect to the chat server
@@ -807,10 +811,17 @@ class GameServerManager:
                     # Use the schedule_task method to start the server
                     if game_server not in self.game_servers.values():
                         return
-                    task = game_server.schedule_task(game_server.start_server(timeout=timeout), 'start_server')
+
+                    # Ensure the task is actually a Task or Future
+                    task = asyncio.ensure_future(game_server.schedule_task(game_server.start_server(timeout=timeout), 'start_server'))
                     try:
+                        # Ensure asyncio.wait_for(task, timeout) and stop_event.wait() are Tasks
+                        wait_for_task = asyncio.create_task(asyncio.wait_for(task, timeout))
+                        stop_event_wait_task = asyncio.create_task(stop_event.wait())
+
                         # Prepare the tasks
-                        tasks = [asyncio.wait_for(task, timeout), stop_event.wait()]
+                        tasks = [wait_for_task, stop_event_wait_task]
+
                         # Wait for any task to complete
                         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
                         # If the stop_event was set, cancel the other task and return
@@ -847,9 +858,6 @@ class GameServerManager:
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
 
-            if launch:
-                # sets up mandatory server game log submission.
-                filebeat()
         except Exception:
             print(traceback.format_exc())
 

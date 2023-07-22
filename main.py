@@ -63,6 +63,7 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
+from utilities.filebeat import main as filebeat
 
 LOGGER = get_logger()
 
@@ -130,8 +131,11 @@ async def main():
         auto_ping_listener_coro = game_server_manager.start_autoping_listener()
         auto_ping_listener_task = game_server_manager.schedule_task(auto_ping_listener_coro, 'autoping_listener')
 
+        filebeat_setup_coro = filebeat(global_config)
+        filebeat_setup_task = game_server_manager.schedule_task(filebeat_setup_coro, 'filebeat_setup')
+
         await asyncio.gather(
-            auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task
+            auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task, filebeat_setup_task
         )
     except asyncio.CancelledError:
         LOGGER.info("Tasks cancelled due to stop_event being set.")

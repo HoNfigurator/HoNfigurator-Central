@@ -11,12 +11,28 @@ class PromptToolkitLogHandler(logging.Handler):
         msg = self.format(record)
         print_formatted_text(msg)
 
+FILEBEAT_AUTH_TOKEN = None
+FILEBEAT_AUTH_URL = None
 
 # Get the path of the current script
 def get_script_dir(file):
     return os.path.dirname(os.path.abspath(file))
 
 logger = logging.getLogger('Server')
+
+def set_filebeat_auth_token(token):
+    global FILEBEAT_AUTH_TOKEN
+    FILEBEAT_AUTH_TOKEN = token
+
+def get_filebeat_auth_token():
+    return FILEBEAT_AUTH_TOKEN
+
+def set_filebeat_auth_url(url):
+    global FILEBEAT_AUTH_URL
+    FILEBEAT_AUTH_URL = url
+
+def get_filebeat_auth_url():
+    return FILEBEAT_AUTH_URL
 
 def set_logger():
     global HOME_PATH

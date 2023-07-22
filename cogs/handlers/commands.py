@@ -261,8 +261,8 @@ class Commands:
                 completer = self.command_completer
 
                 input_future = asyncio.ensure_future(read_user_input(prompt, completer))
-
-                done, pending = await asyncio.wait([input_future, self.subcommands_changed.wait()], return_when=asyncio.FIRST_COMPLETED)
+                subcommands_changed_future = asyncio.ensure_future(self.subcommands_changed.wait())
+                done, pending = await asyncio.wait([input_future, subcommands_changed_future], return_when=asyncio.FIRST_COMPLETED)
 
                 if input_future in done:
                     command = input_future.result()

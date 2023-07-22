@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse, PlainTextResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
-from cogs.misc.logger import get_logger, get_misc, get_home, get_setup
+from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url
 from cogs.handlers.events import stop_event
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.match_parser import MatchParser
@@ -26,7 +26,7 @@ import json
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import traceback
-from utilities.filebeat import check_filebeat_installed
+import utilities.filebeat as filebeat
 
 app = FastAPI()
 LOGGER = get_logger()
@@ -153,8 +153,8 @@ async def public_serverinfo():
     return JSONResponse(status_code = 200, content = response)
 
 @app.get("/api/check_filebeat_installed", summary="Check whether Filebeat is installed and configured to send server logs.")
-def filebeat_installed():
-    installed = check_filebeat_installed()
+async def filebeat_installed():
+    installed = filebeat.check_filebeat_installed()
     if installed:
         if MISC.get_os_platform() == "linux":
             if MISC.get_proc('filebeat'):
@@ -752,6 +752,27 @@ async def remove_servers(num: int, token_and_user_info: dict = Depends(check_per
 @app.post("/api/remove_all_servers", description="Remove all idle servers. Marks occupied servers as 'To be removed'.")
 async def remove_all_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     await manager_event_bus.emit('balance_game_server_count',to_remove="all")
+
+
+@app.get("/api/get_filebeat_oauth_url") # unsure if this endpoint will ever be used.
+async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permission_factory(required_permission="superadmin"))):
+    if 'filebeat_setup' in manager_tasks:
+        if not manager_tasks['filebeat_setup'] or manager_tasks['filebeat_setup'].done():
+            return JSONResponse(status_code=400,content={"status":"filebeat setup task not currently running."})
+        
+    url = get_filebeat_auth_url()
+    if url: return JSONResponse(status_code=200,content={"url":url})
+    else: return JSONResponse(status_code=404)
+
+# @app.post("/api/start_filebeat_setup_task")  # unsure if this endpoint will ever be used.
+# async def start_filebeat_setup_task(token_and_user_info: dict = Depends(check_permission_factory(required_permission="superadmin"))):
+#     if 'filebeat_setup' in manager_tasks:
+#         if manager_tasks['filebeat_setup'] and not manager_tasks['filebeat_setup'].done():
+#             return JSONResponse(status_code=400,content={"status":"filebeat setup already running."})
+    
+#     if not await filebeat.check_filebeat_installed():
+#         filebeat.install_filebeat()
+
 
 """ End API Calls """
 

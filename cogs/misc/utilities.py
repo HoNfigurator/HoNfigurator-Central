@@ -212,17 +212,27 @@ class Misc:
         return self.public_ip
     
     async def lookup_public_ip_async(self):
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get('https://4.ident.me') as response:
-                    self.public_ip = await response.text()
-            except Exception:
+        providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
+        timeout = aiohttp.ClientTimeout(total=5)  # Set the timeout for the request in seconds
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for provider in providers:
                 try:
-                    async with session.get('http://api.ipify.org') as response:
-                        self.public_ip = await response.text()
-                except Exception:
-                    self.public_ip = None
-        return self.public_ip
+                    async with session.get(provider) as response:
+                        if response.status == 200:
+                            ip_str = await response.text()
+                            try:
+                                # Try to construct an IP address object. If it fails, this is not a valid IP.
+                                ipaddress.ip_address(ip_str)
+                                return ip_str
+                            except ValueError:
+                                print(f"Invalid IP received from {provider}. Trying another provider...")
+                except asyncio.TimeoutError:
+                    print(f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
+                    continue
+                except Exception as e:
+                    print(f"Error occurred when trying to fetch IP from {provider}: {e}")
+                    continue
     
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"

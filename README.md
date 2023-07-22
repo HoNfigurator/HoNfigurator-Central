@@ -14,7 +14,7 @@ This guide provides steps for linking the configured HoNfigurator server to a mo
 [Shindara](https://discordapp.com/users/291595808858439680)
 
 ## Requirements
-1. You must have a registered [Project Kongor](https://kongor.online/) HoN account.
+1. You must have a registered [Project Kongor](https://kongor.online/) HoN account. **1 per server hosting**
 1. You must be a member of the Project Kongor [Discord channel](https://discord.gg/kongor).
 > **Note** This is how hosts are onboarded, and given the appropariate roles.
 3. You must accept the risks of hosting game servers.
@@ -75,7 +75,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
   - &cross; Debian 12
   - &#x2610; Ubuntu 22.04
   - &#x2610; Ubuntu 22.10
-  - &#x2610; Ubuntu 23.04
+  - &check; Ubuntu 23.04
 
 </details>
 
