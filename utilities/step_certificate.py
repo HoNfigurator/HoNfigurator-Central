@@ -31,13 +31,15 @@ async def async_get(url, headers=None, ssl=False):
     connector = TCPConnector(ssl=ssl)
     async with aiohttp.ClientSession(connector=connector) as session:
         async with session.get(url, headers=headers) as resp:
-            return await resp.status,resp.text()
+            resp_text = await resp.text()
+            return resp.status,resp_text
 
 async def async_post(url, data=None, headers=None, ssl=False):
     connector = TCPConnector(ssl=ssl)
     async with aiohttp.ClientSession(connector=connector) as session:
         async with session.post(url, data=data, headers=headers) as resp:
-            return await resp.status,resp.text()
+            resp_text = await resp.text()
+            return resp.status,resp_text
 
 async def download_file(url, destination, ssl=False):
     connector = TCPConnector(ssl=ssl)
