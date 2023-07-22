@@ -126,12 +126,13 @@ async def bootstrap_ca(ca_url):
         p = subprocess.Popen([step_location, "ca", "bootstrap", "--ca-url", ca_url, "--fingerprint", ca_fingerprint, '--force'], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
         p.communicate()
 
-async def register_client(server_url):
-    async with aiohttp.ClientSession() as session:
-        response = await session.post(f'{server_url}/register')
-        response.raise_for_status()  # Make sure the request was successful
-        token = (await response.json())['token']  # Extract the token from the response
-    return token
+async def register_client(server_url, ssl=False):
+    response_text = await async_post(f'{server_url}/register', ssl=ssl)
+    response = json.loads(response_text)  # Parse the JSON response
+    if 'token' in response:
+        return response['token']  # Extract the token from the response
+    else:
+        raise Exception("No token found in response")
 
 def navigate_to_url(oauth_url):
     print("You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
