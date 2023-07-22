@@ -261,7 +261,7 @@ def is_ca_bootstrapped(ca_url):
         return False
 
 
-def main(stop_event_from_honfig=None, set_auth_token=None, set_auth_url=None):
+async def main(stop_event_from_honfig=None, set_auth_token=None, set_auth_url=None):
     global set_auth_token_callback, set_auth_url_callback, stop_event
     if set_auth_token:
         set_auth_token_callback = set_auth_token
@@ -272,15 +272,15 @@ def main(stop_event_from_honfig=None, set_auth_token=None, set_auth_url=None):
     else: stop_event = asyncio.Event()
 
     if not is_step_installed():
-        install_step_cli()
+        await install_step_cli()
     else:
         print("Step CLI is already installed.")
 
     ca_url = "https://hon-elk.honfigurator.app"
     if not is_ca_bootstrapped(ca_url):
-        bootstrap_ca(ca_url)
+        await bootstrap_ca(ca_url)
     else:
         print("The CA is already bootstrapped.")
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())

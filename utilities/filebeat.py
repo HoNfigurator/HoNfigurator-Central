@@ -522,7 +522,7 @@ async def main(config=None):
     if not check_filebeat_installed():
         await install_filebeat()
         
-    step_certificate.main(stop_event, set_filebeat_auth_token, set_filebeat_auth_url)
+    await step_certificate.main(stop_event, set_filebeat_auth_token, set_filebeat_auth_url)
 
     filebeat_changed = False
     if await configure_filebeat(silent=args.silent, test=args.test):
