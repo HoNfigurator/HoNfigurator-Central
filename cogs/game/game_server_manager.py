@@ -71,7 +71,8 @@ class GameServerManager:
             'gameserver_listener':None,
             'authentication_handler':None,
             'gameserver_startup':None,
-            'task_cleanup': None
+            'task_cleanup': None,
+            'filebeat_setup': None
         }
         self.schedule_task(self.cleanup_tasks_every_30_minutes(), 'task_cleanup')
         # initialise the config validator in case we need it

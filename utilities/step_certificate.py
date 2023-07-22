@@ -5,16 +5,15 @@ import subprocess
 import sys
 from pathlib import Path
 import shutil
-import urllib.request
 import tarfile
 import zipfile
 import ssl
 import tempfile
-import requests
 import webbrowser
-import time
 import json
 from datetime import datetime
+import aiohttp
+import asyncio
 
 version = "0.24.3"
 system = platform.system()
@@ -24,6 +23,28 @@ if system == "Windows":
 elif system == "Linux": step_location = "step"
 
 ssl._create_default_https_context = ssl._create_unverified_context
+def set_ssl_context(path):
+    sslcontext = ssl.create_default_context(cafile=path)
+
+async def async_get(url, headers=None):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as resp:
+            return await resp.text()
+
+async def async_post(url, data=None, headers=None):
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, data=data, headers=headers) as resp:
+            return await resp.text()
+
+async def download_file(url, destination):
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url) as resp:
+            with open(destination, 'wb') as fd:
+                while not stop_event.is_set():
+                    chunk = await resp.content.read(1024)  # 1Kb
+                    if not chunk:
+                        break
+                    fd.write(chunk)
 
 def run_command(cmd, shell=False):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell, text=True)
@@ -32,8 +53,8 @@ def run_command(cmd, shell=False):
         sys.exit(1)
     return result.stdout.strip()
 
-def install_step_cli():
-    with tempfile.TemporaryDirectory() as tempdir:
+async def install_step_cli():
+    async with tempfile.TemporaryDirectory() as tempdir:
         tempdir_path = Path(tempdir)
         
         if system == "Windows":
@@ -43,7 +64,7 @@ def install_step_cli():
 
             print(f"Downloading and installing step CLI for Windows... {step_location}")
             url = f"https://github.com/smallstep/cli/releases/download/v{version}/step_windows_{version}_amd64.zip"
-            urllib.request.urlretrieve(url, download_location)
+            await download_file(url, download_location)
             with zipfile.ZipFile(download_location, 'r') as zip_ref:
                 zip_ref.extractall(tempdir_path)
             extracted_folder = tempdir_path / f"step_{version}"
@@ -54,7 +75,7 @@ def install_step_cli():
             print("Downloading and installing step CLI for Linux...")
             url = f"https://github.com/smallstep/cli/releases/download/v{version}/step_linux_{version}_amd64.tar.gz"
             download_location = tempdir_path / "step.tar.gz"
-            urllib.request.urlretrieve(url, download_location)
+            await download_file(url, download_location)
             with tarfile.open(download_location, 'r:gz') as tar_ref:
                 tar_ref.extractall(tempdir_path)
             extracted_folder = tempdir_path / f"step_{version}"
@@ -89,33 +110,26 @@ def uninstall_step_cli():
         print(f"Unsupported system: {system}")
         sys.exit(1)
 
-# Invoke-WebRequest "https://hon-elk.honfigurator.app/roots.pem" -outfile "$steppath\certs\root_ca.crt"
-# $fingerprint = & "$steppath\bin\step.exe" certificate fingerprint "$steppath\certs\root_ca.crt"
-def bootstrap_ca(ca_url):
+async def bootstrap_ca(ca_url):
     print("Bootstrapping the CA...")
     with tempfile.TemporaryDirectory() as tempdir:
         tempdir_path = Path(tempdir)
 
         root_ca_download_location = tempdir_path / "root_ca.crt"
 
-        urllib.request.urlretrieve(f"{ca_url}/roots.pem", root_ca_download_location)
+        await download_file(f"{ca_url}/roots.pem", root_ca_download_location)
         ca_fingerprint = run_command([step_location,"certificate","fingerprint",root_ca_download_location])
         p = subprocess.Popen([step_location, "ca", "bootstrap", "--ca-url", ca_url, "--fingerprint", ca_fingerprint, '--force'], stdin=sys.stdin, stdout=sys.stdout, stderr=sys.stderr)
         p.communicate()
 
+async def register_client(server_url):
+    async with aiohttp.ClientSession() as session:
+        response = await session.post(f'{server_url}/register')
+        response.raise_for_status()  # Make sure the request was successful
+        token = (await response.json())['token']  # Extract the token from the response
+    return token
 
-def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path):
-    # Config
-    discord_client_id = '1096750568388702228'
-    server_url = 'https://hon-elk.honfigurator.app:8443'
-
-    # Register the client and get a token
-    response = requests.post(f'{server_url}/register', verify=Path(cert_path).parent / "honfigurator-chain-bundle.pem")
-    response.raise_for_status()  # Make sure the request was successful
-    token = response.json()['token']  # Extract the token from the response
-
-    # Step 1: Redirect to Discord OAuth2 endpoint
-    oauth_url = f'https://discord.com/api/oauth2/authorize?client_id={discord_client_id}&redirect_uri={server_url}/callback&response_type=code&scope=identify&state={token}'
+def navigate_to_url(oauth_url):
     print("You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
     if system == "Windows":
         # Try to open the URL in a web browser
@@ -125,16 +139,40 @@ def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path):
         print("Please navigate to the following URL in a web browser to authenticate your request:")
         print(oauth_url)
 
+async def check_server_status(server_url, token):
+    async with aiohttp.ClientSession() as session:
+        response = await session.get(f'{server_url}/status', headers={'x-auth-token': token})
+    return response.status, await response.json()
+
+async def send_csr_to_server(server_url, csr, cert_name, token):
+    async with aiohttp.ClientSession() as session:
+        response = await session.post(f'{server_url}/csr', data={'csr': csr, 'name':cert_name}, headers={'x-auth-token': token})
+    return response.status, await response.text()
+
+async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, token=None):
+    # Config
+    discord_client_id = '1096750568388702228'
+    server_url = 'https://hon-elk.honfigurator.app:8443'
+
+    # set_ssl_context(Path(cert_path).parent / "honfigurator-chain-bundle.pem")
+
+    # Register the client and get a token
+    if not token:
+        token = await register_client(server_url)
+        if set_auth_token_callback: set_auth_token_callback(token)
+
+    # Step 1: Redirect to Discord OAuth2 endpoint
+    oauth_url = f'https://discord.com/api/oauth2/authorize?client_id={discord_client_id}&redirect_uri={server_url}/callback&response_type=code&scope=identify&state={token}'
+    if set_auth_url_callback: set_auth_url_callback(oauth_url)
+    navigate_to_url(oauth_url)
+
     # Step 2: Poll server for status update
-    while True:
-        response = requests.get(f'{server_url}/status', headers={'x-auth-token': token}, verify=Path(cert_path).parent / "honfigurator-chain-bundle.pem")
+    while not stop_event.is_set():
+        status_code, response_content = await check_server_status(server_url, token)
 
-        if response.status_code == 200:
-            response_content = response.json()
-
+        if status_code == 200:
             # Server has validated the user and instructed the client to generate a CSR
             if response_content['status'] == 200:
-
                 # Step 3: Generate CSR using Step CLI
                 csr_command = f'{step_location} certificate create --force --no-password --insecure --csr "{cert_name}" "{str(csr_path)}" "{str(key_path)}"'
                 subprocess.run(csr_command, shell=True)
@@ -142,12 +180,12 @@ def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path):
                 # Step 4: Send CSR to server
                 with open(str(csr_path), "r") as file:
                     csr = file.read()
-                response = requests.post(f'{server_url}/csr', data={'csr': csr, 'name':cert_name}, headers={'x-auth-token': token}, verify=Path(cert_path).parent / "honfigurator-chain-bundle.pem")
+                status_code, cert_text = await send_csr_to_server(server_url, csr, cert_name, token)
 
-                if response.status_code == 200:
+                if status_code == 200:
                     # Step 5: Receive and save certificate from server
                     with open(cert_path, 'w') as cert_file:
-                        cert_file.write(response.text)
+                        cert_file.write(cert_text)
 
                     print('Certificate received and saved.')
                     return response_content["username"]
@@ -155,7 +193,10 @@ def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path):
                     print('Failed to send CSR to server.')
             else:
                 print(f'Please follow the authentication steps at: {oauth_url}')
-                time.sleep(5)  # Wait for 5 seconds before checking again
+                for _ in range (1, 5): # Wait for 5 seconds before checking again
+                    if stop_event.is_set():
+                        break
+                    await asyncio.sleep(1)
         else:
             print('Error from server.')
             return False
@@ -220,7 +261,16 @@ def is_ca_bootstrapped(ca_url):
         return False
 
 
-def main():
+def main(stop_event_from_honfig=None, set_auth_token=None, set_auth_url=None):
+    global set_auth_token_callback, set_auth_url_callback, stop_event
+    if set_auth_token:
+        set_auth_token_callback = set_auth_token
+    if set_auth_url:
+        set_auth_url_callback = set_auth_url
+    if stop_event_from_honfig:
+        stop_event = stop_event_from_honfig
+    else: stop_event = asyncio.Event()
+
     if not is_step_installed():
         install_step_cli()
     else:
