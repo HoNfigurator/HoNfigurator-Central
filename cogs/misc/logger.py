@@ -29,11 +29,11 @@ def get_filebeat_auth_token():
 
 def set_filebeat_auth_url(url):
     global FILEBEAT_AUTH_URL
-    print("setting oauth url")
+    logger.info("Setting oauth url")
     FILEBEAT_AUTH_URL = url
 
 def get_filebeat_auth_url():
-    print("setting oauth url")
+    logger.info("Unsetting oauth url")
     return FILEBEAT_AUTH_URL
 
 def set_logger():

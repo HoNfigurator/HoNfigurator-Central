@@ -756,11 +756,11 @@ async def remove_all_servers(token_and_user_info: dict = Depends(check_permissio
 
 @app.get("/api/get_filebeat_oauth_url") # unsure if this endpoint will ever be used.
 async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    # if 'spawned_filebeat_setup' in health_check_tasks:
-    #     if not health_check_tasks['spawned_filebeat_setup'] or health_check_tasks['spawned_filebeat_setup'].done():
-    #         return JSONResponse(status_code=200,content={"status":"filebeat setup task not currently running."})
-    if not get_filebeat_auth_url():
-        return JSONResponse(status_code=404, content="No pending OAUTH url.")
+    if 'spawned_filebeat_setup' in health_check_tasks:
+        if not health_check_tasks['spawned_filebeat_setup'] or health_check_tasks['spawned_filebeat_setup'].done():
+            return JSONResponse(status_code=200,content={"status":"filebeat setup task not currently running."})
+    # if not get_filebeat_auth_url():
+    #     return JSONResponse(status_code=404, content="No pending OAUTH url.")
 
     user = roles_database.get_user_by_discord_id(str(token_and_user_info['user_info']['id']))
     if user['nickname'] != 'owner':
