@@ -258,7 +258,7 @@ async def get_public_ip():
                             ipaddress.ip_address(ip_str)
                             return ip_str
                         except ValueError:
-                            print(f"Invalid IP received from {provider}: {ip_str}. Trying another provider...")
+                            print(f"Invalid IP received from {provider}. Trying another provider...")
             except asyncio.TimeoutError:
                 print(f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
                 continue
