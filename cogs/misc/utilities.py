@@ -12,6 +12,7 @@ import requests
 import aiohttp
 from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
+import ipaddress
 
 LOGGER = get_logger()
 HOME_PATH = get_home()

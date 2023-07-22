@@ -34,6 +34,24 @@ def print_or_log(log_lvl='info', msg=''):
     else:
         print(msg)
 
+def get_filebeat_path():
+    operating_system = platform.system()
+    if operating_system == "Windows":
+        return os.path.join(os.environ["ProgramFiles"], "filebeat")
+    elif operating_system == "Linux":
+        return os.path.join("/", "usr", "share", "filebeat")
+    else:
+        return "Unsupported operating system"
+
+def get_filebeat_crt_path():
+    return os.path.join(get_filebeat_path(), "client.crt")
+
+def get_filebeat_key_path():
+    return os.path.join(get_filebeat_path(), "client.key")
+
+def get_filebeat_csr_path():
+    return os.path.join(get_filebeat_path(), "client.csr")
+
 def calculate_file_hash(file_path):
     with open(file_path, "rb") as file:
         hash_object = hashlib.sha256()
@@ -216,14 +234,18 @@ def extract_settings_from_commandline(commandline, setting):
 
     return result
 
+def check_certificate_exists(crt_path, key_path):
+    certificate_exists = Path(crt_path).is_file() and Path(key_path).is_file()
+    return certificate_exists
+
 async def request_client_certificate(svr_name, filebeat_path):
 
     try:
         # Check if the certificate files already exist
-        csr_file_path = filebeat_path / 'client.csr'
-        crt_file_path = filebeat_path / 'client.crt'
-        key_file_path = filebeat_path / 'client.key'
-        certificate_exists = crt_file_path.is_file() and key_file_path.is_file()
+        csr_file_path = get_filebeat_csr_path()
+        crt_file_path = get_filebeat_crt_path()
+        key_file_path = get_filebeat_key_path()
+        certificate_exists = check_certificate_exists(crt_file_path, key_file_path)
 
         if certificate_exists and not step_certificate.is_certificate_expiring(crt_file_path):
             print_or_log('info',"Renewing existing client certificate...")
@@ -325,7 +347,7 @@ async def configure_filebeat(silent=False,test=False):
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
     honfigurator_ca_chain_bundle_url = "https://honfigurator.app/honfigurator-chain-bundle.pem"
 
-    destination_folder = os.path.join(os.environ["ProgramFiles"], "filebeat") if operating_system == "Windows" else "/usr/share/filebeat"
+    destination_folder = get_filebeat_path()
     config_folder = destination_folder if operating_system == "Windows" else "/etc/filebeat"
 
     os.makedirs(destination_folder, exist_ok=True)

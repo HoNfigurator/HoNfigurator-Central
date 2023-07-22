@@ -27,6 +27,7 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 import traceback
 import utilities.filebeat as filebeat
+from utilities.step_certificate import is_certificate_expiring
 
 app = FastAPI()
 LOGGER = get_logger()
@@ -156,19 +157,23 @@ async def public_serverinfo():
 @app.get("/api/public/check_filebeat_status", summary="Check whether Filebeat is installed and configured to send server logs.")
 async def filebeat_installed():
     installed = filebeat.check_filebeat_installed()
+    certificate_exists = filebeat.check_certificate_exists(filebeat.get_filebeat_crt_path(), filebeat.get_filebeat_key_path())
+    certificate_expiring = False
+    if certificate_exists:
+        certificate_expiring = is_certificate_expiring(filebeat.get_filebeat_crt_path())
     if installed:
         if MISC.get_os_platform() == "linux":
             if MISC.get_proc('filebeat'):
-                return JSONResponse(status_code=200, content={"installed": "OK", "running": "OK"})
+                return JSONResponse(status_code=200, content={"installed": True, "running": False, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
             else:
-                return JSONResponse(status_code=400, content={"installed": "OK", "running": "NO"})
+                return JSONResponse(status_code=400, content={"installed": True, "running": False, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
         else:
             if MISC.get_proc('filebeat.exe'):
-                return JSONResponse(status_code=200, content={"installed": "OK", "running": "OK"})
+                return JSONResponse(status_code=200, content={"installed": True, "running": True, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
             else:
-                return JSONResponse(status_code=400, content={"installed": "OK", "running": "NO"})
+                return JSONResponse(status_code=400, content={"installed": True, "running": False, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
     else:
-        return JSONResponse(status_code=404, content={"installed": "NO", "running": "NO"})
+        return JSONResponse(status_code=404, content={"installed": False, "running": False, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
 
 
 """Protected Endpoints"""
