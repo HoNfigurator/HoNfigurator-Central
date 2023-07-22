@@ -1,4 +1,5 @@
 import argparse
+import traceback
 import platform
 import subprocess
 import aiohttp
@@ -241,7 +242,7 @@ async def request_client_certificate(svr_name, filebeat_path):
             return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path, token=get_filebeat_auth_token())
 
     except Exception as e:
-        print_or_log('error',f"Encountered an error while requesting a client certificate. {e}")
+        print_or_log('error',f"Encountered an error while requesting a client certificate. {traceback.format_exc()}")
 
 async def get_public_ip():
     providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
