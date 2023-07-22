@@ -170,6 +170,7 @@ async def filebeat_installed():
     else:
         return JSONResponse(status_code=404, content={"installed": "NO", "running": "NO"})
 
+
 """Protected Endpoints"""
 
 """Config Types"""

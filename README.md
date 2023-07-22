@@ -57,6 +57,8 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 	- ``cd /opt/hon/honfigurator``
 	- ``python3 main.py``
 
+> **Note** Your game-/config-/manager files can be found at /opt/hon/
+
 - Building Pipeline (Installation):
   - &cross; CentOS 7 
   - &cross; Debian 10
@@ -70,7 +72,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
   - &cross; CentOS 7
   - &cross; Debian 10
   - &check; Debian 11
-  - &#x2610; Debian 12
+  - &cross; Debian 12
   - &#x2610; Ubuntu 22.04
   - &#x2610; Ubuntu 22.10
   - &check; Ubuntu 23.04
