@@ -31,13 +31,13 @@ async def async_get(url, headers=None, ssl=False):
     connector = TCPConnector(ssl=ssl)
     async with aiohttp.ClientSession(connector=connector) as session:
         async with session.get(url, headers=headers) as resp:
-            return await resp.text()
+            return await resp.status,resp.text()
 
 async def async_post(url, data=None, headers=None, ssl=False):
     connector = TCPConnector(ssl=ssl)
     async with aiohttp.ClientSession(connector=connector) as session:
         async with session.post(url, data=data, headers=headers) as resp:
-            return await resp.text()
+            return await resp.status,resp.text()
 
 async def download_file(url, destination, ssl=False):
     connector = TCPConnector(ssl=ssl)
@@ -127,7 +127,7 @@ async def bootstrap_ca(ca_url):
         p.communicate()
 
 async def register_client(server_url, ssl=False):
-    response_text = await async_post(f'{server_url}/register', ssl=ssl)
+    response_status, response_text = await async_post(f'{server_url}/register', ssl=ssl)
     response = json.loads(response_text)  # Parse the JSON response
     if 'token' in response:
         return response['token']  # Extract the token from the response
@@ -146,15 +146,15 @@ def navigate_to_url(oauth_url):
 
 async def check_server_status(server_url, token, ssl=False):
     headers = {'x-auth-token': token}
-    response_text = await async_get(f'{server_url}/status', headers=headers, ssl=ssl)
+    response_status, response_text = await async_get(f'{server_url}/status', headers=headers, ssl=ssl)
     response = json.loads(response_text)  # Parse the JSON response
-    return response  # Return the parsed response
+    return response_status, response  # Return the parsed response
 
 async def send_csr_to_server(server_url, csr, cert_name, token, ssl=False):
     headers = {'x-auth-token': token}
     data = {'csr': csr, 'name':cert_name}
-    response_text = await async_post(f'{server_url}/csr', data=data, headers=headers, ssl=ssl)
-    return response_text  # Return the response text
+    response_status, response_text = await async_post(f'{server_url}/csr', data=data, headers=headers, ssl=ssl)
+    return response_status, response_text  # Return the response text
 
 async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, token=None):
     # Config
