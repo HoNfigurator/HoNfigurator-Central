@@ -110,8 +110,9 @@ class HealthCheckManager:
     async def filebeat_verification(self):
         while not stop_event.is_set():
             try:
-                task = self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')
-                await task  # This line is needed to wait for the task to complete
+                # self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')
+                coro = filebeat_setup(self.global_config)
+                self.tasks['spawned_filebeat_setup'] = asyncio.create_task(coro)
             except Exception:
                 LOGGER.error(traceback.format_exc())
             for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
@@ -187,6 +188,8 @@ class HealthCheckManager:
                         self.tasks[task_name] = self.schedule_task(self.poll_for_game_stats(), task_name)
                     elif task_name == 'public_ip_changed_check':
                         self.tasks[task_name] = self.schedule_task(self.public_ip_healthcheck(), task_name)
+                    elif task_name == 'filebeat_verification':
+                        self.tasks[task_name] = self.schedule_task(self.filebeat_verification(), task_name)
 
             # Sleep for a bit before checking tasks again
             for _ in range(10):
