@@ -30,6 +30,7 @@ import utilities.filebeat as filebeat
 from utilities.step_certificate import is_certificate_expiring
 import aiofiles
 import aiohttp
+import ssl
 
 app = FastAPI()
 LOGGER = get_logger()
@@ -916,10 +917,9 @@ async def fetch_server_ping_response():
     }
     
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
+        async with session.get(url, headers=headers, ssl=False) as response:
             response_text = await response.text()
             return response.status, response_text
-
 
 async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, host="0.0.0.0", port=5000):
     global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback, manager_check_game_stats_callback
