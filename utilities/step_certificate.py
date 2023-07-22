@@ -144,15 +144,17 @@ def navigate_to_url(oauth_url):
         print("Please navigate to the following URL in a web browser to authenticate your request:")
         print(oauth_url)
 
-async def check_server_status(server_url, token):
-    async with aiohttp.ClientSession() as session:
-        response = await session.get(f'{server_url}/status', headers={'x-auth-token': token})
-    return response.status, await response.json()
+async def check_server_status(server_url, token, ssl=False):
+    headers = {'x-auth-token': token}
+    response_text = await async_get(f'{server_url}/status', headers=headers, ssl=ssl)
+    response = json.loads(response_text)  # Parse the JSON response
+    return response  # Return the parsed response
 
-async def send_csr_to_server(server_url, csr, cert_name, token):
-    async with aiohttp.ClientSession() as session:
-        response = await session.post(f'{server_url}/csr', data={'csr': csr, 'name':cert_name}, headers={'x-auth-token': token})
-    return response.status, await response.text()
+async def send_csr_to_server(server_url, csr, cert_name, token, ssl=False):
+    headers = {'x-auth-token': token}
+    data = {'csr': csr, 'name':cert_name}
+    response_text = await async_post(f'{server_url}/csr', data=data, headers=headers, ssl=ssl)
+    return response_text  # Return the response text
 
 async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, token=None):
     # Config
