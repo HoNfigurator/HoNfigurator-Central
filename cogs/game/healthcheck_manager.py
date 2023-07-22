@@ -110,7 +110,8 @@ class HealthCheckManager:
     async def filebeat_verification(self):
         while not stop_event.is_set():
             try:
-                self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')
+                task = self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')
+                await task  # This line is needed to wait for the task to complete
             except Exception:
                 LOGGER.error(traceback.format_exc())
             for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
