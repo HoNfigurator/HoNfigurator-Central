@@ -3,17 +3,15 @@ import traceback
 import functools
 import schedule
 from datetime import datetime, timedelta
-from os.path import exists
 import tzlocal
 import shutil
 import time
 import pytz
 from json import JSONDecodeError
-import sys
 import os
 from pathlib import Path
-from tinydb import TinyDB, Query
-from cogs.misc.logger import get_logger, get_misc, get_home
+from tinydb import TinyDB
+from cogs.misc.logger import get_logger, get_home
 from cogs.handlers.events import stop_event
 
 LOGGER = get_logger()
