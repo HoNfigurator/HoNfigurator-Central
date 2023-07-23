@@ -95,8 +95,8 @@ class HealthCheckManager:
                     # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
                     pass
             for proc in proxy_procs:
-                LOGGER.info("Removed orphan proxy.exe process. It is not associated with any currently connected game server instances.")
-                proc.terminate()
+                LOGGER.info(f"WHAT-IF: Removed orphan proxy.exe ({proc.pid}) process. It is not associated with any currently connected game server instances.")
+                # proc.terminate()
 
     async def lag_healthcheck(self):
         while not stop_event.is_set():
