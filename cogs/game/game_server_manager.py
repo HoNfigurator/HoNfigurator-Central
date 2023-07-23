@@ -344,7 +344,7 @@ class GameServerManager:
             if mserver_auth_response[1] in [401, 403]:
                 LOGGER.error(f"Please ensure your username and password are correct in {HOME_PATH / 'config' / 'config.json'}")
             elif mserver_auth_response[1] > 500 and mserver_auth_response[1] < 600:
-                LOGGER.error(f"The issue is most likely server side, and nothing wrong with your configuration.")
+                LOGGER.error(f"The issue is most likely server side.")
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
         LOGGER.interest("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
