@@ -80,11 +80,11 @@ def check_filebeat_installed():
         # Check if filebeat is already installed
         result = subprocess.run(["dpkg-query", "-W", "-f='${Status}'", "filebeat"], stdout=subprocess.PIPE, text=True)
         if "install ok installed" in result.stdout:
-            print_or_log('info',"Filebeat is already installed. Skipping installation.")
+            print_or_log('debug',"Filebeat is already installed. Skipping installation.")
             return True
     else:
         if os.path.exists(Path(windows_filebeat_install_dir) / "filebeat.exe"):
-            print_or_log('info',"Filebeat is already installed. Skipping installation.")
+            print_or_log('debug',"Filebeat is already installed. Skipping installation.")
             return True
 
 
@@ -332,7 +332,8 @@ async def configure_filebeat(silent=False,test=False):
         elif existing_discord_id:
             discord_id = existing_discord_id
 
-        print_or_log('info',f"Discord Name: {discord_id}")
+        
+        print_or_log('info',f"Server details for log submission\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}\n\tdiscord username: {discord_id}")
         replacements[b"$discord_id"] = str.encode(discord_id)
 
         for old, new in replacements.items():
@@ -418,7 +419,6 @@ async def configure_filebeat(silent=False,test=False):
     if not slave_log: slave_log, match_log = get_log_paths(process)
     if not svr_desc: svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
-    print_or_log('info',f"Details\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}")
 
     looked_up_discord_username = await request_client_certificate(svr_name, Path(destination_folder))
     if not looked_up_discord_username:
@@ -444,7 +444,7 @@ async def configure_filebeat(silent=False,test=False):
         print_or_log('info',f"Filebeat configuration file downloaded and placed at: {config_file_path}")
         return True
     else:
-        print_or_log('info',"No configuration changes required")
+        print_or_log('debug',"No configuration changes required")
         return False
     
 
@@ -574,7 +574,7 @@ async def main(config=None):
     
     if __name__ == "__main__":
         await step_certificate.main(stop_event)
-    else: await step_certificate.main(stop_event, set_filebeat_auth_token, set_filebeat_auth_url)
+    else: await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
 
     filebeat_changed = False
     if await configure_filebeat(silent=args.silent, test=args.test):

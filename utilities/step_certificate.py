@@ -24,8 +24,13 @@ if system == "Windows":
 elif system == "Linux": step_location = "step"
 
 ssl._create_default_https_context = ssl._create_unverified_context
-def set_ssl_context(path):
-    sslcontext = ssl.create_default_context(cafile=path)
+
+def print_or_log(log_lvl='info', msg=''):
+    log_lvl = log_lvl.lower()
+    if LOGGER:
+        getattr(LOGGER, log_lvl)(msg)
+    else:
+        print(msg)
 
 async def async_get(url, headers=None, ssl=False):
     connector = TCPConnector(ssl=ssl)
@@ -55,7 +60,7 @@ async def download_file(url, destination, ssl=False):
 def run_command(cmd, shell=False):
     result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=shell, text=True)
     if result.returncode != 0:
-        print(f"Error: {result.stderr}")
+        print_or_log('error',f"Error: {result.stderr}")
         sys.exit(1)
     return result.stdout.strip()
 
@@ -68,7 +73,7 @@ async def install_step_cli():
             install_location = Path(os.environ['PROGRAMDATA'])
             step_location = install_location / "step"
 
-            print(f"Downloading and installing step CLI for Windows... {step_location}")
+            print_or_log('info',f"Downloading and installing step CLI for Windows... {step_location}")
             url = f"https://github.com/smallstep/cli/releases/download/v{version}/step_windows_{version}_amd64.zip"
             await download_file(url, download_location)
             with zipfile.ZipFile(download_location, 'r') as zip_ref:
@@ -78,7 +83,7 @@ async def install_step_cli():
             shutil.move(extracted_folder, step_location)
             os.environ["PATH"] = os.path.abspath(step_location / "bin") + os.pathsep + os.environ["PATH"]
         elif system == "Linux":
-            print("Downloading and installing step CLI for Linux...")
+            print_or_log('info',"Downloading and installing step CLI for Linux...")
             url = f"https://github.com/smallstep/cli/releases/download/v{version}/step_linux_{version}_amd64.tar.gz"
             download_location = tempdir_path / "step.tar.gz"
             await download_file(url, download_location)
@@ -95,7 +100,7 @@ async def install_step_cli():
             os.symlink(os.path.join(step_install_location, "bin", "step"), step_bin_location)
             os.environ["PATH"] = os.path.abspath(f"{step_install_location}/bin") + os.pathsep + os.environ["PATH"]
         else:
-            print(f"Unsupported system: {system}")
+            print_or_log('error',f"Unsupported system: {system}")
             sys.exit(1)
 
 def uninstall_step_cli():
@@ -103,7 +108,7 @@ def uninstall_step_cli():
         install_location = Path(os.environ['PROGRAMDATA']) / "step"
         if exists(install_location):
             shutil.rmtree(install_location)
-        print("Step CLI for Windows has been uninstalled.")
+        print_or_log('info',"Step CLI for Windows has been uninstalled.")
     elif system == "Linux":
         step_install_location = "/usr/share/step"
         step_bin_location = "/usr/local/bin/step"
@@ -111,13 +116,13 @@ def uninstall_step_cli():
             shutil.rmtree(step_install_location)
         if exists(step_bin_location):
             os.remove(step_bin_location)
-        print("Step CLI for Linux has been uninstalled.")
+        print_or_log('info',"Step CLI for Linux has been uninstalled.")
     else:
-        print(f"Unsupported system: {system}")
+        print_or_log('error',f"Unsupported system: {system}")
         sys.exit(1)
 
 async def bootstrap_ca(ca_url):
-    print("Bootstrapping the CA...")
+    print_or_log('info',"Bootstrapping the CA...")
     with tempfile.TemporaryDirectory() as tempdir:
         tempdir_path = Path(tempdir)
 
@@ -137,14 +142,13 @@ async def register_client(server_url, ssl=False):
         raise Exception("No token found in response")
 
 def navigate_to_url(oauth_url):
-    print("You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
+    print_or_log('info',"You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
     if system == "Windows":
         # Try to open the URL in a web browser
         webbrowser.open_new(oauth_url)
     else:
         # If it fails (because there's no web browser), print the URL instead
-        print("Please navigate to the following URL in a web browser to authenticate your request:")
-        print(oauth_url)
+        print_or_log('interest',f"Please navigate to the following URL in a web browser to authenticate your request:\n\t{oauth_url}")
 
 async def check_server_status(server_url, token, ssl=False):
     headers = {'x-auth-token': token}
@@ -162,8 +166,6 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
     # Config
     discord_client_id = '1096750568388702228'
     server_url = 'https://hon-elk.honfigurator.app:8443'
-
-    # set_ssl_context(Path(cert_path).parent / "honfigurator-chain-bundle.pem")
 
     # Register the client and get a token
     if not token:
@@ -199,22 +201,22 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
                     with open(cert_path, 'w') as cert_file:
                         cert_file.write(cert_text)
 
-                    print('Certificate received and saved.')
+                    print_or_log('info','Certificate received and saved.')
                     return response_content["username"]
                 else:
-                    print('Failed to send CSR to server.')
+                    print_or_log('error','Failed to send CSR to server.')
             else:
-                # print(f'Please follow the authentication steps at: {oauth_url}')
+                # print_or_log('info',f'Please follow the authentication steps at: {oauth_url}')
                 for _ in range (1, 5): # Wait for 5 seconds before checking again
                     if stop_event.is_set():
                         break
                     await asyncio.sleep(1)
         else:
-            print('Error from server.')
+            print_or_log('error','Error from server.')
             return False
 
 def is_certificate_expiring(cert_path):
-    print("Checking if certificate is expired...")
+    print_or_log('debug',"Checking if certificate is expired...")
     # Fetch certificate information
     cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
     # Convert cert_info string into a dictionary
@@ -238,9 +240,9 @@ def renew_certificate(crt_file_path, key_file_path):
     return result
 
 def request_certificate(provisioner_name, provisioner_password_file, cert_path):
-    print("Requesting a certificate...")
+    print_or_log('info',"Requesting a certificate...")
     if os.path.isfile(cert_path) and not is_certificate_expiring(cert_path):
-        print("Certificate already exists and it's valid.")
+        print_or_log('info',"Certificate already exists and it's valid.")
         return True
     else:
         run_command([
@@ -249,7 +251,7 @@ def request_certificate(provisioner_name, provisioner_password_file, cert_path):
             "--provisioner-password-file", provisioner_password_file,
             "example.com", cert_path, "example.com.key"
         ])
-        print("New certificate has been requested.")
+        print_or_log('info',"New certificate has been requested.")
 
 def is_step_installed():
     try:
@@ -273,8 +275,10 @@ def is_ca_bootstrapped(ca_url):
         return False
 
 
-async def main(stop_event_from_honfig=None, set_auth_token=None, set_auth_url=None):
-    global set_auth_token_callback, set_auth_url_callback, stop_event
+async def main(stop_event_from_honfig=None,logger=None, set_auth_token=None, set_auth_url=None):
+    global set_auth_token_callback, set_auth_url_callback, stop_event, LOGGER
+    if logger:
+        LOGGER = logger
     if set_auth_token:
         set_auth_token_callback = set_auth_token
     if set_auth_url:
@@ -286,13 +290,13 @@ async def main(stop_event_from_honfig=None, set_auth_token=None, set_auth_url=No
     if not is_step_installed():
         await install_step_cli()
     else:
-        print("Step CLI is already installed.")
+        print_or_log('debug',"Step CLI is already installed.")
 
     ca_url = "https://hon-elk.honfigurator.app"
     if not is_ca_bootstrapped(ca_url):
         await bootstrap_ca(ca_url)
     else:
-        print("The CA is already bootstrapped.")
+        print_or_log('debug',"The CA is already bootstrapped.")
 
 if __name__ == "__main__":
     asyncio.run(main())

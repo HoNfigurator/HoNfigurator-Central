@@ -15,7 +15,7 @@ class CustomLogger(logging.Logger):
 logging.setLoggerClass(CustomLogger)
 
 # Add the 'INTEREST' level name (with a level of 25)
-logging.addLevelName(25, "INFO")
+logging.addLevelName(25, "INTEREST")
 
 class CustomFormatter(logging.Formatter):
     grey = "\x1b[38;20m"
@@ -37,9 +37,12 @@ class CustomFormatter(logging.Formatter):
     }
 
     def format(self, record):
+        if record.levelno == 25:
+            record.levelname = "INFO"
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
         return formatter.format(record)
+
     
 class PromptToolkitLogHandler(logging.Handler):
     def emit(self, record):
