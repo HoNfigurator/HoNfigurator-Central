@@ -229,13 +229,14 @@ class Misc:
                                 ipaddress.ip_address(ip_str)
                                 return ip_str
                             except ValueError:
-                                print(f"Invalid IP received from {provider}. Trying another provider...")
+                                LOGGER.warn(f"Invalid IP received from {provider}. Trying another provider...")
                 except asyncio.TimeoutError:
-                    print(f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
+                    LOGGER.warn(f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
                     continue
                 except Exception as e:
-                    print(f"Error occurred when trying to fetch IP from {provider}: {e}")
+                    LOGGER.warn(f"Error occurred when trying to fetch IP from {provider}: {e}")
                     continue
+            LOGGER.critical("Tried all public IP providers and could not determine public IP address. This will most likely cause issues.")
     
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"

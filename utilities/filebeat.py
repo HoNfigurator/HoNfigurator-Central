@@ -285,15 +285,15 @@ async def get_public_ip():
                             ipaddress.ip_address(ip_str)
                             return ip_str
                         except ValueError:
-                            print(f"Invalid IP received from {provider}. Trying another provider...")
+                            print_or_log('warn',f"Invalid IP received from {provider}. Trying another provider...")
             except asyncio.TimeoutError:
-                print(f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
+                print_or_log('warn',f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
                 continue
             except Exception as e:
-                print(f"Error occurred when trying to fetch IP from {provider}: {e}")
+                print_or_log('warn',f"Error occurred when trying to fetch IP from {provider}: {e}")
                 continue
 
-    print("All providers failed to fetch the public IP.")
+    LOGGER.critical("Tried all public IP providers and could not determine public IP address. This will most likely cause issues.")
     return None
 
 
