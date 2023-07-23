@@ -29,6 +29,7 @@ import traceback
 import utilities.filebeat as filebeat
 from utilities.step_certificate import is_certificate_expiring
 import aiofiles
+import aiohttp
 
 app = FastAPI()
 LOGGER = get_logger()
@@ -896,11 +897,29 @@ async def asgi_server(app, host, port):
     server_task = asyncio.create_task(server.serve())
 
     try:
+        server_pingable_resp_status, server_pingable_resp_text = await fetch_server_ping_response()
+        if server_pingable_resp_status == 200:
+            LOGGER.interest(f"\nRemote Management: https://management.honfigurator.app\nUse the following information to connect to your server.\n\tServer Name: {global_config['hon_data']['svr_name']}\n\tServer Address: {global_config['hon_data']['svr_ip']}")
+        else:
+            LOGGER.error(f"Server is not pingable over port {global_config['hon_data']['svr_api_port']}/tcp. Ensure that your firewall / router is configured to accept this traffic.")
         await stop_event.wait()
     finally:
         server.should_exit = True  # this flag tells Uvicorn to wrap up and exit
         LOGGER.info("Shutting down API Server")
         await server_task
+
+async def fetch_server_ping_response():
+    url = 'https://management.honfigurator.app:3001/api/ping'
+    headers = {
+        'Selected-Server': global_config['hon_data']['svr_ip'],
+        'Selected-Port': str(global_config['hon_data']['svr_api_port'])
+    }
+    
+    async with aiohttp.ClientSession() as session:
+        async with session.get(url, headers=headers) as response:
+            response_text = await response.text()
+            return response.status, response_text
+
 
 async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, host="0.0.0.0", port=5000):
     global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback, manager_check_game_stats_callback
@@ -919,7 +938,7 @@ async def start_api_server(config, game_servers_dict, game_manager_tasks, health
     uvicorn_logger.setLevel(logging.WARNING)
     uvicorn_logger.propagate = LOGGER.propagate
 
-    LOGGER.info(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
-    
+    LOGGER.interest(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
+
     # loop = asyncio.get_running_loop()
     await asgi_server(app, host, port)

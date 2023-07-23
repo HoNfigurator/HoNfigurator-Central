@@ -534,7 +534,7 @@ class GameServer:
 
             if self.status_received.is_set():
                 elapsed_time = time.perf_counter() - start_time
-                LOGGER.info(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
+                LOGGER.interest(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
                 return True
             elif self.server_closed.is_set():
                 LOGGER.warning(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")

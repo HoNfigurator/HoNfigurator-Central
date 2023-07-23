@@ -29,6 +29,7 @@ else:
     LOGGER = get_logger()
 
 def print_or_log(log_lvl='info', msg=''):
+    log_lvl = log_lvl.lower()
     if LOGGER:
         getattr(LOGGER, log_lvl)(msg)
     else:

@@ -5,6 +5,8 @@ from os.path import isfile
 from pathlib import Path
 import subprocess
 
+os.system('')
+
 MISC = None
 HOME_PATH = None
 
@@ -43,7 +45,7 @@ import asyncio
 import argparse
 
 #   This must be first, to initialise logging which all other classes rely on.
-from cogs.misc.logger import get_script_dir,get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
+from cogs.misc.logger import get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
 set_home(HOME_PATH)
 set_logger()
 
@@ -60,10 +62,9 @@ setup = SetupEnvironment(CONFIG_FILE)
 set_setup(setup)
 
 from cogs.handlers.events import stop_event
-from cogs.misc.exceptions import HoNServerConnectionError, HoNAuthenticationError, HoNConfigError
+from cogs.misc.exceptions import HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
-from cogs.misc.scheduled_tasks import HonfiguratorSchedule, run_continuously
-from utilities.filebeat import main as filebeat
+from cogs.misc.scheduled_tasks import HonfiguratorSchedule
 
 LOGGER = get_logger()
 
@@ -113,7 +114,6 @@ async def main():
     for key,value in global_config['hon_data'].items():
         if key == "svr_password": print_formatted_text(f"\t{key}: ***********")
         else: print_formatted_text(f"\t{key}: {value}")
-    print(f"To add this server to the remote control panel (https://management.honfigurator.app), use the following information to connect to your server.\n\tName: {global_config['hon_data']['svr_name']}\n\tAddress: {global_config['hon_data']['svr_ip']}\n\tYou must also ensure that port {global_config['hon_data']['svr_api_port']}/TCP is reachable by port forwarding if this is a home network.")
     # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
     try:
         auth_coro = game_server_manager.manage_upstream_connections(udp_ping_responder_port)
@@ -130,9 +130,6 @@ async def main():
 
         auto_ping_listener_coro = game_server_manager.start_autoping_listener()
         auto_ping_listener_task = game_server_manager.schedule_task(auto_ping_listener_coro, 'autoping_listener')
-
-        # filebeat_setup_coro = filebeat(global_config)
-        # filebeat_setup_task = game_server_manager.schedule_task(filebeat_setup_coro, 'filebeat_setup')
 
         await asyncio.gather(
             auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task

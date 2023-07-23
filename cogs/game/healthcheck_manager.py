@@ -126,6 +126,10 @@ class HealthCheckManager:
                 
     async def filebeat_verification(self):
         while not stop_event.is_set():
+            for _ in range(5):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
             try:
                 # await filebeat_setup(self.global_config)
                 self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')

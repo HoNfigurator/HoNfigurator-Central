@@ -204,7 +204,7 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
                 else:
                     print('Failed to send CSR to server.')
             else:
-                print(f'Please follow the authentication steps at: {oauth_url}')
+                # print(f'Please follow the authentication steps at: {oauth_url}')
                 for _ in range (1, 5): # Wait for 5 seconds before checking again
                     if stop_event.is_set():
                         break

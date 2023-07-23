@@ -24,7 +24,6 @@ from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
-from utilities.filebeat import main as filebeat
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -306,7 +305,7 @@ class GameServerManager:
             lambda *args, **kwargs: handle_clients(*args, **kwargs, game_server_manager=self),
             host, game_server_to_mgr_port
         )
-        LOGGER.info(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
+        LOGGER.interest(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
 
         await stop_event.wait()
 
@@ -347,7 +346,7 @@ class GameServerManager:
             elif mserver_auth_response[1] > 500 and mserver_auth_response[1] < 600:
                 LOGGER.error(f"The issue is most likely server side, and nothing wrong with your configuration.")
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
-        LOGGER.info("Authenticated to MasterServer.")
+        LOGGER.interest("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
         self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
@@ -408,7 +407,7 @@ class GameServerManager:
         if not chat_auth_response:
             raise HoNAuthenticationError(f"Chatserver authentication failure")
 
-        LOGGER.info("Authenticated to ChatServer.")
+        LOGGER.interest("Authenticated to ChatServer.")
 
         # Start handling packets from the chat server
         await self.chat_server_handler.handle_packets()
@@ -835,7 +834,8 @@ class GameServerManager:
                             await self.cmd_shutdown_server(game_server)
                         else:
                             # The game server start task completed successfully
-                            LOGGER.info(f"GameServer #{game_server.id} started successfully.")
+                            # LOGGER.info(f"GameServer #{game_server.id} started successfully.")
+                            pass
                     except asyncio.TimeoutError:
                         LOGGER.error(f"GameServer #{game_server.id} failed to start within the timeout period.")
                         await self.cmd_shutdown_server(game_server)
