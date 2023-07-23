@@ -673,7 +673,7 @@ class GameServerManager:
             # since the game server isn't actually off yet, it will keep creating a connection.
 
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-            await self.commands.initialise_commands()
+            asyncio.create_task(self.commands.initialise_commands())
             self.commands.subcommands_changed.set()
             return True
         else:
