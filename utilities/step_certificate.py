@@ -148,7 +148,7 @@ def navigate_to_url(oauth_url):
         webbrowser.open_new(oauth_url)
     else:
         # If it fails (because there's no web browser), print the URL instead
-        print_or_log('interest',f"Please navigate to the following URL in a web browser to authenticate your request:\n\t{oauth_url}")
+        print_or_log('interest',f"Please navigate to the following URL in a web browser to authorize match log submissionsss:\n\t{oauth_url}")
 
 async def check_server_status(server_url, token, ssl=False):
     headers = {'x-auth-token': token}
