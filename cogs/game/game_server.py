@@ -164,7 +164,7 @@ class GameServer:
             self.idle_disconnect_timer += 1
             if self.idle_disconnect_timer >= 60:
                 await self.manager_event_bus.emit('cmd_message_server', self, "Removing idle players. Players have remained connected when game is over for 60+ seconds.")
-                LOGGER.info(f"GameServer #{self.id} - Removing idle players. Players have remained connected when game is over for 60+ seconds.\n\tGame Phase: {GamePhase(self.game_state['game_phase']).name}")
+                LOGGER.info(f"GameServer #{self.id} - Removing idle players. Players have remained connected when game is over for 60+ seconds.\n\tGame Phase: {GamePhase(self.game_state['game_phase']).name if self.game_state['game_phase'] else 'unknown'}")
 
                 i = 0
                 while len(self.game_state['players']) > 0 and i < 12:
