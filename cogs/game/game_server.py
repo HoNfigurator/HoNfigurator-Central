@@ -15,6 +15,7 @@ from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, Gam
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
+import aiofiles
 
 
 import re
@@ -59,7 +60,7 @@ class GameServer:
         self.reset_game_state()
         self.game_state.add_listener(self.on_game_state_change)
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
-        self.load_gamestate_from_file(match_only=False)
+        asyncio.create_task(self.load_gamestate_from_file(match_only=False))
         # Start the monitor_process method as a background task
         coro = self.monitor_process
         self.schedule_task(coro,'process_monitor', coro_bracket=True)
@@ -249,20 +250,22 @@ class GameServer:
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
-    def load_gamestate_from_file(self,match_only):
+    async def load_gamestate_from_file(self,match_only):
         if exists(self.data_file):
-            with open(self.data_file, "r") as f:
-                performance_data = json.load(f)
+            # Reading JSON
+            async with aiofiles.open(self.data_file, "r") as f:
+                performance_data = json.loads(await f.read())
             if not match_only:
                 self.game_state._state['performance']['total_ingame_skipped_frames'] = performance_data['total_ingame_skipped_frames']
             if self.game_state._state['current_match_id'] in performance_data:
                 self.game_state._state.update({'now_ingame_skipped_frames':self.game_state._state['now_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
-    def save_gamestate_to_file(self):
+    async def save_gamestate_to_file(self):
         current_match_id = str(self.game_state._state['current_match_id'])
 
         if exists(self.data_file):
-            with open(self.data_file, "r") as f:
-                performance_data = json.load(f)
+            # Reading JSON
+            async with aiofiles.open(self.data_file, "r") as f:
+                performance_data = json.loads(await f.read())
 
             performance_data = {
                 'total_ingame_skipped_frames':self.game_state._state['performance']['total_ingame_skipped_frames'],
@@ -279,8 +282,8 @@ class GameServer:
                 }
             }
 
-        with open(self.data_file, "w") as f:
-            json.dump(performance_data, f)
+        async with aiofiles.open(self.data_file, "w") as f:
+            await f.write(json.dumps(performance_data))
 
     def update(self, game_data):
         self.__dict__.update(game_data)
@@ -474,8 +477,8 @@ class GameServer:
             # Server instances write files to location dependent on USERPROFILE and APPDATA variables
             os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
             DETACHED_PROCESS = 0x00000008
-
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+
             if self.global_config['hon_data']['svr_override_affinity']:
                 affinity = []
                 for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
@@ -651,7 +654,7 @@ class GameServer:
             self._proc_hook.nice(-19)
         LOGGER.info(f"GameServer #{self.id} - Priority set to {self.global_config['hon_data']['svr_priority']}.")        
 
-    def create_proxy_config(self):
+    async def create_proxy_config(self):
         config_filename = f"Config{self.id}"
         config_file_path = os.path.join(self.global_config['hon_data']['hon_artefacts_directory'] / "HoNProxyManager", config_filename)
 
@@ -664,14 +667,14 @@ voicePublicPort={self.config.local['params']['svr_proxyRemoteVoicePort']}
 region=naeu
 """
         if exists(config_file_path):
-            with open(config_file_path, 'r') as existing_config_file:
-                existing_config = existing_config_file.read()
+            async with aiofiles.open(config_file_path, 'r') as existing_config_file:
+                existing_config = await existing_config_file.read()
             if existing_config == config_data:
                 return config_file_path, True
         
         os.makedirs(os.path.dirname(config_file_path), exist_ok=True)
-        with open(config_file_path, "w") as config_file:
-            config_file.write(config_data)
+        async with aiofiles.open(config_file_path, "w") as config_file:
+            await config_file.write(config_data)
         return config_file_path, False
 
     async def start_proxy(self):
@@ -692,7 +695,7 @@ region=naeu
 
         if not exists(self.global_config['hon_data']['hon_install_directory'] / "proxy.exe"):
             raise HoNInvalidServerBinaries(f"Missing proxy.exe. Please obtain proxy.exe from the wasserver package and copy it into {self.global_config['hon_data']['hon_install_directory']}. https://github.com/wasserver/wasserver")
-        proxy_config_path, matches_existing = self.create_proxy_config()
+        proxy_config_path, matches_existing = await self.create_proxy_config()
 
         if not matches_existing:
             # the config file has changed.
@@ -701,8 +704,8 @@ region=naeu
                 self._proxy_process = None
 
         if exists(f"{proxy_config_path}.pid"):
-            with open(f"{proxy_config_path}.pid", 'r') as proxy_pid_file:
-                proxy_pid = proxy_pid_file.read()
+            async with aiofiles.open(f"{proxy_config_path}.pid", 'r') as proxy_pid_file:
+                proxy_pid = await proxy_pid_file.read()
             try:
                 proxy_pid = int(proxy_pid)
                 process = psutil.Process(proxy_pid)
@@ -739,8 +742,8 @@ region=naeu
                     pass
                 else: raise HoNCompatibilityError(f"The OS is unsupported for running honfigurator. OS: {MISC.get_os_platform()}")
 
-                with open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
-                    proxy_pid_file.write(str(self._proxy_process.pid))
+                async with aiofiles.open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
+                    await proxy_pid_file.write(str(self._proxy_process.pid))
                 await asyncio.sleep(0.1)
                 self._proxy_process = psutil.Process(self._proxy_process.pid)
 

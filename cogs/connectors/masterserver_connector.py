@@ -1,12 +1,10 @@
 import traceback
 import aiohttp
-import os
-import urllib.parse
 from cogs.misc.logger import get_logger, get_misc
 from cogs.misc.exceptions import HoNCompatibilityError
 from cogs.handlers.events import stop_event
 import phpserialize
-import hashlib
+import aiofiles
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -78,15 +76,16 @@ class MasterServerHandler:
     async def upload_replay_file(self, file_path, file_name, url):
         async with aiohttp.ClientSession() as session:
             try:
-                with open(file_path, 'rb') as replay_file:
-                    data = aiohttp.FormData(quote_fields=False)
-                    headers = {'User-Agent': f'S2 Games/Heroes of Newerth/{self.version}/was/x86_64'}
-                    data.add_field('file', replay_file, filename=file_name, content_type='application/octet-stream')
-                    #LOGGER.debug(f"Request data: {data[:100]}... (truncated)")
-                    #'FormData' object is not subscriptable
-                    async with session.post(f"http://{url}", data=data, headers=headers) as response:
-                        LOGGER.debug(f"Code: {response.status}, Text: response.text()")
-                        return await response.text(), response.status
+                async with aiofiles.open(file_path, 'rb') as replay_file:
+                    file_data = await replay_file.read()
+
+                data = aiohttp.FormData(quote_fields=False)
+                headers = {'User-Agent': f'S2 Games/Heroes of Newerth/{self.version}/was/x86_64'}
+                data.add_field('file', file_data, filename=file_name, content_type='application/octet-stream')
+
+                async with session.post(f"http://{url}", data=data, headers=headers) as response:
+                    LOGGER.debug(f"Code: {response.status}, Text: response.text()")
+                    return await response.text(), response.status
             except IOError:
                 LOGGER.exception(f"Error opening the file: {file_path}")
                 return {"error": "Error opening the file", "exception": str(traceback.format_exc())}, -1
@@ -129,11 +128,11 @@ class MasterServerHandler:
         try:
             # Read the file content as a string with specified encoding
             if MISC.get_os_platform() == "win32":
-                with open(file_path, 'r', encoding='utf-16-le') as f:
-                    file_content = f.read().lstrip('\ufeff')
+                async with aiofiles.open(file_path, 'r', encoding='utf-16-le') as f:
+                    file_content = (await f.read()).lstrip('\ufeff')
             elif MISC.get_os_platform() == "linux":
-                with open(file_path, 'r', encoding='ascii') as f:
-                    file_content = f.read().lstrip('\ufeff')
+                async with aiofiles.open(file_path, 'r', encoding='ascii') as f:
+                    file_content = (await f.read()).lstrip('\ufeff')
             else:
                 raise HoNCompatibilityError(f"OS is reported as {MISC.get_os_platform()} however only 'win32' or 'linux' are supported.")
 

@@ -113,7 +113,7 @@ class ClientConnection:
 
         try:
             if self.game_server is not None:
-                self.game_server.save_gamestate_to_file()
+                await self.game_server.save_gamestate_to_file()
                 await self.game_server_manager.remove_client_connection(self)
         except Exception as e:
             LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")

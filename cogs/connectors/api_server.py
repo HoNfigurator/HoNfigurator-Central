@@ -28,6 +28,7 @@ from datetime import datetime, timedelta
 import traceback
 import utilities.filebeat as filebeat
 from utilities.step_certificate import is_certificate_expiring
+import aiofiles
 
 app = FastAPI()
 LOGGER = get_logger()
@@ -514,10 +515,10 @@ def get_num_reserved_cpus(token_and_user_info: dict = Depends(check_permission_f
     return MISC.get_num_reserved_cpus()
 
 @app.get("/api/get_honfigurator_log_entries/{num}", description="Returns the specified number of log entries from the honfigurator log file.")
-def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+async def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     # return the contents of the current log file
-    with open(HOME_PATH / "logs" / "server.log", 'r') as f:
-        file_content = f.readlines()
+    async with aiofiles.open(HOME_PATH / "logs" / "server.log", 'r') as f:
+        file_content = await f.readlines()
     
     # Remove the newlines from each string in the list
     file_content = [line.strip() for line in file_content]
@@ -536,9 +537,9 @@ def get_chat_logs(match_id: str, token_and_user_info: dict = Depends(check_permi
     return match_parser.parse_chat()
 
 @app.get("/api/get_honfigurator_log_file", description="Returns the HoNfigurator log file completely, for download.")
-def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-    with open(HOME_PATH / "logs" / "server.log", "r") as file:
-        log_file_content = file.readlines()
+async def get_honfigurator_log_file(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    async with aiofiles.open(HOME_PATH / "logs" / "server.log", "r") as file:
+        log_file_content = await file.readlines()
     return log_file_content
 
 # Define the /api/get_instances_status endpoint with OpenAPI documentation

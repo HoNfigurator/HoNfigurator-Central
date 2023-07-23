@@ -92,7 +92,7 @@ class GameManagerParser:
         """
         self.log("debug",f"GameServer #{self.id} - Received server closed packet: {packet}")
         game_server.reset_game_state()
-        game_server.save_gamestate_to_file()
+        await game_server.save_gamestate_to_file()
         game_server.reset_skipped_frames()
 
 
@@ -237,7 +237,7 @@ class GameManagerParser:
         game_server.game_state.update({'match_info':empty_lobby_info})
         game_server.game_state.update({'players':[]})
         game_server.reset_game_state()
-        game_server.save_gamestate_to_file()
+        await game_server.save_gamestate_to_file()
         game_server.reset_skipped_frames()
 
 
@@ -262,7 +262,7 @@ class GameManagerParser:
                 match_id = int(match.group(1))
                 self.log("debug",f"Updated running match data with Match ID: {match_id}")
                 game_server.update_dict_value('current_match_id',match_id)
-                game_server.load_gamestate_from_file(match_only=True)
+                await game_server.load_gamestate_from_file(match_only=True)
             else:
                 self.log("debug","Match ID not found")
 
