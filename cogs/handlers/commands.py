@@ -137,7 +137,7 @@ class Commands:
             "wake": Command("wake", description="Wake up a GameServer", usage="wake <GameServer#>", function=None, sub_commands=await self.wake_subcommands()),
             "sleep": Command("sleep", description="Put a GameServer to sleep", usage="sleep <GameServer#>", function=None, sub_commands=await self.sleep_subcommands()),
             "message": Command("message", description="Send a message to a GameServer", usage="message <GameServer# / ALL> <message>", function=None, sub_commands=await self.message_subcommands(),args=["<type your message>"]),
-            "command": Command("message", description="Initiate a command on a GameServer as if you were typing into the console.", usage="command <GameServer# / ALL> <command>", function=None, sub_commands=await self.custom_command_subcommands()),
+            "command": Command("command", description="Initiate a command on a GameServer as if you were typing into the console.", usage="command <GameServer# / ALL> <command>", function=None, sub_commands=await self.custom_command_subcommands()),
             "startup": Command("startup", description="Start 1 or more game servers", usage="startup <GameServer# / ALL>", function=None, sub_commands=await self.startup_servers_subcommands()),
             "status": Command("status", description="Show status of connected GameServers", usage="status", function=self.status, sub_commands={}),
             "reconnect": Command("reconnect", description="Close all GameServer connections, forcing them to reconnect", usage="reconnect", function=self.reconnect, sub_commands={}),
@@ -261,8 +261,8 @@ class Commands:
                 completer = self.command_completer
 
                 input_future = asyncio.ensure_future(read_user_input(prompt, completer))
-
-                done, pending = await asyncio.wait([input_future, self.subcommands_changed.wait()], return_when=asyncio.FIRST_COMPLETED)
+                subcommands_changed_future = asyncio.ensure_future(self.subcommands_changed.wait())
+                done, pending = await asyncio.wait([input_future, subcommands_changed_future], return_when=asyncio.FIRST_COMPLETED)
 
                 if input_future in done:
                     command = input_future.result()
@@ -378,9 +378,14 @@ class Commands:
                 print_formatted_text("Usage: command <GameServer#> <command>")
                 return
             
+            if isinstance(command[0],str) and command[0].lower() not in ['message','terminateplayer','serverreset','addfakeplayer','adjustservertime','remake']:
+                LOGGER.warn("Command disallowed")
+                return
+            
             if game_server == "all":
                 for game_server in list(self.game_servers.values()):
                     await self.manager_event_bus.emit('cmd_custom_command', game_server, command)
+                return
 
             await self.manager_event_bus.emit('cmd_custom_command', game_server, command)
 

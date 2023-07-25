@@ -15,6 +15,7 @@ from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, Gam
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
+import aiofiles
 
 
 import re
@@ -59,7 +60,7 @@ class GameServer:
         self.reset_game_state()
         self.game_state.add_listener(self.on_game_state_change)
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
-        self.load_gamestate_from_file(match_only=False)
+        asyncio.create_task(self.load_gamestate_from_file(match_only=False))
         # Start the monitor_process method as a background task
         coro = self.monitor_process
         self.schedule_task(coro,'process_monitor', coro_bracket=True)
@@ -85,7 +86,7 @@ class GameServer:
                     LOGGER.info(f"GameServer #{self.id} The previous task '{name}' was cancelled.")
             else:
                 # Task is still running
-                LOGGER.warning(f"GameServer #{self.id} Task '{name}' is still running, new task not scheduled.")
+                LOGGER.debug(f"GameServer #{self.id} Task '{name}' is still running, new task not scheduled.")
                 return existing_task  # Return existing task
 
         # Create and register the new task
@@ -162,13 +163,25 @@ class GameServer:
         while True:
             self.idle_disconnect_timer += 1
             if self.idle_disconnect_timer >= 60:
-                await self.manager_event_bus.emit('cmd_message_server', self, "Server is shutting down. Players have remained connected when game is over for 60+ seconds.")
-                LOGGER.info(f"GameServer #{self.id} - Server is shutting down. Players have remained connected when game is over for 60+ seconds.\n\tGame Phase: {self.game_state['game_phase']}\n\tMatch Started: {self.game_state['match_started']}\n\tStatus: {self.game_state['status']}")
-                for player in self.game_state['players']:
-                    player_name = player['name']
-                    player_name = re.sub(r'\[.*?\]', '', player_name)
-                    LOGGER.info(f"GameServer #{self.id} - Terminating player: {player_name}")
-                    await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
+                await self.manager_event_bus.emit('cmd_message_server', self, "Removing idle players. Players have remained connected when game is over for 60+ seconds.")
+                LOGGER.info(f"GameServer #{self.id} - Removing idle players. Players have remained connected when game is over for 60+ seconds.\n\tGame Phase: {GamePhase(self.game_state['game_phase']).name if self.game_state['game_phase'] else 'unknown'}")
+
+                i = 0
+                while len(self.game_state['players']) > 0 and i < 12:
+                    for player in list(self.game_state['players']):
+                        player_name = player['name']
+                        player_name = re.sub(r'\[.*?\]', '', player_name)
+                        LOGGER.info(f"GameServer #{self.id} - Attempting to terminate player: {player_name}")
+                        await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
+                        
+                    LOGGER.info(f"GameServer #{self.id} - {self.game_state['players']} are still connected. Waiting for termination of idle players.")
+                    await asyncio.sleep(5)
+                    i += 1
+                    
+                if len(self.game_state['players']) > 0:
+                    LOGGER.info(f"GameServer #{self.id} - Waited 1 minute. Players still connected. Resetting server.")
+                    await self.manager_event_bus.emit('cmd_custom_command', self, "serverreset", delay=5)
+                    
                 break
             await asyncio.sleep(1)
 
@@ -237,20 +250,22 @@ class GameServer:
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
-    def load_gamestate_from_file(self,match_only):
+    async def load_gamestate_from_file(self,match_only):
         if exists(self.data_file):
-            with open(self.data_file, "r") as f:
-                performance_data = json.load(f)
+            # Reading JSON
+            async with aiofiles.open(self.data_file, "r") as f:
+                performance_data = json.loads(await f.read())
             if not match_only:
                 self.game_state._state['performance']['total_ingame_skipped_frames'] = performance_data['total_ingame_skipped_frames']
             if self.game_state._state['current_match_id'] in performance_data:
                 self.game_state._state.update({'now_ingame_skipped_frames':self.game_state._state['now_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
-    def save_gamestate_to_file(self):
+    async def save_gamestate_to_file(self):
         current_match_id = str(self.game_state._state['current_match_id'])
 
         if exists(self.data_file):
-            with open(self.data_file, "r") as f:
-                performance_data = json.load(f)
+            # Reading JSON
+            async with aiofiles.open(self.data_file, "r") as f:
+                performance_data = json.loads(await f.read())
 
             performance_data = {
                 'total_ingame_skipped_frames':self.game_state._state['performance']['total_ingame_skipped_frames'],
@@ -267,8 +282,8 @@ class GameServer:
                 }
             }
 
-        with open(self.data_file, "w") as f:
-            json.dump(performance_data, f)
+        async with aiofiles.open(self.data_file, "w") as f:
+            await f.write(json.dumps(performance_data))
 
     def update(self, game_data):
         self.__dict__.update(game_data)
@@ -461,10 +476,9 @@ class GameServer:
         if MISC.get_os_platform() == "win32":
             # Server instances write files to location dependent on USERPROFILE and APPDATA variables
             os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            # os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_home_directory'])
             DETACHED_PROCESS = 0x00000008
-
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+
             if self.global_config['hon_data']['svr_override_affinity']:
                 affinity = []
                 for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
@@ -505,7 +519,11 @@ class GameServer:
 
         try:
             start_time = time.perf_counter()
-            done, pending = await asyncio.wait([self.status_received.wait(), self.server_closed.wait()], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
+            status_received_future = asyncio.ensure_future(self.status_received.wait())
+            server_closed_future = asyncio.ensure_future(self.server_closed.wait())
+
+            done, pending = await asyncio.wait([status_received_future, server_closed_future], return_when=asyncio.FIRST_COMPLETED, timeout=timeout)
+
 
             if len(pending) == 2: # both status_received and server_closed are not completed. This indicates a timeout
                 for task in pending:
@@ -516,13 +534,13 @@ class GameServer:
 
             if self.status_received.is_set():
                 elapsed_time = time.perf_counter() - start_time
-                LOGGER.info(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
+                LOGGER.interest(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
                 return True
             elif self.server_closed.is_set():
                 LOGGER.warning(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
                 return False
         except Exception as e:
-            LOGGER.error(f"GameServer #{self.id} Unexpected error occurred: {e}")
+            LOGGER.error(f"GameServer #{self.id} - Unexpected error occurred: {traceback.format_exc()}")
             return False
     
     def mark_for_deletion(self):
@@ -576,25 +594,28 @@ class GameServer:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
 
-    async def get_running_server(self):
+    async def get_running_server(self,timeout=15):
         """
             Check if existing hon server is running.
         """
         running_procs = MISC.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
         last_good_proc = None
+        i=0
         while len(running_procs) > 0:
+            i+=1
             last_good_proc = None
             for proc in running_procs[:]:
                 status = self.get_dict_value('status')
-                if status == 3:
+                if status:
                     last_good_proc = proc
-                elif status is None:
+                else:
                     if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
                         proc.terminate()
                         LOGGER.debug(f"Terminated GameServer #{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
                     else:
                         last_good_proc = proc
+            if i >= timeout: break
             if last_good_proc is not None:
                 break
 
@@ -633,7 +654,7 @@ class GameServer:
             self._proc_hook.nice(-19)
         LOGGER.info(f"GameServer #{self.id} - Priority set to {self.global_config['hon_data']['svr_priority']}.")        
 
-    def create_proxy_config(self):
+    async def create_proxy_config(self):
         config_filename = f"Config{self.id}"
         config_file_path = os.path.join(self.global_config['hon_data']['hon_artefacts_directory'] / "HoNProxyManager", config_filename)
 
@@ -646,14 +667,14 @@ voicePublicPort={self.config.local['params']['svr_proxyRemoteVoicePort']}
 region=naeu
 """
         if exists(config_file_path):
-            with open(config_file_path, 'r') as existing_config_file:
-                existing_config = existing_config_file.read()
+            async with aiofiles.open(config_file_path, 'r') as existing_config_file:
+                existing_config = await existing_config_file.read()
             if existing_config == config_data:
                 return config_file_path, True
         
         os.makedirs(os.path.dirname(config_file_path), exist_ok=True)
-        with open(config_file_path, "w") as config_file:
-            config_file.write(config_data)
+        async with aiofiles.open(config_file_path, "w") as config_file:
+            await config_file.write(config_data)
         return config_file_path, False
 
     async def start_proxy(self):
@@ -674,7 +695,7 @@ region=naeu
 
         if not exists(self.global_config['hon_data']['hon_install_directory'] / "proxy.exe"):
             raise HoNInvalidServerBinaries(f"Missing proxy.exe. Please obtain proxy.exe from the wasserver package and copy it into {self.global_config['hon_data']['hon_install_directory']}. https://github.com/wasserver/wasserver")
-        proxy_config_path, matches_existing = self.create_proxy_config()
+        proxy_config_path, matches_existing = await self.create_proxy_config()
 
         if not matches_existing:
             # the config file has changed.
@@ -683,8 +704,8 @@ region=naeu
                 self._proxy_process = None
 
         if exists(f"{proxy_config_path}.pid"):
-            with open(f"{proxy_config_path}.pid", 'r') as proxy_pid_file:
-                proxy_pid = proxy_pid_file.read()
+            async with aiofiles.open(f"{proxy_config_path}.pid", 'r') as proxy_pid_file:
+                proxy_pid = await proxy_pid_file.read()
             try:
                 proxy_pid = int(proxy_pid)
                 process = psutil.Process(proxy_pid)
@@ -721,8 +742,8 @@ region=naeu
                     pass
                 else: raise HoNCompatibilityError(f"The OS is unsupported for running honfigurator. OS: {MISC.get_os_platform()}")
 
-                with open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
-                    proxy_pid_file.write(str(self._proxy_process.pid))
+                async with aiofiles.open(f"{proxy_config_path}.pid", 'w') as proxy_pid_file:
+                    await proxy_pid_file.write(str(self._proxy_process.pid))
                 await asyncio.sleep(0.1)
                 self._proxy_process = psutil.Process(self._proxy_process.pid)
 

@@ -2,6 +2,7 @@
 from cogs.handlers.events import stop_event, get_logger
 from cogs.misc.logger import get_logger, get_misc
 from cogs.misc.exceptions import HoNPatchError
+from utilities.filebeat import main as filebeat_setup
 import asyncio
 import traceback
 import os
@@ -24,6 +25,9 @@ class HealthCheckManager:
             'honfigurator_update_check': None,
             'game_stats_resubmission': None,
             'public_ip_changed_check': None,
+            'filebeat_verification': None,
+            'spawned_filebeat_setup':None,
+            'general_healthcheck':None
         }
     
     def schedule_task(self, coro, name, override = False):
@@ -47,7 +51,7 @@ class HealthCheckManager:
             else:
                 if not override:
                     # Task is still running
-                    LOGGER.warning(f"Task '{name}' is still running, new task not scheduled.")
+                    LOGGER.debug(f"Task '{name}' is still running, new task not scheduled.")
                     return existing_task  # Return existing task
 
         # Create and register the new task
@@ -73,10 +77,26 @@ class HealthCheckManager:
                 if stop_event.is_set():
                     break
                 await asyncio.sleep(1)
+
+            proxy_procs = []
+            if MISC.get_os_platform() == "win32":
+                # proxy process cleanup
+                proxy_procs = MISC.get_proc("proxy.exe")
+
             for game_server in self.game_servers.values():
-                # Perform the general health check for each game server
-                # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
-                pass
+                if game_server._proxy_process:
+                    # Capture the game_server._proxy_process in a local variable
+                    server_proxy_process = game_server._proxy_process
+
+                    # Create a new list without the game_server._proxy_process if it exists in the proxy_procs list
+                    proxy_procs = [proc for proc in proxy_procs if proc != server_proxy_process]
+
+                    # Perform the general health check for each game server
+                    # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
+                    pass
+            for proc in proxy_procs:
+                LOGGER.info(f"WHAT-IF: Removed orphan proxy.exe ({proc.pid}) process. It is not associated with any currently connected game server instances.")
+                # proc.terminate()
 
     async def lag_healthcheck(self):
         while not stop_event.is_set():
@@ -102,6 +122,23 @@ class HealthCheckManager:
                     await self.event_bus.emit('patch_server',source='healthcheck')
             except Exception:
                 print(traceback.format_exc())
+
+                
+    async def filebeat_verification(self):
+        while not stop_event.is_set():
+            for _ in range(5):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
+            try:
+                # await filebeat_setup(self.global_config)
+                self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')
+            except Exception:
+                LOGGER.error(traceback.format_exc())
+            for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
     
     async def honfigurator_version_healthcheck(self):
         while not stop_event.is_set():
@@ -152,6 +189,8 @@ class HealthCheckManager:
         self.tasks['honfigurator_update_check'] = self.schedule_task(self.honfigurator_version_healthcheck(), 'honfigurator_update_check')
         self.tasks['game_stats_resubmission'] = self.schedule_task(self.poll_for_game_stats(), 'game_stats_resubmission')
         self.tasks['public_ip_changed_check'] = self.schedule_task(self.public_ip_healthcheck(), 'public_ip_changed_check')
+        self.tasks['filebeat_verification'] = self.schedule_task(self.filebeat_verification(), 'filebeat_verification')
+        self.tasks['general_healthcheck'] = self.schedule_task(self.general_healthcheck(), 'general_healthcheck')
 
         while not stop_event.is_set():
             for task_name, task in self.tasks.items():
@@ -170,6 +209,10 @@ class HealthCheckManager:
                         self.tasks[task_name] = self.schedule_task(self.poll_for_game_stats(), task_name)
                     elif task_name == 'public_ip_changed_check':
                         self.tasks[task_name] = self.schedule_task(self.public_ip_healthcheck(), task_name)
+                    elif task_name == 'filebeat_verification':
+                        self.tasks[task_name] = self.schedule_task(self.filebeat_verification(), task_name)
+                    elif task_name == 'general_healthcheck':
+                        self.tasks[task_name] = self.schedule_task(self.general_healthcheck(), task_name)
 
             # Sleep for a bit before checking tasks again
             for _ in range(10):

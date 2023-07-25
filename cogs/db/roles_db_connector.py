@@ -285,7 +285,18 @@ class RolesDatabase:
             return dict(row)
         else:
             return {}
-      
+
+    @health_check_decorator
+    def get_user_by_discord_id(self, discord_id: str) -> Dict[str, Any]:
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT * FROM users WHERE discord_id = ?", (discord_id,))
+            row = cursor.fetchone()
+
+        if row:
+            return dict(row)
+        else:
+            return {}
     @health_check_decorator  
     def get_user_roles_by_discord_id(self, discord_id: str) -> List[str]:
         with self.get_conn() as conn:

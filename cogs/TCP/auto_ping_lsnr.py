@@ -55,7 +55,7 @@ class AutoPingListener(asyncio.DatagramProtocol):
             None
         """
         self.transport = transport
-        LOGGER.info(f"[*] AutoPing Responder - Listening on {self.server_address}:{self.port} (PUBLIC)")
+        LOGGER.interest(f"[*] AutoPing Responder - Listening on {self.server_address}:{self.port} (PUBLIC)")
 
     def datagram_received(self, data, addr):
         asyncio.create_task(self.handle_datagram_received(data, addr))

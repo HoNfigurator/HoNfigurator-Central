@@ -3,17 +3,15 @@ import traceback
 import functools
 import schedule
 from datetime import datetime, timedelta
-from os.path import exists
 import tzlocal
 import shutil
 import time
 import pytz
 from json import JSONDecodeError
-import sys
 import os
 from pathlib import Path
-from tinydb import TinyDB, Query
-from cogs.misc.logger import get_logger, get_misc, get_home
+from tinydb import TinyDB
+from cogs.misc.logger import get_logger, get_home
 from cogs.handlers.events import stop_event
 
 LOGGER = get_logger()
@@ -100,13 +98,38 @@ class HonfiguratorSchedule():
         get_replaysnew_scheduled_time_str = get_replaysnew_scheduled_time.strftime("%H:%M")
 
         schedule.every().day.at(get_replaysnew_scheduled_time_str, pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
-        # schedule.every().day.at(self.config['application_data']['timers']['replay_cleaner']['scheduled_time'], pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_or_move_files)
-        schedule.every(1).minutes.do(self.delete_or_move_files)
+        schedule.every().day.at(self.config['application_data']['timers']['replay_cleaner']['scheduled_time'], pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_or_move_files)
         LOGGER.info("Success!")
 
     def stop(self):
         LOGGER.info("Stop signal for background jobs received")
         self.cease_continuous_run.set()
+
+    @catch_exceptions()
+    def prune_db(self):
+        tables = ['file_deletion_table', 'stats_replay_count']
+        table_index = 0
+
+        while os.path.getsize(HOME_PATH / "cogs" / "db" / "stats.json") > 10 * 1024 * 1024:  # 10MB
+            table_name_to_prune = tables[table_index]
+            table_index = (table_index + 1) % len(tables)  # Alternate between the two tables
+
+            # Get all entries in the specified table to prune
+            all_entries = self.db.table(table_name_to_prune).all()
+            # If there are no entries in the specified table, break from the loop
+            if not all_entries:
+                break
+            # Otherwise, get the oldest entry
+            oldest_entry = all_entries[0]
+            # Delete the oldest entry if it exists in the table to be pruned
+            table_to_prune = self.db.table(table_name_to_prune)
+            entry_to_remove = table_to_prune.get(doc_id=oldest_entry.doc_id)
+
+            if entry_to_remove is not None:
+                table_to_prune.remove(doc_ids=[entry_to_remove.doc_id])
+                print(f"Row removed successfully from '{table_name_to_prune}'.")
+            else:
+                print(f"Row with specified doc_id not found in '{table_name_to_prune}' table.")
 
     @catch_exceptions()
     def get_replays(self):
@@ -139,6 +162,7 @@ class Stats(HonfiguratorSchedule):
                 if modified_time > yesterday:
                     size_in_mb += Path(file_path).stat().st_size  / 1000
                     count += 1
+
         with self.lock: # Acquire the lock before writing to the database
             self.replay_table.insert({"date" : formatted_date_str, "count" : count, "size_in_mb" : size_in_mb})
 
@@ -238,7 +262,9 @@ class ReplayCleaner(HonfiguratorSchedule):
             stats["deleted_replays"] = 0
         
         stats["date"] = datetime.now().strftime("%Y-%m-%d")
-        
+
+        self.prune_db()
+
         with self.lock: # Acquire the lock before writing to the database
             self.file_deletion_table.insert(stats)
 

@@ -30,7 +30,7 @@ class SetupEnvironment:
             self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
-        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity']
+        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity','man_enableProxy']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()
@@ -80,7 +80,7 @@ class SetupEnvironment:
         return {
             "hon_data": {
                 "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - CLEAN\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
-                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/KONGOR/"),
+                "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/"),
                 "svr_masterServer": "api.kongor.online",
                 "svr_login": "",
                 "svr_password": "",
@@ -109,7 +109,8 @@ class SetupEnvironment:
                         "lag_healthcheck":120,
                         "check_for_hon_update": 120,
                         "check_for_honfigurator_update": 60,
-                        "resubmit_match_stats": 20
+                        "resubmit_match_stats": 20,
+                        "filebeat_verification": 10800
                     },
                     "replay_cleaner": {
                         "active": False,
@@ -331,9 +332,14 @@ class SetupEnvironment:
 
             if key in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
                 pass
-            elif key == "svr_enableProxy":
+            elif key == "svr_enableProxy":  # this is to resolve a misconfig where svr_enableProxy was used instead of man_enableProxy by accident.
                 self.hon_data["man_enableProxy"] = self.hon_data[key]
                 del self.hon_data[key]
+            elif key == "hon_home_directory":
+                hon_home_directory = str(self.hon_data["hon_home_directory"])
+                if hon_home_directory.endswith('/KONGOR'):
+                    hon_home_directory = hon_home_directory.rstrip('/KONGOR')
+                self.hon_data["hon_home_directory"] = Path(hon_home_directory)
             elif default_value_type is type(None):
                 del self.hon_data[key]
                 minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
@@ -368,8 +374,7 @@ class SetupEnvironment:
         database = RolesDatabase()
         if not database.add_default_data():
             while True:
-                value = input(
-                    "\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
+                value = input("\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
                 try:
                     discord_id = int(value)
                     if len(str(discord_id)) < 10:
@@ -530,8 +535,8 @@ class SetupEnvironment:
             architecture = "was-crIac6LASwoafrl8FrOa"
         else:  # this should be "linux"
             hon_artefacts_directory = Path(self.hon_data["hon_home_directory"])
-            hon_replays_directory = hon_artefacts_directory / "replays"
-            hon_logs_directory = hon_artefacts_directory / "logs"
+            hon_replays_directory = hon_artefacts_directory / "KONGOR" / "replays"
+            hon_logs_directory = hon_artefacts_directory / "KONGOR" / "logs"
             executable = "hon-x86_64-server"
             file_name = executable
             architecture = 'las-crIac6LASwoafrl8FrOa'

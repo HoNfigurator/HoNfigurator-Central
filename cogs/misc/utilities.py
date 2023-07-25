@@ -12,6 +12,9 @@ import requests
 import aiohttp
 from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError
+import ipaddress
+import asyncio
+
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
@@ -212,17 +215,28 @@ class Misc:
         return self.public_ip
     
     async def lookup_public_ip_async(self):
-        async with aiohttp.ClientSession() as session:
-            try:
-                async with session.get('https://4.ident.me') as response:
-                    self.public_ip = await response.text()
-            except Exception:
+        providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
+        timeout = aiohttp.ClientTimeout(total=5)  # Set the timeout for the request in seconds
+
+        async with aiohttp.ClientSession(timeout=timeout) as session:
+            for provider in providers:
                 try:
-                    async with session.get('http://api.ipify.org') as response:
-                        self.public_ip = await response.text()
-                except Exception:
-                    self.public_ip = None
-        return self.public_ip
+                    async with session.get(provider) as response:
+                        if response.status == 200:
+                            ip_str = await response.text()
+                            try:
+                                # Try to construct an IP address object. If it fails, this is not a valid IP.
+                                ipaddress.ip_address(ip_str)
+                                return ip_str
+                            except ValueError:
+                                LOGGER.warn(f"Invalid IP received from {provider}. Trying another provider...")
+                except asyncio.TimeoutError:
+                    LOGGER.warn(f"Timeout when trying to fetch IP from {provider}. Trying another provider...")
+                    continue
+                except Exception as e:
+                    LOGGER.warn(f"Error occurred when trying to fetch IP from {provider}: {e}")
+                    continue
+            LOGGER.critical("Tried all public IP providers and could not determine public IP address. This will most likely cause issues.")
     
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"
@@ -350,14 +364,18 @@ class Misc:
             # Fetch the latest information from the remote repository
             subprocess.run(['git', 'fetch'])
 
+            # Remove any stale remote-tracking branches
+            subprocess.run(['git', 'remote', 'prune', 'origin'])
+
             # Retrieve the branch names from the remote repository
             branch_names = subprocess.check_output(
                 ['git', 'for-each-ref', '--format=%(refname:lstrip=3)', 'refs/remotes/origin/'],
                 universal_newlines=True
             ).strip()
+            branches = [branch.strip() for branch in branch_names.split('\n') if branch.strip() != 'HEAD']
 
             # Process the branch names, excluding "HEAD"
-            return [branch.strip() for branch in branch_names.split('\n') if branch.strip() != 'HEAD']
+            return branches
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
