@@ -110,6 +110,8 @@ def set_logger():
         pt_handler = PromptToolkitLogHandler()
         pt_handler.setFormatter(CustomFormatter())
         pt_handler.setLevel(logging.INFO)
+        
+        logger = logging.getLogger('Server')
 
         logger.addHandler(file_handler)
         logger.addHandler(pt_handler)
