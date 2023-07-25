@@ -30,6 +30,7 @@ import utilities.filebeat as filebeat
 from utilities.step_certificate import is_certificate_expiring
 import aiofiles
 import aiohttp
+import ssl
 
 app = FastAPI()
 LOGGER = get_logger()
@@ -916,7 +917,7 @@ async def fetch_server_ping_response():
     }
     
     async with aiohttp.ClientSession() as session:
-        async with session.get(url, headers=headers) as response:
+        async with session.get(url, headers=headers, ssl=False) as response:
             response_text = await response.text()
             return response.status, response_text
 
