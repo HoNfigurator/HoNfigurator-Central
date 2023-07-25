@@ -6,14 +6,15 @@ class PrepareDependencies:
     def __init__(self, home_path):
         self.script_home = home_path
         self.python_version = sys.version_info[:2]
-        if self.python_version == (3, 9):
-            self.pip_requirements = home_path / "py3.9" / "requirements.txt"
-        if self.python_version == (3, 10):
-            self.pip_requirements = home_path / "py3.10" / "requirements.txt"
-        elif self.python_version == (3, 11):
-            self.pip_requirements = home_path / "py3.11" / "requirements.txt"
-        else:
+        if self.python_version[0] != 3:
             raise RuntimeError(f"Unsupported Python version: {sys.version}")
+        elif self.python_version[1] < 9:
+            raise RuntimeError(f"Python version too old: {sys.version}")
+        elif self.python_version[1] > 11:
+            raise RuntimeError(f"Python version too new: {sys.version}")
+        else:
+            minor_version = self.python_version[1]
+            self.pip_requirements = home_path / f"py3.{minor_version}" / "requirements.txt"
 
     def get_required_packages(self):
         try:
