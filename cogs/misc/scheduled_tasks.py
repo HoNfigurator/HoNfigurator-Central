@@ -72,6 +72,7 @@ class HonfiguratorSchedule():
         self.replay_cleaner_active = self.config['application_data']['timers']['replay_cleaner']['active']
         self.move_replays_to_longerm_storage = config["application_data"]["longterm_storage"]["active"]
 
+        self.path_to_log_locally = Path(config["hon_data"]["hon_home_directory"] / "KONGOR" / "logs")
         self.path_to_replays_locally = config["hon_data"]["hon_replays_directory"]
         self.longterm_storage_replay_path = self.config["application_data"]["longterm_storage"]["location"]
         self.active_replay_path = Path(self.longterm_storage_replay_path) if self.move_replays_to_longerm_storage else self.path_to_replays_locally #   The "active replays path" is set to local (hon_replays_directory) if there is no long term storage configured. Otherwise, it's set to long term storage location.
@@ -211,9 +212,14 @@ class ReplayCleaner(HonfiguratorSchedule):
 
     def delete_clog_files(self):
         counter = 0
-        #TODO not implemented yet.
+        if self.max_clog_age_days == 0:
+            return counter
+        for clog in self.path_to_log_locally.glob("**/*.clog"):
+            if time.time() - clog.stat().st_mtime > self.max_clog_age_days * 86400:
+                counter += 1
+                self.delete(clog, method = "file")
         return counter
-    
+
     def move_files_to_longterm_storage(self):
         success = 0
         fail = 0
@@ -243,7 +249,7 @@ class ReplayCleaner(HonfiguratorSchedule):
             stats["deleted_temp_folders"] = self.delete_old_folders()
         else:
             stats["deleted_temp_folders"] =  0
-        
+
         if self.move_replays_to_longerm_storage:
             moved, failed = self.move_files_to_longterm_storage()
             stats["moved_replays"] = moved
@@ -260,7 +266,7 @@ class ReplayCleaner(HonfiguratorSchedule):
             stats["deleted_replays"] = self.delete_old_replays()
         else:
             stats["deleted_replays"] = 0
-        
+
         stats["date"] = datetime.now().strftime("%Y-%m-%d")
 
         self.prune_db()
@@ -271,4 +277,4 @@ class ReplayCleaner(HonfiguratorSchedule):
 class FileRelocator(HonfiguratorSchedule):
     def __init__(self, config):
         super().__init__(config)
-    
+
