@@ -72,7 +72,7 @@ class HonfiguratorSchedule():
         self.replay_cleaner_active = self.config['application_data']['timers']['replay_cleaner']['active']
         self.move_replays_to_longerm_storage = config["application_data"]["longterm_storage"]["active"]
 
-        self.path_to_log_locally = Path(config["hon_data"]["hon_home_directory"] / "KONGOR" / "logs")
+        self.path_to_log_locally = Path(config["hon_data"]["hon_logs_directory"])
         self.path_to_replays_locally = config["hon_data"]["hon_replays_directory"]
         self.longterm_storage_replay_path = self.config["application_data"]["longterm_storage"]["location"]
         self.active_replay_path = Path(self.longterm_storage_replay_path) if self.move_replays_to_longerm_storage else self.path_to_replays_locally #   The "active replays path" is set to local (hon_replays_directory) if there is no long term storage configured. Otherwise, it's set to long term storage location.
