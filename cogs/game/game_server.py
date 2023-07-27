@@ -529,7 +529,7 @@ class GameServer:
                 for task in pending:
                     task.cancel()
                 LOGGER.error(f"GameServer #{self.id} startup timed out. {timeout} seconds waited for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
-                self.schedule_shutdown()
+                self.stop_server_exe()
                 return False
 
             if self.status_received.is_set():
