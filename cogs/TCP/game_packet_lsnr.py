@@ -1,8 +1,6 @@
 import traceback
 import asyncio
 import inspect
-import struct
-import socket
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.handlers.events import stop_event
 from cogs.misc.logger import get_logger
@@ -19,18 +17,11 @@ class ClientConnection:
         self.closed = False
         self.id = None
 
-        # Set TCP keepalive on the socket
-        # sock = self.writer.get_extra_info('socket')
-        # sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-        # sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 30)
-        # sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 15)
-        # sock.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 3)
-
     def set_game_server(self,game_server):
         self.game_server = game_server
         self.id = game_server.id
 
-    async def receive_packet(self, timeout=600):
+    async def receive_packet(self, timeout=30):
         try:
             # Try to read up to 2 bytes for the length field
             length_bytes = await asyncio.wait_for(self.reader.readexactly(2), timeout)
@@ -48,51 +39,52 @@ class ClientConnection:
             packet = (length, data)
             return packet
 
-        except asyncio.TimeoutError as e:
-            LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-            # Raise a timeout error if the packet did not arrive within the specified timeout
-            raise TimeoutError("Packet reception timed out")
-
-        except ConnectionResetError as e:
-            LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-
-            # Check if the writer object is not None before closing it
-            if self.writer != None:
-                await self.writer.close()
-
         except ValueError as e:
-            LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+            LOGGER.error(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
             return None
 
-    async def run(self, game_server):
+    async def run(self, game_server, timeout=60):
         self.game_server = game_server
         while not stop_event.is_set():
             try:
-                packet = await self.receive_packet()
+                packet = await self.receive_packet(timeout=timeout)
 
                 if packet is None:
                     # Handle the case where the packet is incomplete
                     LOGGER.warn(f"Client #{self.id} Incomplete packet: {packet}. Closing connection..")
-                    await self.close()
+                    await self.close() # if packet is None (indicating an incomplete packet), log a warning, close the connection, and then return from the function
                     return
 
-            except TimeoutError as e:
-                LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-                # Packet reception timed out
-                LOGGER.info(f"{self.id} Packet reception timed out")
-                continue
+            except ConnectionResetError as e:
+                LOGGER.error(f"Client #{self.id} Connection reset. The GameServer has disconnected from the Manager.")
+                break # exit the loop and continue to the post loop actions (clear game state, close connection, etc)
+
+            except asyncio.CancelledError as e:
+                LOGGER.exception(f"Client #{self.id} Operation was cancelled while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+                return
+
+            except (asyncio.TimeoutError, TimeoutError) as e:
+                LOGGER.error(f"Client #{self.id} Timeout. The connection has timed out between the GameServer and the Manager. {timeout} seconds without receiving any data. Shutting down Game Server.")
+                if self.game_server:
+                    await self.game_server.schedule_task(self.game_server.tail_game_log_then_close(), 'orphan_game_server_disconnect')
+                return # exit the loop and continue to the post loop actions (clear game state, close connection, etc)
+
             except asyncio.exceptions.IncompleteReadError:
                 LOGGER.warn(f"Client #{self.id} Incomplete packet received. Closing connection..")
                 await self.close()
-                return
+                return # if packet is None (indicating an incomplete packet), log a warning, close the connection, and then return from the function
+
             except Exception as e:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-                break
+                break # exit the loop and continue to the post loop actions (clear game state, close connection, etc)
 
             await self.game_server.game_manager_parser.handle_packet(packet,self.game_server)
 
             # Add a small delay to allow other clients to send packets
-            await asyncio.sleep(0.01)
+            await asyncio.sleep(0.001)
+        
+        if self.game_server:
+            self.game_server.reset_game_state() # clear the game server state object to indicate we've lost comms from this server.
         await self.close()
 
     async def send_packet(self, packet):
@@ -109,7 +101,10 @@ class ClientConnection:
             self.closed = True
             LOGGER.warn(f"Terminating client #{self.id}..")
             self.writer.close()
-            await self.writer.wait_closed()
+            try:
+                await self.writer.wait_closed()
+            except Exception as e:
+                pass # it doesnt seem that wait_closed always works when called. We don't care as long as it's closed.
 
         try:
             if self.game_server is not None:

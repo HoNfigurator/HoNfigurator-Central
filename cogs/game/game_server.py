@@ -16,6 +16,7 @@ from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 import aiofiles
+import glob
 
 
 import re
@@ -125,6 +126,7 @@ class GameServer:
             return self.config.local['params']['svr_proxyLocalVoicePort']
 
     def reset_game_state(self):
+        LOGGER.debug(f"GameServer #{self.id} - Reset state")
         self.status_received.clear()
         self.game_state.clear()
 
@@ -328,7 +330,7 @@ class GameServer:
             'Public Game Port': self.get_public_game_port(),
             'Public Voice Port': self.get_public_voice_port(),
             'Region':self.config.get_local_by_key('svr_location'),
-            'Status': 'Unknown',
+            'Status': 'Process Running' if self._pid else 'Unknown',
             'Game Phase': 'Unknown',
             'Connections': self.get_dict_value('num_clients'),
             'Players': 'Unknown',
@@ -394,7 +396,7 @@ class GameServer:
             'Public Game Port': self.get_public_game_port(),
             'Public Voice Port': self.get_public_voice_port(),
             'Region': self.config.get_local_by_key('svr_location'),
-            'Status': 'Unknown',
+            'Status': 'Process Running' if self._pid else 'Unknown',
             'Game Phase': 'Unknown',
             'Match Duration': 'Unknown',  # Initialize with default value
             'Connections': self.get_dict_value('num_clients'),
@@ -573,6 +575,32 @@ class GameServer:
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
+    
+    async def tail_game_log_then_close(self, wait=60):
+        end_time = time.time() + wait
+        old_size = 0
+        while time.time() < end_time:
+            # Find all files matching pattern
+            files = glob.glob(os.path.join(self.global_config['hon_data']['hon_logs_directory'], f"Slave-{self.id}_*.clog"))
+            if not files:
+                break
+
+            # If files are found, sort them by modification time, and get the size of the most recent one
+            if files:
+                latest_file = max(files, key=os.path.getmtime)
+                size = os.path.getsize(latest_file)
+                if not old_size:
+                    old_size = size
+                else:
+                    if size != old_size:
+                        LOGGER.info("match in progress")
+                        return
+
+            # Sleep for a while before checking again
+            await asyncio.sleep(1)
+            
+        # Close the tailing
+        await self.stop_server_exe(disable=False)
 
     async def stop_server_exe(self, disable=True, delete=False):
         if disable:
@@ -771,8 +799,8 @@ region=naeu
                         status = self._proc_hook.status()  # Get the status of the process
                     except psutil.NoSuchProcess:
                         status = 'stopped'
-                    if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped
-                        LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
+                    if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped. a "suspended" process will also show as stopped on windows.
+                        LOGGER.warn(f"GameServer #{self.id} stopped unexpectedly")
                         self._proc = None  # Reset the process reference
                         self._proc_hook = None  # Reset the process hook reference
                         self._pid = None
