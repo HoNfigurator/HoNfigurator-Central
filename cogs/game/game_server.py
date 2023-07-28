@@ -330,7 +330,7 @@ class GameServer:
             'Public Game Port': self.get_public_game_port(),
             'Public Voice Port': self.get_public_voice_port(),
             'Region':self.config.get_local_by_key('svr_location'),
-            'Status': 'Process Running' if self._pid else 'Unknown',
+            'Status': 'Unknown',
             'Game Phase': 'Unknown',
             'Connections': self.get_dict_value('num_clients'),
             'Players': 'Unknown',
@@ -396,7 +396,7 @@ class GameServer:
             'Public Game Port': self.get_public_game_port(),
             'Public Voice Port': self.get_public_voice_port(),
             'Region': self.config.get_local_by_key('svr_location'),
-            'Status': 'Process Running' if self._pid else 'Unknown',
+            'Status': 'Unknown',
             'Game Phase': 'Unknown',
             'Match Duration': 'Unknown',  # Initialize with default value
             'Connections': self.get_dict_value('num_clients'),
