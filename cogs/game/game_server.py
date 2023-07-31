@@ -539,7 +539,7 @@ class GameServer:
                 LOGGER.interest(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
                 return True
             elif self.server_closed.is_set():
-                LOGGER.warning(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
+                LOGGER.warn(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
                 return False
         except Exception as e:
             LOGGER.error(f"GameServer #{self.id} - Unexpected error occurred: {traceback.format_exc()}")

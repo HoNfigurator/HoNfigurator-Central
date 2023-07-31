@@ -20,12 +20,12 @@ def show_exception_and_exit(exc_type, exc_value, tb):
             with open(HOME_PATH / "logs" / ".last_working_branch", 'r') as f:
                 last_working_branch = f.read()
             if MISC.get_current_branch_name() != last_working_branch:
-                LOGGER.warning(f"Reverting back to last known working branch ({last_working_branch}).")
+                LOGGER.warn(f"Reverting back to last known working branch ({last_working_branch}).")
                 MISC.change_branch(last_working_branch)
             else:
                 formatted_exception = "".join(traceback.format_exception(exc_type, exc_value, tb))
                 while True:
-                    LOGGER.warning(f"Attempting to update current repository to a newer version. This is because of the following error: {formatted_exception}")
+                    LOGGER.warn(f"Attempting to update current repository to a newer version. This is because of the following error\n{formatted_exception}")
                     # LOGGER.warn("If this has happened without warning, then @FrankTheGodDamnMotherFuckenTank#8426 has probably released a bad update and it will be reverted automatically shortly. Standby.")
                     MISC.update_github_repository()
                     for i in range(30):
@@ -81,10 +81,7 @@ def parse_arguments():
 async def main():
     if sys.platform == "linux":
         if os.getuid() != 0:
-            print("---- IMPORTANT ----")
-            print("You have to run it as root (at the moment)")
-            print("Reason is the priority setting on the game instances.")
-            print("---- IMPORTANT ----")
+            LOGGER.warn("---- IMPORTANT ----\nYou have to run it as root (at the moment)\nReason is the priority setting on the game instances.\n---- IMPORTANT ----")
             return
 
     config = setup.check_configuration(args)
@@ -113,41 +110,43 @@ async def main():
 
     # instantiate the manager
     game_server_manager = GameServerManager(global_config, setup)
-    # setup or verify filebeat configuration for match log submission
-    filebeat_configured = await filebeat(global_config)
-    if not filebeat_configured:
-        raise RuntimeError("Filebeat not configured")
 
     print_formatted_text("\nConfiguration Overview")
     for key,value in global_config['hon_data'].items():
         if key == "svr_password": print_formatted_text(f"\t{key}: ***********")
         else: print_formatted_text(f"\t{key}: {value}")
     # create tasks for authenticating to master server, starting game server listener, auto pinger, and starting game server instances.
+    tasks = []
+
     try:
         auth_coro = game_server_manager.manage_upstream_connections(udp_ping_responder_port)
         auth_task = game_server_manager.schedule_task(auth_coro, 'authentication_handler')
+        tasks.append(auth_task)
         
         start_coro = game_server_manager.start_game_servers("all", launch=True)
         start_task = game_server_manager.schedule_task(start_coro, 'gameserver_startup')
+        tasks.append(start_task)
 
         api_coro = game_server_manager.start_api_server()
         api_task = game_server_manager.schedule_task(api_coro, 'api_server')
+        tasks.append(api_task)
 
         game_server_listener_coro = game_server_manager.start_game_server_listener(host, game_server_to_mgr_port)
         game_server_listener_task = game_server_manager.schedule_task(game_server_listener_coro, 'gameserver_listener')
+        tasks.append(game_server_listener_task)
 
         auto_ping_listener_coro = game_server_manager.start_autoping_listener()
         auto_ping_listener_task = game_server_manager.schedule_task(auto_ping_listener_coro, 'autoping_listener')
+        tasks.append(auto_ping_listener_task)
 
-        await asyncio.gather(
-            auth_task, api_task, start_task, game_server_listener_task, auto_ping_listener_task
-        )
+        await asyncio.gather(*tasks)
     except asyncio.CancelledError:
         LOGGER.info("Tasks cancelled due to stop_event being set.")
     finally:
         # Cancel all remaining tasks
-        for task in asyncio.all_tasks():
-            task.cancel()
+        for task in tasks:
+            if not task.done():
+                task.cancel()
         LOGGER.info("Everything shut. Goodbye!")
 
 
@@ -156,7 +155,7 @@ if __name__ == "__main__":
         args = parse_arguments()
         asyncio.run(main())
     except KeyboardInterrupt:
-        LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
+        LOGGER.warn("KeyBoardInterrupt: Manager shutting down...")
         stop_event.set()
     except asyncio.CancelledError:
         if MISC.get_os_platform() == "linux": subprocess.run(["reset"])

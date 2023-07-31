@@ -24,9 +24,10 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc
     from cogs.handlers.events import stop_event
     LOGGER = get_logger()
+    MISC = get_misc()
 
 def print_or_log(log_lvl='info', msg=''):
     log_lvl = log_lvl.lower()
@@ -68,6 +69,27 @@ def read_admin_value_from_filebeat_config(config_path):
         if match:
             admin_value = match.group(1).strip()
     return admin_value
+
+async def filebeat_status():
+    installed = check_filebeat_installed()
+    certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
+    certificate_expired = True
+    if certificate_exists:
+        certificate_expired = step_certificate.is_certificate_expired(get_filebeat_crt_path())
+    filebeat_running = False
+    if MISC.get_proc('filebeat') or MISC.get_proc('filebeat.exe'):
+        filebeat_running = True
+
+    status_dict = {
+        "installed": installed,
+        "running": filebeat_running,
+        "certificate_exists": certificate_exists,
+        "certificate_expired": certificate_expired
+    }
+
+    set_filebeat_status(status_dict)
+
+    return status_dict
 
 operating_system = platform.system()
 global_config = None
@@ -596,9 +618,13 @@ async def main(config=None):
             command = f"python3 {script_path} -silent"
             remove_cron_job(command)
             print_or_log('info',"Cron job deleted successfully.")
-        
+
     # if filebeat_changed:
-    await restart_filebeat(filebeat_changed, silent=args.silent)
+    if check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path) and not step_certificate.is_certificate_expired(get_filebeat_crt_path()):
+        await restart_filebeat(filebeat_changed, silent=args.silent)
+
+    if not __name__ == "__main__":
+        await filebeat_status()    # sets the overall status of filebeat for retreival by other components
     return True
 
 if __name__ == "__main__":

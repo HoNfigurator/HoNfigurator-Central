@@ -19,11 +19,12 @@ from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
-from cogs.misc.logger import get_logger, get_misc, get_home
+from cogs.misc.logger import get_logger, get_misc, get_home, get_filebeat_status, get_filebeat_auth_url
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
+from utilities.filebeat import main as filebeat, filebeat_status
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -286,7 +287,7 @@ class GameServerManager:
         await self.auto_ping_listener.start_listener()
 
     async def start_api_server(self):
-        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
+        await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, self.start_game_servers, port=self.global_config['hon_data']['svr_api_port'])
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
@@ -801,7 +802,7 @@ class GameServerManager:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
             if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
                 if not await self.initialise_patching_procedure(source="startup"):
-                    return False
+                    return False, "Patching underway"
 
             else:
                 # TODO: Linux patching logic here?
@@ -843,6 +844,10 @@ class GameServerManager:
                         # LOGGER.error(f"GameServer #{game_server.id} encountered a server error.")
                         await self.cmd_shutdown_server(game_server)
 
+            if launch:
+                # setup or verify filebeat configuration for match log submission
+                await filebeat_status()
+                await filebeat(self.global_config)
 
             start_tasks = []
             if game_servers == "all":
@@ -852,17 +857,26 @@ class GameServerManager:
                 already_running = await game_server.get_running_server()
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
-                else:
-                    # Start all game servers using the semaphore
-                    if launch and not self.global_config['hon_data']['svr_start_on_launch']:
-                        LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
-                        return
-                    start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
+
+            # Start all game servers using the semaphore
+            if launch and not self.global_config['hon_data']['svr_start_on_launch']:
+                LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
+                return False, "AutoStart not configured"
+            
+            if not get_filebeat_status()['running']:
+                msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Valid: {get_filebeat_status()['certificate_expired']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
+                LOGGER.warn(msg)
+                return False, msg
+            
+            for game_server in game_servers:
+                start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
+
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
 
-        except Exception:
-            print(traceback.format_exc())
+        except Exception as e:
+            LOGGER.error(f"GameServers failed to start\n{traceback.format_exc()}")
+            return False, e.args[0]
 
     async def patch_extract_crc_from_file(self, url):
         try:
@@ -921,13 +935,12 @@ class GameServerManager:
                     if process: process.terminate()
                     try:
                         shutil.move(temp_update_x64_path, hon_update_x64_path)
-                    except:
+                    except Exception:
                         LOGGER.error(f"HoN Update - Failed to copy downloaded hon_update_x64.exe into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                         return
 
             except Exception as e:
                 LOGGER.error(f"Error occurred during file download or extraction: {e}")
-                LOGGER.error(traceback.format_exc())
         
         patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
         # subprocess.run([patcher_exe, "-norun"])

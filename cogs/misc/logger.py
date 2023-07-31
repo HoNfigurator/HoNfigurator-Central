@@ -36,12 +36,21 @@ class CustomFormatter(logging.Formatter):
         logging.FATAL: bold_red + format + reset
     }
 
+    def formatException(self, exc_info):
+        """Format the exception to be colored"""
+        return self.red + super().formatException(exc_info) + self.reset
+
     def format(self, record):
+        """Format the record to include the colored exception"""
         if record.levelno == 25:
             record.levelname = "INFO"
         log_fmt = self.FORMATS.get(record.levelno)
         formatter = logging.Formatter(log_fmt)
-        return formatter.format(record)
+        formatted_record = formatter.format(record)
+        # if record.exc_info:
+        #     # If there's an exception, add the formatted exception to the message
+        #     formatted_record += "\n" + self.formatException(record.exc_info)
+        return formatted_record
 
     
 class PromptToolkitLogHandler(logging.Handler):
@@ -146,6 +155,13 @@ def set_home(script_home):
 def get_home():
     global HOME_PATH
     return HOME_PATH
+
+def get_filebeat_status():
+    return FILEBEAT_STATUS
+
+def set_filebeat_status(status):
+    global FILEBEAT_STATUS
+    FILEBEAT_STATUS = status
 
 def flatten_dict(d, parent_key='', sep=' '):
     items = []
