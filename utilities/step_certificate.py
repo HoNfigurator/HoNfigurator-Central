@@ -18,6 +18,7 @@ import asyncio
 
 version = "0.24.3"
 system = platform.system()
+LOGGER = None
 
 if system == "Windows":
     step_location = Path(os.environ['PROGRAMDATA']) / "step" / "bin" / "step.exe"
