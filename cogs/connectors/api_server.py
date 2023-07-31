@@ -11,11 +11,11 @@ import math
 from fastapi import FastAPI, Request, Response, Body, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 import httpx
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
-from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url, set_filebeat_status
+from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url
 from cogs.handlers.events import stop_event
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.match_parser import MatchParser
@@ -27,7 +27,6 @@ from pydantic import BaseModel
 from datetime import datetime, timedelta
 import traceback
 from utilities.filebeat import filebeat_status
-from utilities.step_certificate import is_certificate_expiring
 import aiofiles
 import aiohttp
 import ssl
