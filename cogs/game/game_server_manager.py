@@ -778,102 +778,89 @@ class GameServerManager:
     def update_server_start_semaphore(self):
         max_start_at_once = self.global_config['hon_data']['svr_max_start_at_once']
         self.server_start_semaphore = asyncio.Semaphore(max_start_at_once)
-
     async def start_game_servers(self, game_servers, timeout=120, launch=False):
         try:
+            LOGGER.info("Start_game_servers function entered.")
             timeout = self.global_config['hon_data']['svr_startup_timeout']
+            LOGGER.info(f"Timeout set to {timeout}.")
             """
             Start all game servers.
-
-            This function starts all the game servers that were created by the GameServerManager. It
-            does this by calling the start_server method of each game server object.
-
-            Game servers are started using a "semaphore", to stagger their start to groups and not all at once.
-            The timeout value may be reached, for slow servers, it may need to be adjusted in the config file if required.
-
-            This function does not return anything, but can log errors or other information.
             """
             if MISC.get_os_platform() == "win32":
-                # this is an atrocious fix until I find a better solution.
-                # on some systems, the compiled honfigurator.exe file, which is just launcher.py from cogs.misc causes issues for the opened hon_x64.exe. The exe is unable to locate one of the game dll resources.
-                # I wasted a lot of time trying to troubleshoot it, launching main.py directly works fine. This is my solution until a better one comes around. It's set within the scope of the script, and doesn't modify the systems environment.
+                LOGGER.info("Platform is win32.")
                 path_list = os.environ["PATH"].split(os.pathsep)
                 if str(self.global_config['hon_data']['hon_install_directory']  / 'game') not in path_list:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
             if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
+                LOGGER.info("Platform is win32, launch is true and upstream patch check passed.")
                 if not await self.initialise_patching_procedure(source="startup"):
+                    LOGGER.info("Initialise patching procedure returned false.")
                     return False, "Patching underway"
 
             else:
-                # TODO: Linux patching logic here?
+                LOGGER.info("Linux patching logic here.")
                 pass
 
             async def start_game_server_with_semaphore(game_server, timeout):
+                LOGGER.info(f"Start_game_server_with_semaphore entered with game_server: {game_server} and timeout: {timeout}")
                 game_server.game_state.update({'status':GameStatus.QUEUED.value})
                 async with self.server_start_semaphore:
-                    # Use the schedule_task method to start the server
                     if game_server not in self.game_servers.values():
-                        LOGGER.warn("returning")
+                        LOGGER.warn("Game server not found in the game servers' list.")
                         return
 
-                    # Ensure the task is actually a Task or Future
                     task = asyncio.ensure_future(game_server.schedule_task(game_server.start_server(timeout=timeout), 'start_server'))
                     try:
-                        # Ensure asyncio.wait_for(task, timeout) and stop_event.wait() are Tasks
                         wait_for_task = asyncio.create_task(asyncio.wait_for(task, timeout))
                         stop_event_wait_task = asyncio.create_task(stop_event.wait())
 
-                        # Prepare the tasks
                         tasks = [wait_for_task, stop_event_wait_task]
 
-                        # Wait for any task to complete
                         done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-                        # If the stop_event was set, cancel the other task and return
                         if stop_event.is_set():
                             for task in pending:
                                 task.cancel()
                             LOGGER.info(f"Shutting down uninitialised GameServer #{game_server.id} due to stop event.")
                             await self.cmd_shutdown_server(game_server)
                         else:
-                            # The game server start task completed successfully
-                            # LOGGER.info(f"GameServer #{game_server.id} started successfully.")
                             pass
                     except asyncio.TimeoutError:
                         LOGGER.error(f"GameServer #{game_server.id} failed to start within the timeout period.")
                         await self.cmd_shutdown_server(game_server)
                     except HoNServerError:
-                        # LOGGER.error(f"GameServer #{game_server.id} encountered a server error.")
                         await self.cmd_shutdown_server(game_server)
 
             if launch:
-                # setup or verify filebeat configuration for match log submission
+                LOGGER.info("Launch is true.")
                 await filebeat_status()
                 await filebeat(self.global_config)
 
             start_tasks = []
             if game_servers == "all":
+                LOGGER.info("All game servers will be started.")
                 game_servers = list(self.game_servers.values())
-                
+
             for game_server in game_servers:
                 already_running = await game_server.get_running_server()
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
 
-            # Start all game servers using the semaphore
             if launch and not self.global_config['hon_data']['svr_start_on_launch']:
                 LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
                 return False, "AutoStart not configured"
-            
+
             if not get_filebeat_status()['running']:
                 msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Valid: {get_filebeat_status()['certificate_expired']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
                 LOGGER.warn(msg)
                 return False, msg
-            
+
             for game_server in game_servers:
+                LOGGER.info(f"Starting game_server: {game_server}.")
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
 
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
+            LOGGER.info("End of start_game_servers function.")
             return True, "Started Servers"
 
         except Exception as e:
