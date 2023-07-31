@@ -53,6 +53,12 @@ class HealthCheckManager:
                     # Task is still running
                     LOGGER.debug(f"Task '{name}' is still running, new task not scheduled.")
                     return existing_task  # Return existing task
+                else:
+                    try:
+                        self.tasks['name'].cancel()
+                    except Exception:
+                        LOGGER.error(f"Failed to cancel existing task: {name}")
+                        LOGGER.error(traceback.format_exc())
 
         # Create and register the new task
         task = asyncio.create_task(coro)
@@ -132,7 +138,7 @@ class HealthCheckManager:
                 await asyncio.sleep(1)
             try:
                 # await filebeat_setup(self.global_config)
-                self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup')
+                self.schedule_task(filebeat_setup(self.global_config),'spawned_filebeat_setup', override=True)
             except Exception:
                 LOGGER.error(traceback.format_exc())
     

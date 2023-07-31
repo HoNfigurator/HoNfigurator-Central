@@ -139,6 +139,10 @@ API Endpoints below
 """Unprotected Endpoints"""
 class PingResponse(BaseModel):
     status: str
+@app.get("/api/public/ping", response_model=PingResponse, description="Responds with the a simple pong to indicate server is alive.")
+async def ping():
+    return {"status":"OK"}
+# temp. Leaving old endpoint name in place to facilitate any migration works
 @app.get("/api/ping", response_model=PingResponse, description="Responds with the a simple pong to indicate server is alive.")
 async def ping():
     return {"status":"OK"}
@@ -167,6 +171,12 @@ async def filebeat_installed():
 
 
 """Protected Endpoints"""
+"""Client registration to add server"""
+class RegistrationResponse(BaseModel):
+    status: str
+@app.get("/api/register", response_model=RegistrationResponse, description="Used to verify a client has permission to add the server")
+async def ping(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"status":"OK"}
 
 """Config Types"""
 class GlobalConfigResponse(BaseModel):
