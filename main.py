@@ -28,7 +28,10 @@ def show_exception_and_exit(exc_type, exc_value, tb):
                     LOGGER.warning(f"Attempting to update current repository to a newer version. This is because of the following error: {formatted_exception}")
                     # LOGGER.warn("If this has happened without warning, then @FrankTheGodDamnMotherFuckenTank#8426 has probably released a bad update and it will be reverted automatically shortly. Standby.")
                     MISC.update_github_repository()
-                    time.sleep(30)
+                    for i in range(30):
+                        if stop_event.is_set():
+                            return
+                        time.sleep(1)
     raw_input = input(f"Due to the above error, HoNfigurator has failed to launch.")
     sys.exit()
 
