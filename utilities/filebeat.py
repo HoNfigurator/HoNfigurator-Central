@@ -71,6 +71,9 @@ def read_admin_value_from_filebeat_config(config_path):
     return admin_value
 
 async def filebeat_status():
+    if LOGGER: # pass the reference through
+        step_certificate.set_logger(LOGGER)
+        
     installed = check_filebeat_installed()
     certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
     certificate_expired = True

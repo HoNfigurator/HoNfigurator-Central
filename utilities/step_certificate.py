@@ -64,6 +64,11 @@ def run_command(cmd, shell=False):
         sys.exit(1)
     return result.stdout.strip()
 
+def set_logger(LOGGER_OBJ):
+    global LOGGER
+    if not LOGGER:
+        LOGGER = LOGGER_OBJ
+
 async def install_step_cli():
     with tempfile.TemporaryDirectory() as tempdir:
         tempdir_path = Path(tempdir)
