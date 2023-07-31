@@ -804,7 +804,7 @@ class GameServerManager:
                     return False
 
             else:
-                # Patch not required
+                # TODO: Linux patching logic here?
                 pass
 
             async def start_game_server_with_semaphore(game_server, timeout):

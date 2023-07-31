@@ -65,6 +65,7 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule
+from utilities.filebeat import main as filebeat
 
 LOGGER = get_logger()
 
@@ -109,7 +110,11 @@ async def main():
 
     # instantiate the manager
     game_server_manager = GameServerManager(global_config, setup)
-    # Print configuration overview
+    # setup or verify filebeat configuration for match log submission
+    filebeat_configured = await filebeat(global_config)
+    if not filebeat_configured:
+        raise RuntimeError("Filebeat not configured")
+
     print_formatted_text("\nConfiguration Overview")
     for key,value in global_config['hon_data'].items():
         if key == "svr_password": print_formatted_text(f"\t{key}: ***********")
@@ -150,8 +155,8 @@ if __name__ == "__main__":
     except KeyboardInterrupt:
         LOGGER.warning("KeyBoardInterrupt: Manager shutting down...")
         stop_event.set()
-    except Exception:
-        LOGGER.error(traceback.format_exc())
-    finally:
-        if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
-        sys.exit(0)
+    # except Exception:
+    #     LOGGER.error(traceback.format_exc())
+    # finally:
+    #     if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
+    #     sys.exit(0)

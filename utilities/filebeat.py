@@ -596,9 +596,10 @@ async def main(config=None):
             command = f"python3 {script_path} -silent"
             remove_cron_job(command)
             print_or_log('info',"Cron job deleted successfully.")
-
-    # if filebeat_changed:
-    await restart_filebeat(filebeat_changed, silent=args.silent)
+        
+        # if filebeat_changed:
+        await restart_filebeat(filebeat_changed, silent=args.silent)
+        return True
 
 if __name__ == "__main__":
     asyncio.run(main())

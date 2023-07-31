@@ -142,7 +142,7 @@ async def register_client(server_url, ssl=False):
         raise Exception("No token found in response")
 
 def navigate_to_url(oauth_url):
-    print_or_log('info',"You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
+    print_or_log('warning',"You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
     if system == "Windows":
         # Try to open the URL in a web browser
         webbrowser.open_new(oauth_url)
