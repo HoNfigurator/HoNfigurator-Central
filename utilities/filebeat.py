@@ -281,7 +281,7 @@ async def get_discord_user_id_from_api(discord_id):
 
     try:
         async with aiohttp.ClientSession() as session:
-            async with session.get(api_url) as response:
+            async with session.get(api_url, ssl=False) as response:
                 if response.status == 200:
                     data = await response.json()
                     return data.get('username')
