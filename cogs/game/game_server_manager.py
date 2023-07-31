@@ -48,6 +48,7 @@ class GameServerManager:
         self.event_bus.subscribe('handle_replay_request', self.handle_replay_request)
         self.event_bus.subscribe('authenticate_to_chat_svr', self.authenticate_and_handle_chat_server)
         self.event_bus.subscribe('start_game_servers', self.start_game_servers)
+        self.event_bus.subscribe('start_game_servers_task', self.start_game_servers_task)
         self.event_bus.subscribe('add_game_servers', self.create_dynamic_game_server)
         self.event_bus.subscribe('remove_game_servers', self.remove_dynamic_game_server)
         self.event_bus.subscribe('remove_game_server', self.remove_game_server)
@@ -778,6 +779,10 @@ class GameServerManager:
     def update_server_start_semaphore(self):
         max_start_at_once = self.global_config['hon_data']['svr_max_start_at_once']
         self.server_start_semaphore = asyncio.Semaphore(max_start_at_once)
+    
+    async def start_game_servers_task(self, game_servers):
+        coro = self.start_game_servers(game_servers)
+        self.schedule_task(coro, 'gameserver_startup')
 
     async def start_game_servers(self, game_servers, timeout=120, launch=False):
         try:
@@ -866,8 +871,8 @@ class GameServerManager:
             
             if not get_filebeat_status()['running']:
                 msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Valid: {get_filebeat_status()['certificate_expired']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
-                LOGGER.warn(msg)
-                return
+                # LOGGER.warn(msg)
+                raise RuntimeError(msg)
             
             for game_server in game_servers:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))

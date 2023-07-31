@@ -729,9 +729,9 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
         game_server = game_servers.get(int(port),None)
         if game_server is None: 
             raise HTTPException(status_code=404, detail={"error":"Server not managed by manager."})
-        await manager_event_bus.emit('start_game_servers',[game_server])
+        await manager_event_bus.emit('start_game_servers_task',[game_server])
     else:
-        await manager_event_bus.emit('start_game_servers','all')
+        await manager_event_bus.emit('start_game_servers_task','all')
     
     return JSONResponse(status_code=200, content="Schedule start successful")
 
