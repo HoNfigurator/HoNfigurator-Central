@@ -818,7 +818,6 @@ class GameServerManager:
                 async with self.server_start_semaphore:
                     # Use the schedule_task method to start the server
                     if game_server not in self.game_servers.values():
-                        LOGGER.warn("returning")
                         return
 
                     # Ensure the task is actually a Task or Future
