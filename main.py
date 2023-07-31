@@ -157,8 +157,10 @@ if __name__ == "__main__":
         LOGGER.warn("KeyBoardInterrupt: Manager shutting down...")
         stop_event.set()
     except asyncio.CancelledError:
-        if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
-        sys.exit(0)
+        pass
+
+    if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
+    sys.exit(0)
     # except Exception:
     #     LOGGER.error(traceback.format_exc())
     # finally:
