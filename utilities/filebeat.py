@@ -73,7 +73,7 @@ def read_admin_value_from_filebeat_config(config_path):
 async def filebeat_status():
     if LOGGER: # pass the reference through
         step_certificate.set_logger(LOGGER)
-        
+
     installed = check_filebeat_installed()
     certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
     certificate_expired = True
@@ -623,7 +623,7 @@ async def main(config=None):
             print_or_log('info',"Cron job deleted successfully.")
 
     # if filebeat_changed:
-    if check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path) and not step_certificate.is_certificate_expired(get_filebeat_crt_path()):
+    if check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path()) and not step_certificate.is_certificate_expired(get_filebeat_crt_path()):
         await restart_filebeat(filebeat_changed, silent=args.silent)
 
     if not __name__ == "__main__":
