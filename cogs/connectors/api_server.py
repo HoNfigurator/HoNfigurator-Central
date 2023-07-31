@@ -739,7 +739,7 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
         else:
             return JSONResponse(status_code=200, content="OK")
     else:
-        return JSONResponse(status_code=500, content="OK")
+        return JSONResponse(status_code=500, content="Unknown Error")
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):

@@ -873,6 +873,7 @@ class GameServerManager:
 
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
+            return True, "Started Servers"
 
         except Exception as e:
             LOGGER.error(f"GameServers failed to start\n{traceback.format_exc()}")
