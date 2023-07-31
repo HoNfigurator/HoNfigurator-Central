@@ -653,7 +653,8 @@ async def main(config=None):
                 print_or_log('info',"Cron job deleted successfully.")
 
         # if filebeat_changed:
-        if check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path()) and not step_certificate.is_certificate_expired(get_filebeat_crt_path()):
+        certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
+        if certificate_exists:
             await restart_filebeat(filebeat_changed, silent=args.silent)
 
         if not __name__ == "__main__":
