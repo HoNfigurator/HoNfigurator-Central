@@ -729,22 +729,11 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
         game_server = game_servers.get(int(port),None)
         if game_server is None: 
             raise HTTPException(status_code=404, detail={"error":"Server not managed by manager."})
-        results = await manager_start_game_servers_callback([game_server])
+        await ('start_game_servers',[game_server])
     else:
-        results = await manager_start_game_servers_callback('all')
+        await manager_event_bus.emit('start_game_servers','all')
     
-    if results and results[0]:
-        status = 200
-    else:
-        status = 500
-    print(results)
-    if results:
-        if len(results) > 1:
-            return JSONResponse(status_code=status, content=results[1])
-        else:
-            return JSONResponse(status_code=status, content="OK")
-    else:
-        return JSONResponse(status_code=status, content="Unknown Error")
+    return JSONResponse(status_code=200, content="Schedule start successful")
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
@@ -921,15 +910,14 @@ async def fetch_server_ping_response():
             response_text = await response.text()
             return response.status, response_text
 
-async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, start_game_servers_callback, host="0.0.0.0", port=5000):
-    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback, manager_start_game_servers_callback
+async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, host="0.0.0.0", port=5000):
+    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback
     global_config = config
     game_servers = game_servers_dict
     manager_event_bus = event_bus
     manager_tasks = game_manager_tasks
     health_check_tasks = health_tasks
     manager_find_replay_callback = find_replay_callback
-    manager_start_game_servers_callback = start_game_servers_callback
 
     # Create a new logger for uvicorn
     uvicorn_logger = logging.getLogger("uvicorn")
