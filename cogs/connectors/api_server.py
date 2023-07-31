@@ -729,18 +729,18 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
         game_server = game_servers.get(int(port),None)
         if game_server is None: 
             raise HTTPException(status_code=404, detail={"error":"Server not managed by manager."})
-        result, msg = await manager_start_game_servers_callback([game_server])
+        results = await manager_start_game_servers_callback([game_server])
     else:
-        result, msg = await manager_start_game_servers_callback('all')
+        results = await manager_start_game_servers_callback('all')
 
-    if result:
-        if msg:
-            return JSONResponse(status_code=200, content=msg)
+    if results:
+        if len(results) > 1:
+            return JSONResponse(status_code=200, content=results[1])
         else:
             return JSONResponse(status_code=200)
     else:
-        if msg:
-            return JSONResponse(status_code=500, content=msg)
+        if len(results) > 1:
+            return JSONResponse(status_code=500, content=results[1])
         else:
             return JSONResponse(status_code=500)
 
