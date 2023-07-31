@@ -92,7 +92,7 @@ class GameManagerParser:
         """
         self.log("debug",f"GameServer #{self.id} - Received server closed packet: {packet}")
         game_server.reset_game_state()
-        await game_server.save_gamestate_to_file()
+        # await game_server.save_gamestate_to_file()
         game_server.reset_skipped_frames()
 
 
@@ -237,7 +237,7 @@ class GameManagerParser:
         game_server.game_state.update({'match_info':empty_lobby_info})
         game_server.game_state.update({'players':[]})
         game_server.reset_game_state()
-        await game_server.save_gamestate_to_file()
+        # await game_server.save_gamestate_to_file()
         game_server.reset_skipped_frames()
 
 

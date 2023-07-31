@@ -23,7 +23,7 @@ class EventBus:
                         # await callback(*args, **kwargs)
                         task = asyncio.create_task(callback(*args, **kwargs))
                         self.tasks.append(task)
-                        return task
+                        # return task
                     else:
                         callback(*args, **kwargs)
                 except Exception as e:

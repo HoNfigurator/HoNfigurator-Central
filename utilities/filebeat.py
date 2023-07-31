@@ -25,11 +25,12 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc
     from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
     LOGGER = get_logger()
     roles_database = RolesDatabase()
+    MISC = get_misc()
 
 def print_or_log(log_lvl='info', msg=''):
     log_lvl = log_lvl.lower()
@@ -71,6 +72,30 @@ def read_admin_value_from_filebeat_config(config_path):
         if match:
             admin_value = match.group(1).strip()
     return admin_value
+
+async def filebeat_status():
+    if LOGGER: # pass the reference through
+        step_certificate.set_logger(LOGGER)
+
+    installed = check_filebeat_installed()
+    certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
+    certificate_expired = True
+    if certificate_exists:
+        certificate_expired = step_certificate.is_certificate_expired(get_filebeat_crt_path())
+    filebeat_running = False
+    if MISC.get_proc('filebeat') or MISC.get_proc('filebeat.exe'):
+        filebeat_running = True
+
+    status_dict = {
+        "installed": installed,
+        "running": filebeat_running,
+        "certificate_exists": certificate_exists,
+        "certificate_expired": certificate_expired
+    }
+
+    set_filebeat_status(status_dict)
+
+    return status_dict
 
 operating_system = platform.system()
 global_config = None
@@ -598,14 +623,13 @@ async def main(config=None):
         parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
         args = parser.parse_args()
 
-        print_or_log('info', 'Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
+        print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
         if not check_filebeat_installed():
             await install_filebeat()
-
+        
         if __name__ == "__main__":
             await step_certificate.main(stop_event)
-        else:
-            await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
+        else: await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
 
         filebeat_changed = False
         if await configure_filebeat(silent=args.silent, test=args.test):
@@ -619,17 +643,24 @@ async def main(config=None):
                 if "ERROR: The system cannot find the file specified." not in task_query.stderr:
                     # Delete the scheduled task
                     subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
-                    print_or_log('info', "Scheduled task deleted successfully.")
+                    print_or_log('info',"Scheduled task deleted successfully.")
 
             # Delete cron job on Linux
             if operating_system == "Linux":
                 script_path = os.path.abspath(__file__)
                 command = f"python3 {script_path} -silent"
                 remove_cron_job(command)
-                print_or_log('info', "Cron job deleted successfully.")
+                print_or_log('info',"Cron job deleted successfully.")
 
         # if filebeat_changed:
-        await restart_filebeat(filebeat_changed, silent=args.silent)
+        certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
+        if certificate_exists:
+            await restart_filebeat(filebeat_changed, silent=args.silent)
+
+        if not __name__ == "__main__":
+            await filebeat_status()    # sets the overall status of filebeat for retreival by other components
+        
+        return True
 
     except asyncio.CancelledError:
         # Perform any necessary cleanup or handling for cancellation here

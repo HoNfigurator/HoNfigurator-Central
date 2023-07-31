@@ -19,11 +19,12 @@ from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
-from cogs.misc.logger import get_logger, get_misc, get_home
+from cogs.misc.logger import get_logger, get_misc, get_home, get_filebeat_status, get_filebeat_auth_url
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
+from utilities.filebeat import main as filebeat, filebeat_status
 
 LOGGER = get_logger()
 MISC = get_misc()
@@ -47,6 +48,7 @@ class GameServerManager:
         self.event_bus.subscribe('handle_replay_request', self.handle_replay_request)
         self.event_bus.subscribe('authenticate_to_chat_svr', self.authenticate_and_handle_chat_server)
         self.event_bus.subscribe('start_game_servers', self.start_game_servers)
+        self.event_bus.subscribe('start_game_servers_task', self.start_game_servers_task)
         self.event_bus.subscribe('add_game_servers', self.create_dynamic_game_server)
         self.event_bus.subscribe('remove_game_servers', self.remove_dynamic_game_server)
         self.event_bus.subscribe('remove_game_server', self.remove_game_server)
@@ -305,7 +307,7 @@ class GameServerManager:
             lambda *args, **kwargs: handle_clients(*args, **kwargs, game_server_manager=self),
             host, game_server_to_mgr_port
         )
-        LOGGER.interest(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
+        LOGGER.highlight(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
 
         await stop_event.wait()
 
@@ -346,7 +348,7 @@ class GameServerManager:
             elif mserver_auth_response[1] > 500 and mserver_auth_response[1] < 600:
                 LOGGER.error(f"{prefix}The issue is most likely server side.")
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
-        LOGGER.interest("Authenticated to MasterServer.")
+        LOGGER.highlight("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
         self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
@@ -407,7 +409,7 @@ class GameServerManager:
         if not chat_auth_response:
             raise HoNAuthenticationError(f"Chatserver authentication failure")
 
-        LOGGER.interest("Authenticated to ChatServer.")
+        LOGGER.highlight("Authenticated to ChatServer.")
 
         # Start handling packets from the chat server
         await self.chat_server_handler.handle_packets()
@@ -777,6 +779,10 @@ class GameServerManager:
     def update_server_start_semaphore(self):
         max_start_at_once = self.global_config['hon_data']['svr_max_start_at_once']
         self.server_start_semaphore = asyncio.Semaphore(max_start_at_once)
+    
+    async def start_game_servers_task(self, game_servers):
+        coro = self.start_game_servers(game_servers)
+        self.schedule_task(coro, 'gameserver_startup')
 
     async def start_game_servers(self, game_servers, timeout=120, launch=False):
         try:
@@ -804,7 +810,7 @@ class GameServerManager:
                     return False
 
             else:
-                # Patch not required
+                # TODO: Linux patching logic here?
                 pass
 
             async def start_game_server_with_semaphore(game_server, timeout):
@@ -843,7 +849,6 @@ class GameServerManager:
                         # LOGGER.error(f"GameServer #{game_server.id} encountered a server error.")
                         await self.cmd_shutdown_server(game_server)
 
-
             start_tasks = []
             if game_servers == "all":
                 game_servers = list(self.game_servers.values())
@@ -852,17 +857,32 @@ class GameServerManager:
                 already_running = await game_server.get_running_server()
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
-                else:
-                    # Start all game servers using the semaphore
-                    if launch and not self.global_config['hon_data']['svr_start_on_launch']:
-                        LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
-                        return
-                    start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
+            
+            if launch:
+                # setup or verify filebeat configuration for match log submission
+                await filebeat_status()
+                await filebeat(self.global_config)
+
+            # Start all game servers using the semaphore
+            if launch and not self.global_config['hon_data']['svr_start_on_launch']:
+                LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
+                return
+            
+            if not get_filebeat_status()['running']:
+                msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Valid: {get_filebeat_status()['certificate_expired']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
+                # LOGGER.warn(msg)
+                raise RuntimeError(msg)
+            
+            for game_server in game_servers:
+                start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
+
             await asyncio.gather(*start_tasks)
             await self.check_for_restart_required()
 
-        except Exception:
-            print(traceback.format_exc())
+        except Exception as e:
+            LOGGER.error(f"GameServers failed to start\n{traceback.format_exc()}")
+            if not launch:
+                raise
 
     async def patch_extract_crc_from_file(self, url):
         try:
@@ -921,13 +941,12 @@ class GameServerManager:
                     if process: process.terminate()
                     try:
                         shutil.move(temp_update_x64_path, hon_update_x64_path)
-                    except:
+                    except Exception:
                         LOGGER.error(f"HoN Update - Failed to copy downloaded hon_update_x64.exe into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                         return
 
             except Exception as e:
                 LOGGER.error(f"Error occurred during file download or extraction: {e}")
-                LOGGER.error(traceback.format_exc())
         
         patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
         # subprocess.run([patcher_exe, "-norun"])

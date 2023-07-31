@@ -11,7 +11,7 @@ import math
 from fastapi import FastAPI, Request, Response, Body, HTTPException, Depends
 from fastapi.security import OAuth2PasswordBearer
 import httpx
-from fastapi.responses import JSONResponse, PlainTextResponse
+from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
@@ -26,8 +26,7 @@ import json
 from pydantic import BaseModel
 from datetime import datetime, timedelta
 import traceback
-import utilities.filebeat as filebeat
-from utilities.step_certificate import is_certificate_expiring
+from utilities.filebeat import filebeat_status
 import aiofiles
 import aiohttp
 import ssl
@@ -163,24 +162,12 @@ async def public_serverinfo():
 
 @app.get("/api/public/check_filebeat_status", summary="Check whether Filebeat is installed and configured to send server logs.")
 async def filebeat_installed():
-    installed = filebeat.check_filebeat_installed()
-    certificate_exists = filebeat.check_certificate_exists(filebeat.get_filebeat_crt_path(), filebeat.get_filebeat_key_path())
-    certificate_expiring = False
-    if certificate_exists:
-        certificate_expiring = is_certificate_expiring(filebeat.get_filebeat_crt_path())
-    if installed:
-        if MISC.get_os_platform() == "linux":
-            if MISC.get_proc('filebeat'):
-                return JSONResponse(status_code=200, content={"installed": True, "running": False, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
-            else:
-                return JSONResponse(status_code=400, content={"installed": True, "running": False, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
-        else:
-            if MISC.get_proc('filebeat.exe'):
-                return JSONResponse(status_code=200, content={"installed": True, "running": True, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
-            else:
-                return JSONResponse(status_code=400, content={"installed": True, "running": False, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
+    status_dict = await filebeat_status()
+
+    if status_dict['installed']:
+        return JSONResponse(status_code=200, content=status_dict)
     else:
-        return JSONResponse(status_code=404, content={"installed": False, "running": False, "certificate_exists":certificate_exists, "certificate_expiring": certificate_expiring})
+        return JSONResponse(status_code=404, content=status_dict)
 
 
 """Protected Endpoints"""
@@ -749,12 +736,13 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
     """
     if port != "all":
         game_server = game_servers.get(int(port),None)
-        if game_server is None: return JSONResponse(status_code=404, content={"error":"Server not managed by manager."})
-        await manager_event_bus.emit('start_game_servers', [game_server])
+        if game_server is None: 
+            raise HTTPException(status_code=404, detail={"error":"Server not managed by manager."})
+        await manager_event_bus.emit('start_game_servers_task',[game_server])
     else:
-        await manager_event_bus.emit('start_game_servers', "all")
-        # for game_server in game_servers.values():
-        #     await manager_event_bus.emit('start_game_servers', [game_server])
+        await manager_event_bus.emit('start_game_servers_task','all')
+    
+    return JSONResponse(status_code=200, content="Schedule start successful")
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
@@ -775,9 +763,9 @@ async def remove_all_servers(token_and_user_info: dict = Depends(check_permissio
 
 @app.get("/api/get_filebeat_oauth_url") # unsure if this endpoint will ever be used.
 async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    if 'spawned_filebeat_setup' in health_check_tasks:
-        if not health_check_tasks['spawned_filebeat_setup'] or health_check_tasks['spawned_filebeat_setup'].done():
-            return JSONResponse(status_code=200,content={"status":"filebeat setup task not currently running."})
+    # if 'spawned_filebeat_setup' in health_check_tasks:
+    #     if not health_check_tasks['spawned_filebeat_setup'] or health_check_tasks['spawned_filebeat_setup'].done():
+    #         return JSONResponse(status_code=200,content={"status":"filebeat setup task not currently running."})
     # if not get_filebeat_auth_url():
     #     return JSONResponse(status_code=404, content="No pending OAUTH url.")
 
@@ -788,7 +776,6 @@ async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permi
     url = get_filebeat_auth_url()
     if url: return JSONResponse(status_code=200,content={"url":url})
     else:
-        LOGGER.error("Filebeat setup task is running, but no OAUTH URL is available. Task should be complete, there is an issue worth reporting.")
         return JSONResponse(status_code=200,content={"status":"there is no OAUTH url available."})
 
 # @app.post("/api/start_filebeat_setup_task")  # unsure if this endpoint will ever be used.
@@ -910,7 +897,7 @@ async def asgi_server(app, host, port):
     try:
         server_pingable_resp_status, server_pingable_resp_text = await fetch_server_ping_response()
         if server_pingable_resp_status == 200:
-            LOGGER.interest(f"\nRemote Management: https://management.honfigurator.app\nUse the following information to connect to your server.\n\tServer Name: {global_config['hon_data']['svr_name']}\n\tServer Address: {global_config['hon_data']['svr_ip']}")
+            LOGGER.interest(f"Remote Management: https://management.honfigurator.app\n\tUse the following information to connect to your server:\n\tServer Name: {global_config['hon_data']['svr_name']}\n\tServer Address: {global_config['hon_data']['svr_ip']}")
         else:
             LOGGER.error(f"Server is not pingable over port {global_config['hon_data']['svr_api_port']}/tcp. Ensure that your firewall / router is configured to accept this traffic.")
         await stop_event.wait()
@@ -932,7 +919,7 @@ async def fetch_server_ping_response():
             return response.status, response_text
 
 async def start_api_server(config, game_servers_dict, game_manager_tasks, health_tasks, event_bus, find_replay_callback, host="0.0.0.0", port=5000):
-    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback, manager_check_game_stats_callback
+    global global_config, game_servers, manager_event_bus, manager_tasks, health_check_tasks, manager_find_replay_callback
     global_config = config
     game_servers = game_servers_dict
     manager_event_bus = event_bus
@@ -948,7 +935,7 @@ async def start_api_server(config, game_servers_dict, game_manager_tasks, health
     uvicorn_logger.setLevel(logging.WARNING)
     uvicorn_logger.propagate = LOGGER.propagate
 
-    LOGGER.interest(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
+    LOGGER.highlight(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
 
     # loop = asyncio.get_running_loop()
     await asgi_server(app, host, port)
