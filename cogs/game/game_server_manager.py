@@ -807,7 +807,7 @@ class GameServerManager:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
             if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
                 if not await self.initialise_patching_procedure(source="startup"):
-                    return
+                    return False
 
             else:
                 # TODO: Linux patching logic here?
