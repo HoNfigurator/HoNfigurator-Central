@@ -732,14 +732,19 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
         results = await manager_start_game_servers_callback([game_server])
     else:
         results = await manager_start_game_servers_callback('all')
-
+    
+    if results and results[0]:
+        status = 200
+    else:
+        status = 500
+    print(results)
     if results:
         if len(results) > 1:
-            return JSONResponse(status_code=200, content=results[1])
+            return JSONResponse(status_code=status, content=results[1])
         else:
-            return JSONResponse(status_code=200, content="OK")
+            return JSONResponse(status_code=status, content="OK")
     else:
-        return JSONResponse(status_code=500, content="Unknown Error")
+        return JSONResponse(status_code=status, content="Unknown Error")
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
 async def add_all_servers(num: int, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
