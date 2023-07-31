@@ -68,7 +68,6 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule
-from utilities.filebeat import main as filebeat
 
 LOGGER = get_logger()
 
