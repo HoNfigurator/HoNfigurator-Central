@@ -21,12 +21,15 @@ if __name__ == "__main__":
     import step_certificate
     LOGGER = None
     stop_event = asyncio.Event()
+    roles_database = None
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
     from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url
+    from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
     LOGGER = get_logger()
+    roles_database = RolesDatabase()
 
 def print_or_log(log_lvl='info', msg=''):
     log_lvl = log_lvl.lower()
@@ -248,17 +251,20 @@ async def request_client_certificate(svr_name, filebeat_path):
         key_file_path = get_filebeat_key_path()
         certificate_exists = check_certificate_exists(crt_file_path, key_file_path)
 
-        if certificate_exists and not step_certificate.is_certificate_expiring(crt_file_path):
-            print_or_log('info',"Renewing existing client certificate...")
-            # Construct the command for certificate renewal
-            result = step_certificate.renew_certificate(crt_file_path,key_file_path)
-            if (isinstance(result,bool) and result) or result.returncode == 0:
-                return True
-            
+        if certificate_exists:
+            if step_certificate.is_certificate_expiring(crt_file_path):
+                print_or_log('info',"Renewing existing client certificate...")
+                # Construct the command for certificate renewal
+                result = step_certificate.renew_certificate(crt_file_path,key_file_path)
+                if (isinstance(result,bool) and result) or result.returncode == 0:
+                    return True
+                else:
+                    # Certificate request failed
+                    error_message = result.stderr.strip()
+                    print_or_log('info',f"Error: {error_message}")
+                    return False
             else:
-                # Certificate request failed
-                error_message = result.stderr.strip()
-                print_or_log('info',f"Error: {error_message}")
+                return True
         else:
             print_or_log('info',"Requesting new client certificate...")
             # Construct the command for new certificate request
@@ -269,6 +275,22 @@ async def request_client_certificate(svr_name, filebeat_path):
 
     except Exception as e:
         print_or_log('error',f"Encountered an error while requesting a client certificate. {traceback.format_exc()}")
+
+async def get_discord_user_id_from_api(discord_id):
+    api_url = f'https://management.honfigurator.app:3001/api-ui/getDiscordUsername/{discord_id}'
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get('username')
+                else:
+                    print(f"Failed to get Discord username for ID: {discord_id}")
+                    return None
+    except aiohttp.ClientError as e:
+        print(f"Error occurred while making the API request: {e}")
+        return None
 
 async def get_public_ip():
     providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
@@ -318,7 +340,7 @@ async def configure_filebeat(silent=False,test=False):
             b"$slave_log": str.encode(str(slave_log)),
             b"$match_log": str.encode(str(match_log)),
             b"$server_launcher": str.encode(launcher),
-            b"0.0.0.0": str.encode(external_ip),
+            b"0.0.0.0": str.encode(external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip']),
             b"charset: $encoding": str.encode(encoding),
             b"$ca_chain": str.encode(str(Path(destination_folder) / "honfigurator-chain.pem")),
             b"$client_cert": str.encode(str(Path(destination_folder) / "client.crt")),
@@ -421,14 +443,21 @@ async def configure_filebeat(silent=False,test=False):
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
 
     looked_up_discord_username = await request_client_certificate(svr_name, Path(destination_folder))
-    if not looked_up_discord_username:
-        print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
-        return
         
     existing_discord_id, old_config_hash = None, None
     if os.path.exists(config_file_path):
         old_config_hash = calculate_file_hash(config_file_path)
         existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
+    
+    if not existing_discord_id and isinstance(looked_up_discord_username,bool):
+        if roles_database:
+            looked_up_discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
+        else:
+            looked_up_discord_username = await step_certificate.discord_oauth_flow_stepca(svr_name, get_filebeat_csr_path(), get_filebeat_crt_path(), get_filebeat_key_path(),get_filebeat_auth_token())
+    
+    if not looked_up_discord_username:
+        print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
+        return
         
     filebeat_config = perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
 
