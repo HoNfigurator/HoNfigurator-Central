@@ -588,46 +588,54 @@ def remove_cron_job(command):
         print_or_log('error',f"Failed to remove cron job: {e}")
 
 async def main(config=None):
-    global global_config
+    try:
+        global global_config
 
-    global_config = config
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
-    parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
-    args = parser.parse_args()
+        global_config = config
+        # Parse command-line arguments
+        parser = argparse.ArgumentParser()
+        parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
+        parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
+        args = parser.parse_args()
 
-    print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
-    if not check_filebeat_installed():
-        await install_filebeat()
-    
-    if __name__ == "__main__":
-        await step_certificate.main(stop_event)
-    else: await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
+        print_or_log('info', 'Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
+        if not check_filebeat_installed():
+            await install_filebeat()
 
-    filebeat_changed = False
-    if await configure_filebeat(silent=args.silent, test=args.test):
-        filebeat_changed = True
-        # Delete scheduled task on Windows
-        if operating_system == "Windows":
-            task_name = "Filebeat Task"
+        if __name__ == "__main__":
+            await step_certificate.main(stop_event)
+        else:
+            await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
 
-            # Check if the task already exists
-            task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
-            if "ERROR: The system cannot find the file specified." not in task_query.stderr:
-                # Delete the scheduled task
-                subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
-                print_or_log('info',"Scheduled task deleted successfully.")
+        filebeat_changed = False
+        if await configure_filebeat(silent=args.silent, test=args.test):
+            filebeat_changed = True
+            # Delete scheduled task on Windows
+            if operating_system == "Windows":
+                task_name = "Filebeat Task"
 
-        # Delete cron job on Linux
-        if operating_system == "Linux":
-            script_path = os.path.abspath(__file__)
-            command = f"python3 {script_path} -silent"
-            remove_cron_job(command)
-            print_or_log('info',"Cron job deleted successfully.")
+                # Check if the task already exists
+                task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
+                if "ERROR: The system cannot find the file specified." not in task_query.stderr:
+                    # Delete the scheduled task
+                    subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
+                    print_or_log('info', "Scheduled task deleted successfully.")
 
-    # if filebeat_changed:
-    await restart_filebeat(filebeat_changed, silent=args.silent)
+            # Delete cron job on Linux
+            if operating_system == "Linux":
+                script_path = os.path.abspath(__file__)
+                command = f"python3 {script_path} -silent"
+                remove_cron_job(command)
+                print_or_log('info', "Cron job deleted successfully.")
+
+        # if filebeat_changed:
+        await restart_filebeat(filebeat_changed, silent=args.silent)
+
+    except asyncio.CancelledError:
+        # Perform any necessary cleanup or handling for cancellation here
+        print_or_log('info', 'Filebeat setup task was canceled. Performing cleanup...')
+        # Cleanup code goes here - can't think of any.
+        return  # suppress the CancelledError and not propagate it further
 
 if __name__ == "__main__":
     asyncio.run(main())
