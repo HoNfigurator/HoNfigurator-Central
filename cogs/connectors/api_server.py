@@ -937,7 +937,7 @@ async def start_api_server(config, game_servers_dict, game_manager_tasks, health
     uvicorn_logger.setLevel(logging.WARNING)
     uvicorn_logger.propagate = LOGGER.propagate
 
-    LOGGER.interest(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
+    LOGGER.highlight(f"[*] HoNfigurator API - Listening on {host}:{port} (PUBLIC)")
 
     # loop = asyncio.get_running_loop()
     await asgi_server(app, host, port)

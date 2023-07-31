@@ -306,7 +306,7 @@ class GameServerManager:
             lambda *args, **kwargs: handle_clients(*args, **kwargs, game_server_manager=self),
             host, game_server_to_mgr_port
         )
-        LOGGER.interest(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
+        LOGGER.highlight(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
 
         await stop_event.wait()
 
@@ -347,7 +347,7 @@ class GameServerManager:
             elif mserver_auth_response[1] > 500 and mserver_auth_response[1] < 600:
                 LOGGER.error(f"{prefix}The issue is most likely server side.")
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
-        LOGGER.interest("Authenticated to MasterServer.")
+        LOGGER.highlight("Authenticated to MasterServer.")
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
         self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
@@ -408,7 +408,7 @@ class GameServerManager:
         if not chat_auth_response:
             raise HoNAuthenticationError(f"Chatserver authentication failure")
 
-        LOGGER.interest("Authenticated to ChatServer.")
+        LOGGER.highlight("Authenticated to ChatServer.")
 
         # Start handling packets from the chat server
         await self.chat_server_handler.handle_packets()
