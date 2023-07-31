@@ -776,7 +776,6 @@ async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permi
     url = get_filebeat_auth_url()
     if url: return JSONResponse(status_code=200,content={"url":url})
     else:
-        LOGGER.error("No pending OAUTH URL.")
         return JSONResponse(status_code=200,content={"status":"there is no OAUTH url available."})
 
 # @app.post("/api/start_filebeat_setup_task")  # unsure if this endpoint will ever be used.
