@@ -184,11 +184,11 @@ class GameServerManager:
                     # await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
                     return True
-            else:
-                # this server hasn't connected to the manager yet
-                await game_server.stop_server_exe(disable=disable, delete=delete)
-                game_server.reset_game_state()
-                return True
+            # else:
+            #     # this server hasn't connected to the manager yet
+            #     await game_server.stop_server_exe(disable=disable, delete=delete)
+            #     game_server.reset_game_state()
+            #     return True
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
