@@ -179,15 +179,19 @@ class Misc:
             total -= 4
         return total
     
-    def get_server_affinity(self,server_id,svr_total_per_core):
+    def get_server_affinity(self, server_id, svr_total_per_core):
         server_id = int(server_id)
         affinity = []
 
-        if svr_total_per_core > 3:
-            raise Exception("You cannot specify more than 3 servers per core.")
-        elif svr_total_per_core < 0:
-            raise Exception("You cannot specify a number less than 1. Must be either 1 or 2.")
-        if svr_total_per_core == 1:
+        if svr_total_per_core > 3 or svr_total_per_core < 0.5 or (svr_total_per_core != 0.5 and svr_total_per_core != int(svr_total_per_core)):
+            raise Exception("Value must be 0.5, 1, 2, or 3.")
+        
+        if svr_total_per_core == 0.5:
+            cores_per_server = 2
+            starting_core = (self.cpu_count - 1) - (server_id * cores_per_server) % self.cpu_count
+            for i in range(cores_per_server):
+                affinity.append(str((starting_core + i) % self.cpu_count))
+        elif svr_total_per_core == 1:
             affinity.append(str(self.cpu_count - server_id))
         else:
             t = 0
@@ -197,6 +201,7 @@ class Misc:
             affinity.append(str(self.cpu_count - t))
 
         return affinity
+
     
     def get_public_ip(self):
         if self.public_ip:
