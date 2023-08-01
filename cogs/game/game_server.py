@@ -521,7 +521,10 @@ class GameServer:
         self._proc = exe
         self._proc_hook = psutil.Process(pid=exe.pid)
         self._proc_owner =self._proc_hook.username()
-        self.set_server_affinity()
+        
+        if MISC.get_os_platform() == "win32":
+            self.set_server_affinity()
+
         self.scheduled_shutdown = False
         self.game_state.update({'status':GameStatus.STARTING.value})
 
