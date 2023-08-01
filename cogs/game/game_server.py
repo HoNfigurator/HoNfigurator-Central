@@ -458,6 +458,15 @@ class GameServer:
         task = self.tasks.get(task_name)
         if task is not None:
             task.cancel()
+    
+    def set_server_affinity(self):
+        if not self.global_config['hon_data']['svr_override_affinity']:
+            return
+        affinity = []
+        for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
+            affinity.append(int(_))
+        self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
+        
 
     async def start_server(self, timeout=180):
         self.reset_game_state()
@@ -488,13 +497,6 @@ class GameServer:
             DETACHED_PROCESS = 0x00000008
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
-            if self.global_config['hon_data']['svr_override_affinity']:
-                affinity = []
-                for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
-                    affinity.append(int(_))
-                p = psutil.Process(exe.pid)
-                p.cpu_affinity(affinity)  # Set CPU affinity
-
         else: # linux
             def parse_svr_id(cmdline):
                 for item in cmdline[4].split(";"):
@@ -519,6 +521,7 @@ class GameServer:
         self._proc = exe
         self._proc_hook = psutil.Process(pid=exe.pid)
         self._proc_owner =self._proc_hook.username()
+        self.set_server_affinity()
         self.scheduled_shutdown = False
         self.game_state.update({'status':GameStatus.STARTING.value})
 

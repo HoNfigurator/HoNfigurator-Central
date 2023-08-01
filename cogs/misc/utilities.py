@@ -171,13 +171,13 @@ class Misc:
         
     def get_total_allowed_servers(self,svr_total_per_core):
         total = svr_total_per_core * self.cpu_count
-        if self.cpu_count <=4:
+        if self.cpu_count < 5:
             total -= 1
-        elif self.cpu_count >4 and self.cpu_count <= 12:
+        elif self.cpu_count > 4 and self.cpu_count < 13:
             total -= 2
         elif self.cpu_count >12:
             total -= 4
-        return total
+        return int(total)
     
     def get_server_affinity(self, server_id, svr_total_per_core):
         server_id = int(server_id)
@@ -188,7 +188,7 @@ class Misc:
         
         if svr_total_per_core == 0.5:
             cores_per_server = 2
-            starting_core = (self.cpu_count - 1) - (server_id * cores_per_server) % self.cpu_count
+            starting_core = (self.cpu_count) - (server_id * cores_per_server) % self.cpu_count
             for i in range(cores_per_server):
                 affinity.append(str((starting_core + i) % self.cpu_count))
         elif svr_total_per_core == 1:
