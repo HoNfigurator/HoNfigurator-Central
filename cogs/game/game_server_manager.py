@@ -676,7 +676,7 @@ class GameServerManager:
             if game_server:
                 game_server.status_received.set()
                 game_server.set_client_connection(client_connection)
-                self.check_for_restart_required(game_server)
+                await self.check_for_restart_required(game_server)
             # TODO
             # Create game server object here?
             # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
