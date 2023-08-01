@@ -32,7 +32,8 @@ class GameServer:
             'match_monitor': None,
             'botmatch_shutdown': None,
             'proxy_task': None,
-            'idle_disconnect_timer': None
+            'idle_disconnect_timer': None,
+            'shutdown_self': None
         }
         self.manager_event_bus = manager_event_bus
         self.port = port
@@ -52,6 +53,7 @@ class GameServer:
         self.game_manager_parser = GameManagerParser(self.id,LOGGER)
         self.client_connection = None
         self.idle_disconnect_timer = 0
+        self.initalised_once_fully = False
         """
         Game State specific variables
         """
@@ -198,6 +200,10 @@ class GameServer:
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
+                if self.global_config['application_data']['advanced']['restart_svrs_between_games'] and self.initalised_once_fully:
+                    coro = self.schedule_shutdown_server(disable=False)
+                    self.schedule_task(coro,'shutdown_self')
+                self.initalised_once_fully = True
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
                 await self.set_server_priority_increase()

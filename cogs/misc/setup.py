@@ -124,6 +124,9 @@ class SetupEnvironment:
                 "longterm_storage": {
                     "active": False,
                     "location": ""
+                },
+                "advanced" : {
+                    "restart_svrs_between_games": False
                 }
             }
         }
