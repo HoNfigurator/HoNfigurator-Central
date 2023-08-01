@@ -25,7 +25,7 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url
     from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
     LOGGER = get_logger()
@@ -90,7 +90,8 @@ async def filebeat_status():
         "installed": installed,
         "running": filebeat_running,
         "certificate_exists": certificate_exists,
-        "certificate_expired": certificate_expired
+        "certificate_expired": certificate_expired,
+        "pending_oauth_url": True if get_filebeat_auth_url() else False
     }
 
     set_filebeat_status(status_dict)
