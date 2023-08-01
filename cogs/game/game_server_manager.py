@@ -184,11 +184,11 @@ class GameServerManager:
                     # await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
                     return True
-            # else:
-            #     # this server hasn't connected to the manager yet
-            #     await game_server.stop_server_exe(disable=disable, delete=delete)
-            #     game_server.reset_game_state()
-            #     return True
+            else:
+                # this server hasn't connected to the manager yet
+                await game_server.stop_server_exe(disable=disable, delete=delete)
+                game_server.reset_game_state()
+                return True
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -480,72 +480,68 @@ class GameServerManager:
         Returns:
             None
         """
-        try:
-            max_servers = self.global_config['hon_data']['svr_total']
-            if to_add == "all":
-                max_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
-            elif to_add > 0:
-                max_servers += to_add
+        max_servers = self.global_config['hon_data']['svr_total']
+        if to_add == "all":
+            max_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
+        elif to_add > 0:
+            max_servers += to_add
 
-            if to_remove == "all":
-                max_servers = 0
-            elif to_remove > 0:
-                max_servers -= to_remove
+        if to_remove == "all":
+            max_servers = 0
+        elif to_remove > 0:
+            max_servers -= to_remove
 
-            if max_servers < 0: max_servers = 0
-            self.global_config['hon_data']['svr_total'] = max_servers
+        if max_servers < 0: max_servers = 0
+        self.global_config['hon_data']['svr_total'] = max_servers
 
-            self.setup.validate_hon_data(self.global_config['hon_data'])
+        self.setup.validate_hon_data(self.global_config['hon_data'])
 
-            idle_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') != 3]
-            occupied_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') == 3]
-            total_num_servers = len(occupied_servers) + len(idle_servers)
-            num_servers_to_remove = max(total_num_servers - max_servers, 0)
-            num_servers_to_create = max(max_servers - total_num_servers, 0)
+        idle_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') != 3]
+        occupied_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') == 3]
+        total_num_servers = len(occupied_servers) + len(idle_servers)
+        num_servers_to_remove = max(total_num_servers - max_servers, 0)
+        num_servers_to_create = max(max_servers - total_num_servers, 0)
 
-            if num_servers_to_create > 0:
-                start_servers = []
-                for i in range(num_servers_to_create):
-                    game_port = self.find_next_available_ports()
+        if num_servers_to_create > 0:
+            start_servers = []
+            for i in range(num_servers_to_create):
+                game_port = self.find_next_available_ports()
 
-                    if game_port is not None:
-                        game_server = self.create_game_server(game_port)
-                        start_servers.append(game_server)
-                        LOGGER.info(f"Game server created at game_port: {game_port}")
-                    else:
-                        LOGGER.warn("No available ports for creating a new game server.")
-                coro = self.start_game_servers(start_servers)
-                self.schedule_task(coro, 'gameserver_startup', override = True)
+                if game_port is not None:
+                    game_server = self.create_game_server(game_port)
+                    start_servers.append(game_server)
+                    LOGGER.info(f"Game server created at game_port: {game_port}")
+                else:
+                    LOGGER.warn("No available ports for creating a new game server.")
+            coro = self.start_game_servers(start_servers)
+            self.schedule_task(coro, 'gameserver_startup', override = True)
+        
+        async def remove_servers(servers, server_type):
+            servers_removed = 0
+            servers_to_remove = []
+            for game_server in servers:
+                await self.cmd_shutdown_server(game_server, delete=True)
+                if not game_server.delete_me:
+                    servers_to_remove.append(game_server.port)
+                    servers_removed += 1
+                    if servers_removed >= num_servers_to_remove:
+                        break
+            # for port in servers_to_remove:
+            #     await asyncio.sleep(0.1)
+            #     if port in self.game_servers:
+            #         game_server.cancel_tasks()
+            #         del self.game_servers[port]
             
-            async def remove_servers(servers, server_type):
-                servers_removed = 0
-                servers_to_remove = []
-                for game_server in servers:
-                    await self.cmd_shutdown_server(game_server, delete=True)
-                    # await asyncio.sleep(1)
-                    if not game_server.delete_me or game_server.server_closed.is_set():
-                        servers_to_remove.append(game_server.port)
-                        servers_removed += 1
-                        if servers_removed >= num_servers_to_remove:
-                            break
-                # for port in servers_to_remove:
-                #     await asyncio.sleep(0.1)
-                #     if port in self.game_servers:
-                #         game_server.cancel_tasks()
-                #         del self.game_servers[port]
-                
-                LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {total_num_servers - servers_removed} game servers are now running.")
-                return servers_removed
+            LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {total_num_servers - servers_removed} game servers are now running.")
+            return servers_removed
 
+        if num_servers_to_remove > 0:
+            removed_idle = await remove_servers(idle_servers, 'idle')
+            num_servers_to_remove -= removed_idle
             if num_servers_to_remove > 0:
-                removed_idle = await remove_servers(idle_servers, 'idle')
-                num_servers_to_remove -= removed_idle
-                if num_servers_to_remove > 0:
-                    removed_occupied = await remove_servers(occupied_servers, 'occupied')
-                elif num_servers_to_remove < 0:
-                    LOGGER.warn("Number of running game servers is greater than the maximum number of game servers.")
-        except Exception:
-            LOGGER.error(f"An error occured while balancing the game server count\n{traceback.format_exc()}")
+                removed_occupied = await remove_servers(occupied_servers, 'occupied')
+            elif num_servers_to_remove < 0:
+                LOGGER.warn("Number of running game servers is greater than the maximum number of game servers.")
 
 
     async def create_dynamic_game_server(self):
@@ -575,13 +571,19 @@ class GameServerManager:
         coro = self.start_game_servers(start_servers)
         self.schedule_task(coro, 'gameserver_startup', override = True)
 
-    async def check_for_restart_required(self):
-        for game_server in self.game_servers.values():
-            params_different = game_server.params_are_different()
-            if params_different:
+    async def check_for_restart_required(self, game_server='all'):
+        if game_server == 'all':
+            for game_server in self.game_servers.values():
+                if game_server.params_are_different():
+                    await self.cmd_shutdown_server(game_server,disable=False)
+                    await asyncio.sleep(0.1)
+                    game_server.enable_server()
+        else:
+            if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server,disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
+            
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
@@ -674,6 +676,7 @@ class GameServerManager:
             if game_server:
                 game_server.status_received.set()
                 game_server.set_client_connection(client_connection)
+                self.check_for_restart_required(game_server)
             # TODO
             # Create game server object here?
             # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
@@ -882,7 +885,6 @@ class GameServerManager:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
 
             await asyncio.gather(*start_tasks)
-            await self.check_for_restart_required()
 
         except Exception as e:
             LOGGER.error(f"GameServers failed to start\n{traceback.format_exc()}")
