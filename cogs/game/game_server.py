@@ -131,7 +131,7 @@ class GameServer:
         LOGGER.debug(f"GameServer #{self.id} - Reset state")
         self.status_received.clear()
         self.game_state.clear()
-        self.initalised_once_fully = False
+        self.game_in_progress = False
 
     def params_are_different(self):
         if not self._proc_hook: return
