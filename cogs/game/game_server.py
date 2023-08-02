@@ -202,6 +202,7 @@ class GameServer:
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
                 if self.global_config['application_data']['advanced']['restart_svrs_between_games'] and self.game_in_progress:
+                    LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'restart_svrs_between_games' is enabled.")
                     coro = self.schedule_shutdown_server(disable=False)
                     self.schedule_task(coro,'shutdown_self')
                     self.game_in_progress = False
