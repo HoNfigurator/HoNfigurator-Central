@@ -53,7 +53,7 @@ class GameServer:
         self.game_manager_parser = GameManagerParser(self.id,LOGGER)
         self.client_connection = None
         self.idle_disconnect_timer = 0
-        self.initalised_once_fully = False
+        self.game_in_progress = False
         """
         Game State specific variables
         """
@@ -201,12 +201,13 @@ class GameServer:
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
-                if self.global_config['application_data']['advanced']['restart_svrs_between_games'] and self.initalised_once_fully:
+                if self.global_config['application_data']['advanced']['restart_svrs_between_games'] and self.game_in_progress:
                     coro = self.schedule_shutdown_server(disable=False)
                     self.schedule_task(coro,'shutdown_self')
-                self.initalised_once_fully = True
+                    self.game_in_progress = False
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
+                self.game_in_progress = True
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
             # Add more phases as needed
