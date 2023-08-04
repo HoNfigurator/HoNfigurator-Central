@@ -16,6 +16,7 @@ from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries
 from cogs.TCP.packet_parser import GameManagerParser
 from cogs.misc.utilities import Misc
 import aiofiles
+import glob
 
 
 import re
@@ -31,7 +32,8 @@ class GameServer:
             'match_monitor': None,
             'botmatch_shutdown': None,
             'proxy_task': None,
-            'idle_disconnect_timer': None
+            'idle_disconnect_timer': None,
+            'shutdown_self': None
         }
         self.manager_event_bus = manager_event_bus
         self.port = port
@@ -51,6 +53,7 @@ class GameServer:
         self.game_manager_parser = GameManagerParser(self.id,LOGGER)
         self.client_connection = None
         self.idle_disconnect_timer = 0
+        self.game_in_progress = False
         """
         Game State specific variables
         """
@@ -125,8 +128,10 @@ class GameServer:
             return self.config.local['params']['svr_proxyLocalVoicePort']
 
     def reset_game_state(self):
+        LOGGER.debug(f"GameServer #{self.id} - Reset state")
         self.status_received.clear()
         self.game_state.clear()
+        self.game_in_progress = False
 
     def params_are_different(self):
         if not self._proc_hook: return
@@ -139,7 +144,7 @@ class GameServer:
         new_params = MISC.build_commandline_args(self.config.local, self.global_config)
         # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
         if current_params != new_params:
-            LOGGER.debug(f"GameServer #{self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
+            LOGGER.info(f"GameServer #{self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
             return True
         LOGGER.debug(f"GameServer #{self.id} A server configuration change has been suggested, but the suggested settings and existing live executable settings match. Skipping.")
         return False
@@ -196,8 +201,14 @@ class GameServer:
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
+                if self.global_config['application_data']['advanced']['restart_svrs_between_games'] and self.game_in_progress:
+                    LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'restart_svrs_between_games' is enabled.")
+                    coro = self.schedule_shutdown_server(disable=False)
+                    self.schedule_task(coro,'shutdown_self')
+                    self.game_in_progress = False
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
+                self.game_in_progress = True
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
             # Add more phases as needed
@@ -449,6 +460,15 @@ class GameServer:
         task = self.tasks.get(task_name)
         if task is not None:
             task.cancel()
+    
+    def set_server_affinity(self):
+        if not self.global_config['hon_data']['svr_override_affinity']:
+            return
+        affinity = []
+        for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
+            affinity.append(int(_))
+        self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
+        
 
     async def start_server(self, timeout=180):
         self.reset_game_state()
@@ -479,13 +499,6 @@ class GameServer:
             DETACHED_PROCESS = 0x00000008
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
-            if self.global_config['hon_data']['svr_override_affinity']:
-                affinity = []
-                for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
-                    affinity.append(int(_))
-                p = psutil.Process(exe.pid)
-                p.cpu_affinity(affinity)  # Set CPU affinity
-
         else: # linux
             def parse_svr_id(cmdline):
                 for item in cmdline[4].split(";"):
@@ -510,6 +523,10 @@ class GameServer:
         self._proc = exe
         self._proc_hook = psutil.Process(pid=exe.pid)
         self._proc_owner =self._proc_hook.username()
+        
+        if MISC.get_os_platform() == "win32":
+            self.set_server_affinity()
+
         self.scheduled_shutdown = False
         self.game_state.update({'status':GameStatus.STARTING.value})
 
@@ -529,7 +546,7 @@ class GameServer:
                 for task in pending:
                     task.cancel()
                 LOGGER.error(f"GameServer #{self.id} startup timed out. {timeout} seconds waited for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
-                self.schedule_shutdown()
+                self.stop_server_exe()
                 return False
 
             if self.status_received.is_set():
@@ -537,7 +554,7 @@ class GameServer:
                 LOGGER.interest(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
                 return True
             elif self.server_closed.is_set():
-                LOGGER.warning(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
+                LOGGER.warn(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
                 return False
         except Exception as e:
             LOGGER.error(f"GameServer #{self.id} - Unexpected error occurred: {traceback.format_exc()}")
@@ -573,6 +590,32 @@ class GameServer:
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
+    
+    async def tail_game_log_then_close(self, wait=60):
+        end_time = time.time() + wait
+        old_size = 0
+        while time.time() < end_time:
+            # Find all files matching pattern
+            files = glob.glob(os.path.join(self.global_config['hon_data']['hon_logs_directory'], f"Slave-{self.id}_*.clog"))
+            if not files:
+                break
+
+            # If files are found, sort them by modification time, and get the size of the most recent one
+            if files:
+                latest_file = max(files, key=os.path.getmtime)
+                size = os.path.getsize(latest_file)
+                if not old_size:
+                    old_size = size
+                else:
+                    if size != old_size:
+                        LOGGER.info("match in progress")
+                        return
+
+            # Sleep for a while before checking again
+            await asyncio.sleep(1)
+            
+        # Close the tailing
+        await self.stop_server_exe(disable=False)
 
     async def stop_server_exe(self, disable=True, delete=False):
         if disable:
@@ -771,8 +814,8 @@ region=naeu
                         status = self._proc_hook.status()  # Get the status of the process
                     except psutil.NoSuchProcess:
                         status = 'stopped'
-                    if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped
-                        LOGGER.debug(f"GameServer #{self.id} stopped unexpectedly")
+                    if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped. a "suspended" process will also show as stopped on windows.
+                        LOGGER.warn(f"GameServer #{self.id} stopped unexpectedly")
                         self._proc = None  # Reset the process reference
                         self._proc_hook = None  # Reset the process hook reference
                         self._pid = None

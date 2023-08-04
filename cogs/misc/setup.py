@@ -88,7 +88,7 @@ class SetupEnvironment:
                 "svr_location": self.get_server_region(),
                 "svr_priority": "HIGH",
                 "svr_total": int(MISC.get_cpu_count() / 2),
-                "svr_total_per_core": 1,
+                "svr_total_per_core": 1.0,
                 "man_enableProxy": True if MISC.get_os_platform() == "win32" else False,
                 "svr_noConsole": False,
                 "svr_enableBotMatch": False,
@@ -124,6 +124,9 @@ class SetupEnvironment:
                 "longterm_storage": {
                     "active": False,
                     "location": ""
+                },
+                "advanced" : {
+                    "restart_svrs_between_games": False
                 }
             }
         }
@@ -214,11 +217,21 @@ class SetupEnvironment:
                 return handle_bool(key, value)
             elif expected_type == str:
                 return handle_str(key, value)
+            elif expected_type == float:
+                return handle_float(key, value)
             elif expected_type in [pathlib.PosixPath, pathlib.WindowsPath]:
                 return handle_path(key, value)
             else:
                 return value
-
+            
+        def handle_float(key, value):
+            if not isinstance(value, float):
+                try:
+                    return float(value)
+                except ValueError:
+                    return None
+            return value
+        
         def handle_int(key, value):
             if not isinstance(value, int):
                 try:
@@ -307,7 +320,7 @@ class SetupEnvironment:
                 new_value = check_type_and_convert(key, value, default_value_type)
                 if new_value is None:
                     major_issues.append(f"Invalid value for {key}: {value}")
-                elif new_value != value:
+                elif new_value is not value:
                     minor_issues.append(f"Resolved: Converted {key} to appropriate type")
                 self.hon_data[key] = new_value
 
@@ -325,9 +338,9 @@ class SetupEnvironment:
                 elif key == "svr_location" and new_value not in ALLOWED_REGIONS:
                     major_issues.append(f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
                 elif key == "svr_total":
-                    total_allowed = MISC.get_total_allowed_servers(int(self.hon_data['svr_total_per_core']))
+                    total_allowed = int(MISC.get_total_allowed_servers(float(self.hon_data['svr_total_per_core'])))
                     if new_value > total_allowed:
-                        self.hon_data[key] = int(total_allowed)
+                        self.hon_data[key] = total_allowed
                         minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
 
             if key in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
@@ -482,7 +495,7 @@ class SetupEnvironment:
                 return False
 
             for key in d1:
-                if type(d1[key]) != type(d2[key]) or d1[key] != d2[key]:
+                if type(d1[key]) != type(d2[key]) or d1[key] is not d2[key]:
                     return False
 
             return True

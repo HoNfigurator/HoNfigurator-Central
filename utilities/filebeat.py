@@ -21,12 +21,16 @@ if __name__ == "__main__":
     import step_certificate
     LOGGER = None
     stop_event = asyncio.Event()
+    roles_database = None
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url
+    from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
     LOGGER = get_logger()
+    roles_database = RolesDatabase()
+    MISC = get_misc()
 
 def print_or_log(log_lvl='info', msg=''):
     log_lvl = log_lvl.lower()
@@ -68,6 +72,31 @@ def read_admin_value_from_filebeat_config(config_path):
         if match:
             admin_value = match.group(1).strip()
     return admin_value
+
+async def filebeat_status():
+    if LOGGER: # pass the reference through
+        step_certificate.set_logger(LOGGER)
+
+    installed = check_filebeat_installed()
+    certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
+    certificate_expired = True
+    if certificate_exists:
+        certificate_expired = step_certificate.is_certificate_expired(get_filebeat_crt_path())
+    filebeat_running = False
+    if MISC.get_proc('filebeat') or MISC.get_proc('filebeat.exe'):
+        filebeat_running = True
+
+    status_dict = {
+        "installed": installed,
+        "running": filebeat_running,
+        "certificate_exists": certificate_exists,
+        "certificate_expired": certificate_expired,
+        "pending_oauth_url": True if get_filebeat_auth_url() else False
+    }
+
+    set_filebeat_status(status_dict)
+
+    return status_dict
 
 operating_system = platform.system()
 global_config = None
@@ -248,17 +277,20 @@ async def request_client_certificate(svr_name, filebeat_path):
         key_file_path = get_filebeat_key_path()
         certificate_exists = check_certificate_exists(crt_file_path, key_file_path)
 
-        if certificate_exists and not step_certificate.is_certificate_expiring(crt_file_path):
-            print_or_log('info',"Renewing existing client certificate...")
-            # Construct the command for certificate renewal
-            result = step_certificate.renew_certificate(crt_file_path,key_file_path)
-            if (isinstance(result,bool) and result) or result.returncode == 0:
-                return True
-            
+        if certificate_exists:
+            if step_certificate.is_certificate_expiring(crt_file_path):
+                print_or_log('info',"Renewing existing client certificate...")
+                # Construct the command for certificate renewal
+                result = step_certificate.renew_certificate(crt_file_path,key_file_path)
+                if (isinstance(result,bool) and result) or result.returncode == 0:
+                    return True
+                else:
+                    # Certificate request failed
+                    error_message = result.stderr.strip()
+                    print_or_log('info',f"Error: {error_message}")
+                    return False
             else:
-                # Certificate request failed
-                error_message = result.stderr.strip()
-                print_or_log('info',f"Error: {error_message}")
+                return True
         else:
             print_or_log('info',"Requesting new client certificate...")
             # Construct the command for new certificate request
@@ -269,6 +301,22 @@ async def request_client_certificate(svr_name, filebeat_path):
 
     except Exception as e:
         print_or_log('error',f"Encountered an error while requesting a client certificate. {traceback.format_exc()}")
+
+async def get_discord_user_id_from_api(discord_id):
+    api_url = f'https://management.honfigurator.app:3001/api-ui/getDiscordUsername/{discord_id}'
+
+    try:
+        async with aiohttp.ClientSession() as session:
+            async with session.get(api_url, ssl=False) as response:
+                if response.status == 200:
+                    data = await response.json()
+                    return data.get('username')
+                else:
+                    print(f"Failed to get Discord username for ID: {discord_id}")
+                    return None
+    except aiohttp.ClientError as e:
+        print(f"Error occurred while making the API request: {e}")
+        return None
 
 async def get_public_ip():
     providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
@@ -318,7 +366,7 @@ async def configure_filebeat(silent=False,test=False):
             b"$slave_log": str.encode(str(slave_log)),
             b"$match_log": str.encode(str(match_log)),
             b"$server_launcher": str.encode(launcher),
-            b"0.0.0.0": str.encode(external_ip),
+            b"0.0.0.0": str.encode(external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip']),
             b"charset: $encoding": str.encode(encoding),
             b"$ca_chain": str.encode(str(Path(destination_folder) / "honfigurator-chain.pem")),
             b"$client_cert": str.encode(str(Path(destination_folder) / "client.crt")),
@@ -421,14 +469,21 @@ async def configure_filebeat(silent=False,test=False):
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
 
     looked_up_discord_username = await request_client_certificate(svr_name, Path(destination_folder))
-    if not looked_up_discord_username:
-        print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
-        return
         
     existing_discord_id, old_config_hash = None, None
     if os.path.exists(config_file_path):
         old_config_hash = calculate_file_hash(config_file_path)
         existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
+    
+    if not existing_discord_id and isinstance(looked_up_discord_username,bool):
+        if roles_database:
+            looked_up_discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
+        else:
+            looked_up_discord_username = await step_certificate.discord_oauth_flow_stepca(svr_name, get_filebeat_csr_path(), get_filebeat_crt_path(), get_filebeat_key_path(),get_filebeat_auth_token())
+    
+    if not looked_up_discord_username:
+        print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
+        return
         
     filebeat_config = perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
 
@@ -559,46 +614,60 @@ def remove_cron_job(command):
         print_or_log('error',f"Failed to remove cron job: {e}")
 
 async def main(config=None):
-    global global_config
+    try:
+        global global_config
 
-    global_config = config
-    # Parse command-line arguments
-    parser = argparse.ArgumentParser()
-    parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
-    parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
-    args = parser.parse_args()
+        global_config = config
+        # Parse command-line arguments
+        parser = argparse.ArgumentParser()
+        parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
+        parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
+        args = parser.parse_args()
 
-    print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
-    if not check_filebeat_installed():
-        await install_filebeat()
-    
-    if __name__ == "__main__":
-        await step_certificate.main(stop_event)
-    else: await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
+        print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
+        if not check_filebeat_installed():
+            await install_filebeat()
+        
+        if __name__ == "__main__":
+            await step_certificate.main(stop_event)
+        else: await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
 
-    filebeat_changed = False
-    if await configure_filebeat(silent=args.silent, test=args.test):
-        filebeat_changed = True
-        # Delete scheduled task on Windows
-        if operating_system == "Windows":
-            task_name = "Filebeat Task"
+        filebeat_changed = False
+        if await configure_filebeat(silent=args.silent, test=args.test):
+            filebeat_changed = True
+            # Delete scheduled task on Windows
+            if operating_system == "Windows":
+                task_name = "Filebeat Task"
 
-            # Check if the task already exists
-            task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
-            if "ERROR: The system cannot find the file specified." not in task_query.stderr:
-                # Delete the scheduled task
-                subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
-                print_or_log('info',"Scheduled task deleted successfully.")
+                # Check if the task already exists
+                task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
+                if "ERROR: The system cannot find the file specified." not in task_query.stderr:
+                    # Delete the scheduled task
+                    subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
+                    print_or_log('info',"Scheduled task deleted successfully.")
 
-        # Delete cron job on Linux
-        if operating_system == "Linux":
-            script_path = os.path.abspath(__file__)
-            command = f"python3 {script_path} -silent"
-            remove_cron_job(command)
-            print_or_log('info',"Cron job deleted successfully.")
+            # Delete cron job on Linux
+            if operating_system == "Linux":
+                script_path = os.path.abspath(__file__)
+                command = f"python3 {script_path} -silent"
+                remove_cron_job(command)
+                print_or_log('info',"Cron job deleted successfully.")
 
-    # if filebeat_changed:
-    await restart_filebeat(filebeat_changed, silent=args.silent)
+        # if filebeat_changed:
+        certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
+        if certificate_exists:
+            await restart_filebeat(filebeat_changed, silent=args.silent)
+
+        if not __name__ == "__main__":
+            await filebeat_status()    # sets the overall status of filebeat for retreival by other components
+        
+        return True
+
+    except asyncio.CancelledError:
+        # Perform any necessary cleanup or handling for cancellation here
+        print_or_log('info', 'Filebeat setup task was canceled. Performing cleanup...')
+        # Cleanup code goes here - can't think of any.
+        return  # suppress the CancelledError and not propagate it further
 
 if __name__ == "__main__":
     asyncio.run(main())

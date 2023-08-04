@@ -11,13 +11,14 @@ import ssl
 import tempfile
 import webbrowser
 import json
-from datetime import datetime
+from datetime import datetime, timedelta
 import aiohttp
 from aiohttp import TCPConnector
 import asyncio
 
 version = "0.24.3"
 system = platform.system()
+LOGGER = None
 
 if system == "Windows":
     step_location = Path(os.environ['PROGRAMDATA']) / "step" / "bin" / "step.exe"
@@ -63,6 +64,11 @@ def run_command(cmd, shell=False):
         print_or_log('error',f"Error: {result.stderr}")
         sys.exit(1)
     return result.stdout.strip()
+
+def set_logger(LOGGER_OBJ):
+    global LOGGER
+    if not LOGGER:
+        LOGGER = LOGGER_OBJ
 
 async def install_step_cli():
     with tempfile.TemporaryDirectory() as tempdir:
@@ -142,7 +148,7 @@ async def register_client(server_url, ssl=False):
         raise Exception("No token found in response")
 
 def navigate_to_url(oauth_url):
-    print_or_log('info',"You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
+    print_or_log('warning',"You must authenticate with your discord account which is a member of the HOSTS role in the Project Kongor discord channel.")
     if system == "Windows":
         # Try to open the URL in a web browser
         webbrowser.open_new(oauth_url)
@@ -216,7 +222,7 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
             return False
 
 def is_certificate_expiring(cert_path):
-    print_or_log('debug',"Checking if certificate is expired...")
+    print_or_log('debug', "Checking if certificate is expiring...")
     # Fetch certificate information
     cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
     # Convert cert_info string into a dictionary
@@ -225,8 +231,25 @@ def is_certificate_expiring(cert_path):
     not_after = cert_info.get('validity', {}).get('end')
     # Convert the expiration date string into a datetime object
     not_after = datetime.strptime(not_after, '%Y-%m-%dT%H:%M:%S%z')
-    # Return True if the certificate is expired, False otherwise
-    return datetime.now(tz=not_after.tzinfo) > not_after
+    
+    # Calculate the difference between the expiration date and the current date
+    time_difference = not_after - datetime.now(not_after.tzinfo)
+    # Check if the certificate is expiring within 7 days
+    return timedelta(days=0) < time_difference <= timedelta(days=7)
+
+def is_certificate_expired(cert_path):
+    print_or_log('debug', "Checking if certificate is expired...")
+    # Fetch certificate information
+    cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
+    # Convert cert_info string into a dictionary
+    cert_info = json.loads(cert_info)
+    # Fetch the expiration date from the certificate info
+    not_after = cert_info.get('validity', {}).get('end')
+    # Convert the expiration date string into a datetime object
+    not_after = datetime.strptime(not_after, '%Y-%m-%dT%H:%M:%S%z')
+
+    # Return True if the certificate is not expired, False otherwise
+    return datetime.now(tz=not_after.tzinfo) <= not_after
 
 def renew_certificate(crt_file_path, key_file_path):
     command = [

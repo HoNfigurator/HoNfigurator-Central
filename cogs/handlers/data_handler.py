@@ -63,6 +63,7 @@ class ConfigManagement():
                 'svr_location':self.get_global_by_key('svr_location'),
                 'svr_enableBotMatch': self.get_global_by_key('svr_enableBotMatch'),
                 'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
+                'svr_total_per_core' : self.get_global_by_key('svr_total_per_core'),
                 'svr_broadcast':True,
                 'upd_checkForUpdates':False,
                 'sv_autosaveReplay':True,
