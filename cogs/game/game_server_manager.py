@@ -571,12 +571,19 @@ class GameServerManager:
         coro = self.start_game_servers(start_servers)
         self.schedule_task(coro, 'gameserver_startup', override = True)
 
-    async def check_for_restart_required(self):
-        for game_server in self.game_servers.values():
+    async def check_for_restart_required(self, game_server='all'):
+        if game_server == 'all':
+            for game_server in self.game_servers.values():
+                if game_server.params_are_different():
+                    await self.cmd_shutdown_server(game_server,disable=False)
+                    await asyncio.sleep(0.1)
+                    game_server.enable_server()
+        else:
             if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server,disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
+            
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
@@ -669,6 +676,7 @@ class GameServerManager:
             if game_server:
                 game_server.status_received.set()
                 game_server.set_client_connection(client_connection)
+                await self.check_for_restart_required(game_server)
             # TODO
             # Create game server object here?
             # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
@@ -877,7 +885,6 @@ class GameServerManager:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
 
             await asyncio.gather(*start_tasks)
-            await self.check_for_restart_required()
 
         except Exception as e:
             LOGGER.error(f"GameServers failed to start\n{traceback.format_exc()}")

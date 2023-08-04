@@ -32,7 +32,8 @@ class GameServer:
             'match_monitor': None,
             'botmatch_shutdown': None,
             'proxy_task': None,
-            'idle_disconnect_timer': None
+            'idle_disconnect_timer': None,
+            'shutdown_self': None
         }
         self.manager_event_bus = manager_event_bus
         self.port = port
@@ -52,6 +53,7 @@ class GameServer:
         self.game_manager_parser = GameManagerParser(self.id,LOGGER)
         self.client_connection = None
         self.idle_disconnect_timer = 0
+        self.game_in_progress = False
         """
         Game State specific variables
         """
@@ -129,6 +131,7 @@ class GameServer:
         LOGGER.debug(f"GameServer #{self.id} - Reset state")
         self.status_received.clear()
         self.game_state.clear()
+        self.game_in_progress = False
 
     def params_are_different(self):
         if not self._proc_hook: return
@@ -141,7 +144,7 @@ class GameServer:
         new_params = MISC.build_commandline_args(self.config.local, self.global_config)
         # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
         if current_params != new_params:
-            LOGGER.debug(f"GameServer #{self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
+            LOGGER.info(f"GameServer #{self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
             return True
         LOGGER.debug(f"GameServer #{self.id} A server configuration change has been suggested, but the suggested settings and existing live executable settings match. Skipping.")
         return False
@@ -198,8 +201,14 @@ class GameServer:
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
+                if self.global_config['application_data']['advanced']['restart_svrs_between_games'] and self.game_in_progress:
+                    LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'restart_svrs_between_games' is enabled.")
+                    coro = self.schedule_shutdown_server(disable=False)
+                    self.schedule_task(coro,'shutdown_self')
+                    self.game_in_progress = False
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
+                self.game_in_progress = True
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
             # Add more phases as needed
@@ -451,6 +460,15 @@ class GameServer:
         task = self.tasks.get(task_name)
         if task is not None:
             task.cancel()
+    
+    def set_server_affinity(self):
+        if not self.global_config['hon_data']['svr_override_affinity']:
+            return
+        affinity = []
+        for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
+            affinity.append(int(_))
+        self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
+        
 
     async def start_server(self, timeout=180):
         self.reset_game_state()
@@ -481,13 +499,6 @@ class GameServer:
             DETACHED_PROCESS = 0x00000008
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
-            if self.global_config['hon_data']['svr_override_affinity']:
-                affinity = []
-                for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
-                    affinity.append(int(_))
-                p = psutil.Process(exe.pid)
-                p.cpu_affinity(affinity)  # Set CPU affinity
-
         else: # linux
             def parse_svr_id(cmdline):
                 for item in cmdline[4].split(";"):
@@ -512,6 +523,10 @@ class GameServer:
         self._proc = exe
         self._proc_hook = psutil.Process(pid=exe.pid)
         self._proc_owner =self._proc_hook.username()
+        
+        if MISC.get_os_platform() == "win32":
+            self.set_server_affinity()
+
         self.scheduled_shutdown = False
         self.game_state.update({'status':GameStatus.STARTING.value})
 
