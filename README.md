@@ -9,10 +9,6 @@ There is a restful API built in, to allow interaction from external services. Su
 
 This guide provides steps for linking the configured HoNfigurator server to a modern front end website where you can remotely manage and monitor one or more HoNfigurator instances.
 
-## Authors
-[FrankTheGodDamnMother**Tank](https://discordapp.com/users/197967989964800000)  
-[Shindara](https://discordapp.com/users/291595808858439680)
-
 <details>
 <summary>Table of Contents</summary>
 	
@@ -22,6 +18,10 @@ This guide provides steps for linking the configured HoNfigurator server to a mo
   * [Monitoring](#monitoring)
 
 </details>
+
+## Authors
+[FrankTheGodDamnMother**Tank](https://discordapp.com/users/197967989964800000)  
+[Shindara](https://discordapp.com/users/291595808858439680)
 
 ## Requirements
 1. You must meet the [minimum system requirements](docs/hardware-requirements.md)
