@@ -66,12 +66,14 @@ Registration is conducted by verifying that you are a member of the Project Kong
 
 A certificate will have been issued to your server, which it uses to authenticate and provide log files over an encrypted mutual TLS connection.
 
-![mermaid-diagram-2023-07-19-144541](https://github.com/HoNfigurator/HoNfigurator-Central/assets/82205454/2f9958a8-58c3-4086-8e57-b81a937c3ea9)
+![mermaid-diagram-2023-07-19-144541](https://github.com/HoNfigurator/HoNfigurator-Central/assets/82205454/59574bca-0aab-4cab-ae0e-17bc26002065)
 
 ## Start Monitoring!
 Visit [HoN ElasticSearch Server Monitoring](https://hon-elk.honfigurator.app:5601)  
 > Username: ``readonly``  
 Password: ``Provided by me``
+
+> **Note** You may also continue as guest for basic overview.
 
 Start observing the fascination dashboards.
 
