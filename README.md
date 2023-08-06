@@ -9,20 +9,17 @@ There is a restful API built in, to allow interaction from external services. Su
 
 This guide provides steps for linking the configured HoNfigurator server to a modern front end website where you can remotely manage and monitor one or more HoNfigurator instances.
 
-<details>
-<summary>Table of Contents</summary>
-	
-  * [Requirements](#requirements)
-  * [Installation](#installation)
-  * [Remote Management - Web UI Front End](#remote-management---web-ui-front-end)
-  * [Monitoring](#monitoring)
-
-</details>
-
 ## Authors
 [FrankTheGodDamnMother**Tank](https://discordapp.com/users/197967989964800000)  
 [Shindara](https://discordapp.com/users/291595808858439680)
 
+
+## Table of Contents	
+  * [Requirements](#requirements)
+  * [Installation](#installation)
+  * [Remote Management - Web UI Front End](#remote-management---web-ui-front-end)
+  * [Monitoring](#monitoring)
+    
 ## Requirements
 1. You must meet the [minimum system requirements](docs/hardware-requirements.md)
 1. You must have a registered [Project Kongor](https://kongor.online/) HoN account. **1 per server hosting**
