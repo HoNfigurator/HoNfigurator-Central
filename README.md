@@ -13,6 +13,16 @@ This guide provides steps for linking the configured HoNfigurator server to a mo
 [FrankTheGodDamnMother**Tank](https://discordapp.com/users/197967989964800000)  
 [Shindara](https://discordapp.com/users/291595808858439680)
 
+<details>
+<summary>Table of Contents</summary>
+	
+  * [Requirements](#requirements)
+  * [Installation](#installation)
+  * [Remote Management - Web UI Front End](#remote-management---web-ui-front-end)
+  * [Monitoring](#monitoring)
+
+</details>
+
 ## Requirements
 1. You must meet the [minimum system requirements](docs/hardware-requirements.md)
 1. You must have a registered [Project Kongor](https://kongor.online/) HoN account. **1 per server hosting**
@@ -108,7 +118,7 @@ Page Overview:
 - Troubleshooting
   - View HoNfigurator logs, and component health reports.
 
-### Role Descriptions
+#### Role Descriptions
 | Role        | Stop/Start Servers | Configuration Changes | Add/Remove Approved Users | View Server Statistics |
 |-------------|:------------------:|:---------------------:|:-------------------------:|:---------------------:|
 | Superadmin  | :heavy_check_mark: | :heavy_check_mark:    | :heavy_check_mark:        | :heavy_check_mark:    |
@@ -118,6 +128,10 @@ Page Overview:
 > **Note** Only grant administrative roles to people that you trust.
 
 > **Warning** Superadmins can view the hon username and password used to configure the server.  
+
+## Monitoring
+When you are all done, your server should appear here after it's first match: https://hon-elk.honfigurator.app:5601
+> **Note** Select "Continue as Guest"
 
 
 ## Final Notes	
