@@ -907,7 +907,7 @@ async def asgi_server(app, host, port):
         await server_task
 
 async def fetch_server_ping_response():
-    url = 'https://management.honfigurator.app:3001/api/ping'
+    url = 'https://management.honfigurator.app:3001/api/public/ping'
     headers = {
         'Selected-Server': global_config['hon_data']['svr_ip'],
         'Selected-Port': str(global_config['hon_data']['svr_api_port'])
