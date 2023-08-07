@@ -289,6 +289,10 @@ async def request_client_certificate(svr_name, filebeat_path):
                     error_message = result.stderr.strip()
                     print_or_log('info',f"Error: {error_message}")
                     return False
+            elif step_certificate.is_certificate_expired(crt_file_path):
+                pass
+            else:
+                return True
             
         print_or_log('info',"Requesting new client certificate...")
         # Construct the command for new certificate request
