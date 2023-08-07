@@ -390,7 +390,7 @@ async def configure_filebeat(silent=False,test=False):
             svr_per_core = global_config['hon_data']['svr_total_per_core']
             hon_user = global_config['hon_data']['svr_login']
             priority = global_config['hon_data']['svr_priority']
-            affinity_override = global_config['hon_data']['svr_override_affinity']
+            affinity_override = global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None
             allow_botmatch = global_config['hon_data']['svr_enableBotMatch']
 
         server_values = {
@@ -409,6 +409,8 @@ async def configure_filebeat(silent=False,test=False):
             'Affinity_Override': affinity_override,
             'BotMatch_Allowed': allow_botmatch
         }
+        if not operating_system == "Windows":
+            del server_values['Affinity_Override']
 
         # Convert filebeat_config from bytes to string
         filebeat_config = filebeat_config.decode('utf-8')
