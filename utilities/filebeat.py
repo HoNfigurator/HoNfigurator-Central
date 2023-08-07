@@ -79,9 +79,17 @@ async def filebeat_status():
 
     installed = check_filebeat_installed()
     certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
-    certificate_expired = True
+    certificate_status = 'non-existent'
+
     if certificate_exists:
-        certificate_expired = step_certificate.is_certificate_expired(get_filebeat_crt_path())
+        valid_to = step_certificate.get_certificate_valid_to(get_filebeat_crt_path())
+        if step_certificate.is_certificate_expired(get_filebeat_crt_path()):
+            certificate_status = f"expired ({valid_to})"
+        elif step_certificate.is_certificate_expiring(get_filebeat_crt_path()):
+            certificate_status = f"expiring soon ({valid_to})"
+        else:
+            certificate_status = f"valid (until {valid_to})"
+
     filebeat_running = False
     if MISC.get_proc('filebeat') or MISC.get_proc('filebeat.exe'):
         filebeat_running = True
@@ -90,7 +98,7 @@ async def filebeat_status():
         "installed": installed,
         "running": filebeat_running,
         "certificate_exists": certificate_exists,
-        "certificate_expired": certificate_expired,
+        "certificate_status": certificate_status,
         "pending_oauth_url": True if get_filebeat_auth_url() else False
     }
 
@@ -360,6 +368,18 @@ async def configure_filebeat(silent=False,test=False):
 
     def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         encoding = "encoding: utf-16le" if operating_system == "Windows" else "charset: BINARY"
+        
+        svr_per_core, cpu, core_count, ram, hon_user, priority, affinity_override, allow_botmatch = 1, 'undefined', 0, 0, 'undefined', 'undefined', False, True
+
+        if global_config:
+            cpu = global_config['system_data']['cpu_name']
+            core_count = global_config['system_data']['cpu_count']
+            ram = global_config['system_data']['total_ram']
+            svr_per_core = global_config['hon_data']['svr_total_per_core']
+            hon_user = global_config['hon_data']['svr_login']
+            priority = global_config['hon_data']['svr_priority']
+            affinity_override = global_config['hon_data']['svr_override_affinity']
+            allow_botmatch = global_config['hon_data']['svr_enableBotMatch']
 
         replacements = {
             b"$server_name": str.encode(svr_name),
@@ -367,7 +387,15 @@ async def configure_filebeat(silent=False,test=False):
             b"$region": str.encode(svr_location),
             b"$slave_log": str.encode(str(slave_log)),
             b"$match_log": str.encode(str(match_log)),
-            b"$server_launcher": str.encode(launcher),
+            b"$hon_user": str.encode(str(hon_user)),
+            b"$server_launcher": str.encode(str(launcher)),
+            b"Servers_per_Core: 1": str.encode(str(f"Servers_per_Core: {svr_per_core}")),
+            b"$cpu": str.encode(str(cpu)),
+            b"CPU_Num_Cores: 0": str.encode(str(f"CPU_Num_Cores: {core_count}")),
+            b"$priority": str.encode(str(priority)),
+            b"Affinity_Override: false": str.encode(f"Affinity_Override: {affinity_override}"),
+            b"BotMatch_Allowed: true": str.encode(f"BotMatch_Allowed: {allow_botmatch}"),
+            b"RAM: 0": str.encode(str(f"RAM: {ram}")),
             b"0.0.0.0": str.encode(external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip']),
             b"charset: $encoding": str.encode(encoding),
             b"$ca_chain": str.encode(str(Path(destination_folder) / "honfigurator-chain.pem")),
@@ -383,7 +411,7 @@ async def configure_filebeat(silent=False,test=False):
             discord_id = existing_discord_id
 
         
-        print_or_log('info',f"Server details for log submission\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}\n\tdiscord username: {discord_id}")
+        print_or_log('debug',f"Server details for log submission\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}\n\tdiscord username: {discord_id}")
         replacements[b"$discord_id"] = str.encode(discord_id)
 
         for old, new in replacements.items():
@@ -395,7 +423,7 @@ async def configure_filebeat(silent=False,test=False):
     if not external_ip:
         print_or_log('error','Obtaining public IP address failed.')
 
-    filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml" if test else "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
+    filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml" if test else "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml"
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
     honfigurator_ca_chain_bundle_url = "https://honfigurator.app/honfigurator-chain-bundle.pem"
 
@@ -615,7 +643,7 @@ def remove_cron_job(command):
     except Exception as e:
         print_or_log('error',f"Failed to remove cron job: {e}")
 
-async def main(config=None):
+async def main(config=None, from_main=True):
     try:
         global global_config
 
@@ -626,7 +654,9 @@ async def main(config=None):
         parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
         args = parser.parse_args()
 
-        print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
+        if from_main:
+            print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
+        
         if not check_filebeat_installed():
             await install_filebeat()
         

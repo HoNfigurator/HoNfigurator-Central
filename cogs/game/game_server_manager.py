@@ -792,7 +792,7 @@ class GameServerManager:
         coro = self.start_game_servers(game_servers)
         self.schedule_task(coro, 'gameserver_startup')
 
-    async def start_game_servers(self, game_servers, timeout=120, launch=False):
+    async def start_game_servers(self, game_servers, timeout=120, launch=False, service_recovery=False):
         try:
             timeout = self.global_config['hon_data']['svr_startup_timeout']
             """
@@ -866,9 +866,10 @@ class GameServerManager:
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
             
+            
+            # setup or verify filebeat configuration for match log submission
+            await filebeat_status()
             if launch:
-                # setup or verify filebeat configuration for match log submission
-                await filebeat_status()
                 await filebeat(self.global_config)
 
             # Start all game servers using the semaphore
@@ -876,9 +877,10 @@ class GameServerManager:
                 LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
                 return
             
-            if not get_filebeat_status()['running']:
-                msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Valid: {get_filebeat_status()['certificate_expired']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
-                # LOGGER.warn(msg)
+            if not service_recovery and not get_filebeat_status()['running']:
+                msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Status: {get_filebeat_status()['certificate_status']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
+                if get_filebeat_auth_url():
+                    print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
             
             for game_server in game_servers:

@@ -221,14 +221,24 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
             print_or_log('error','Error from server.')
             return False
 
-def is_certificate_expiring(cert_path):
-    print_or_log('debug', "Checking if certificate is expiring...")
+def load_cert_info(cert_path):
     # Fetch certificate information
     cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
     # Convert cert_info string into a dictionary
     cert_info = json.loads(cert_info)
+    return cert_info
+
+def get_certificate_valid_to(cert_path):
     # Fetch the expiration date from the certificate info
-    not_after = cert_info.get('validity', {}).get('end')
+    not_after = load_cert_info(cert_path).get('validity', {}).get('end')
+    # Convert the expiration date string into a datetime object
+    not_after = datetime.strptime(not_after, '%Y-%m-%dT%H:%M:%S%z')
+    return not_after
+
+def is_certificate_expiring(cert_path):
+    print_or_log('debug', "Checking if certificate is expiring...")
+    # Fetch the expiration date from the certificate info
+    not_after = load_cert_info(cert_path).get('validity', {}).get('end')
     # Convert the expiration date string into a datetime object
     not_after = datetime.strptime(not_after, '%Y-%m-%dT%H:%M:%S%z')
     
