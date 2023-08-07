@@ -17,3 +17,4 @@ cryptography==41.0.2
 py-cpuinfo==9.0.0
 crcmod==1.7
 aiofiles==23.1.0
+PyYAML==6.0.1

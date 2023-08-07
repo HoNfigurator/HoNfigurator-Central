@@ -15,6 +15,7 @@ import psutil
 import re
 import hashlib
 from tempfile import NamedTemporaryFile
+import yaml
 
 # if code is launched independtly
 if __name__ == "__main__":
@@ -79,9 +80,17 @@ async def filebeat_status():
 
     installed = check_filebeat_installed()
     certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
-    certificate_expired = True
+    certificate_status = 'non-existent'
+
     if certificate_exists:
-        certificate_expired = step_certificate.is_certificate_expired(get_filebeat_crt_path())
+        valid_to = step_certificate.get_certificate_valid_to(get_filebeat_crt_path())
+        if step_certificate.is_certificate_expired(get_filebeat_crt_path()):
+            certificate_status = f"expired ({valid_to})"
+        elif step_certificate.is_certificate_expiring(get_filebeat_crt_path()):
+            certificate_status = f"expiring soon ({valid_to})"
+        else:
+            certificate_status = f"valid (until {valid_to})"
+
     filebeat_running = False
     if MISC.get_proc('filebeat') or MISC.get_proc('filebeat.exe'):
         filebeat_running = True
@@ -90,7 +99,7 @@ async def filebeat_status():
         "installed": installed,
         "running": filebeat_running,
         "certificate_exists": certificate_exists,
-        "certificate_expired": certificate_expired,
+        "certificate_status": certificate_status,
         "pending_oauth_url": True if get_filebeat_auth_url() else False
     }
 
@@ -289,15 +298,17 @@ async def request_client_certificate(svr_name, filebeat_path):
                     error_message = result.stderr.strip()
                     print_or_log('info',f"Error: {error_message}")
                     return False
+            elif step_certificate.is_certificate_expired(crt_file_path):
+                pass
             else:
                 return True
+            
+        print_or_log('info',"Requesting new client certificate...")
+        # Construct the command for new certificate request
+        if __name__ == "__main__":
+            return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
         else:
-            print_or_log('info',"Requesting new client certificate...")
-            # Construct the command for new certificate request
-            if __name__ == "__main__":
-                return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
-            else:
-                return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path, token=get_filebeat_auth_token())
+            return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path, token=get_filebeat_auth_token())
 
     except Exception as e:
         print_or_log('error',f"Encountered an error while requesting a client certificate. {traceback.format_exc()}")
@@ -355,38 +366,92 @@ async def configure_filebeat(silent=False,test=False):
             match_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "M*.log"
         
         return slave_log, match_log
+    
+    def resolve_filestream_indentation(text, target):
+        count = 0
+        new_text = ''
+        for line in text.split('\n'):
+            if target in line:
+                count += 1
+                if count == 2:
+                    line = '  ' + line
+            new_text += line + '\n'
+        return new_text
 
     def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         encoding = "encoding: utf-16le" if operating_system == "Windows" else "charset: BINARY"
 
+        svr_per_core, cpu, core_count, ram, hon_user, priority, affinity_override, allow_botmatch = 1, 'undefined', 0, 0, 'undefined', 'undefined', False, True
+
+        if global_config:
+            cpu = global_config['system_data']['cpu_name']
+            core_count = global_config['system_data']['cpu_count']
+            ram = global_config['system_data']['total_ram']
+            svr_per_core = global_config['hon_data']['svr_total_per_core']
+            hon_user = global_config['hon_data']['svr_login']
+            priority = global_config['hon_data']['svr_priority']
+            affinity_override = global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None
+            allow_botmatch = global_config['hon_data']['svr_enableBotMatch']
+
+        server_values = {
+            'Name': svr_name,
+            'Launcher': launcher,
+            'Admin': looked_up_discord_username if looked_up_discord_username and not isinstance(looked_up_discord_username,bool) else existing_discord_id,
+            'Region': svr_location,
+            'Logging_Config_Version': '1.3',
+            'Public_IP': external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip'],
+            'HoN_User': hon_user,
+            'Servers_per_Core': svr_per_core,
+            'CPU': cpu,
+            'CPU_Num_Cores': core_count,
+            'RAM': ram,
+            'Priority': priority,
+            'Affinity_Override': affinity_override,
+            'BotMatch_Allowed': allow_botmatch
+        }
+        if not operating_system == "Windows":
+            del server_values['Affinity_Override']
+
+        # Convert filebeat_config from bytes to string
+        filebeat_config = filebeat_config.decode('utf-8')
+
+        # Separate the file into chunks
+        inputs_split = filebeat_config.split('filebeat.inputs:')
+        inputs = inputs_split[1].split('filebeat.config.modules:')[0]
+        rest_of_file = 'filebeat.config.modules:' + inputs_split[1].split('filebeat.config.modules:')[1]
+
+        inputs_chunks = inputs.split('- type: filestream')
+        new_inputs = [inputs_chunks[0]]
+
+        # Modify the Server sections in each input chunk
+        for chunk in inputs_chunks[1:]:
+            server_values_yaml = yaml.dump({'Server': server_values}, default_flow_style=False)
+            server_values_lines = server_values_yaml.split("\n")
+            # Increase indentation by 6 spaces for each line after the first one
+            server_values_yaml = server_values_lines[0] + "\n" + "\n".join(["      " + line if line else line for line in server_values_lines[1:]])
+            # Include 'fields:' in the replacement string
+            new_chunk = re.sub(r'(fields:\s*)Server:.*?(\n\n|$)', r'\1' + server_values_yaml, '- type: filestream' + chunk, flags=re.DOTALL)
+            new_inputs.append(new_chunk)
+
         replacements = {
-            b"$server_name": str.encode(svr_name),
-            b"$id": str.encode(svr_name.replace(" ", "-")),
-            b"$region": str.encode(svr_location),
-            b"$slave_log": str.encode(str(slave_log)),
-            b"$match_log": str.encode(str(match_log)),
-            b"$server_launcher": str.encode(launcher),
-            b"0.0.0.0": str.encode(external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip']),
-            b"charset: $encoding": str.encode(encoding),
-            b"$ca_chain": str.encode(str(Path(destination_folder) / "honfigurator-chain.pem")),
-            b"$client_cert": str.encode(str(Path(destination_folder) / "client.crt")),
-            b"$client_key": str.encode(str(Path(destination_folder) / "client.key"))
+            "charset: $encoding": encoding,
+            "$ca_chain": str(Path(destination_folder) / "honfigurator-chain.pem"),
+            "$client_cert": str(Path(destination_folder) / "client.crt"),
+            "$client_key": str(Path(destination_folder) / "client.key"),
+            "$match_log": str(Path(match_log)),
+            "$slave_log": str(Path(slave_log))
         }
 
-        if looked_up_discord_username and not isinstance(looked_up_discord_username,bool):
-            discord_id = looked_up_discord_username
-        elif existing_discord_id == "$discord_id":
-            discord_id = input(f"What is your discord user name?: ")
-        elif existing_discord_id:
-            discord_id = existing_discord_id
-
-        
-        print_or_log('info',f"Server details for log submission\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}\n\tdiscord username: {discord_id}")
-        replacements[b"$discord_id"] = str.encode(discord_id)
+        # Combine all the chunks back together
+        filebeat_config = 'filebeat.inputs:' + ''.join(new_inputs) + rest_of_file
+        filebeat_config = resolve_filestream_indentation(filebeat_config, '- type: filestream')
 
         for old, new in replacements.items():
             filebeat_config = filebeat_config.replace(old, new)
-        
+
+        # Convert filebeat_config back to bytes
+        filebeat_config = filebeat_config.encode('utf-8')
+
         return filebeat_config
 
     external_ip = await get_public_ip()
@@ -613,7 +678,7 @@ def remove_cron_job(command):
     except Exception as e:
         print_or_log('error',f"Failed to remove cron job: {e}")
 
-async def main(config=None):
+async def main(config=None, from_main=True):
     try:
         global global_config
 
@@ -624,7 +689,9 @@ async def main(config=None):
         parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
         args = parser.parse_args()
 
-        print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
+        if from_main:
+            print_or_log('info','Setting up Filebeat. This is used to submit game match logs for trend analysis and is required by game server hosts.')
+        
         if not check_filebeat_installed():
             await install_filebeat()
         
