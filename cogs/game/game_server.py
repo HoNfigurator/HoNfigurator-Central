@@ -824,7 +824,7 @@ region=naeu
                         self.server_closed.set()  # Set the server_closed event
                         self.reset_game_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
-                        asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self]))  # restart the server
+                        asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self], service_recovery=False))  # restart the server
                     elif status != 'zombie' and not self.enabled and not self.scheduled_shutdown:
                         #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                         self.schedule_shutdown()

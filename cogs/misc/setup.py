@@ -567,12 +567,10 @@ class SetupEnvironment:
     def add_miscellaneous_data(self):
         return (
             {
-                "system_data": {
-                    "cpu_count": MISC.get_cpu_count(),
-                    "cpu_name": MISC.get_cpu_name(),
-                    "total_ram": MISC.get_total_ram(),
-                    "server_total_allowed": MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core']),
-                }
+                "cpu_count": MISC.get_cpu_count(),
+                "cpu_name": MISC.get_cpu_name(),
+                "total_ram": MISC.get_total_ram(),
+                "server_total_allowed": MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core']),
             }
         )
 
