@@ -15,6 +15,7 @@ import psutil
 import re
 import hashlib
 from tempfile import NamedTemporaryFile
+import yaml
 
 # if code is launched independtly
 if __name__ == "__main__":
@@ -365,10 +366,21 @@ async def configure_filebeat(silent=False,test=False):
             match_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "M*.log"
         
         return slave_log, match_log
+    
+    def resolve_filestream_indentation(text, target):
+        count = 0
+        new_text = ''
+        for line in text.split('\n'):
+            if target in line:
+                count += 1
+                if count == 2:
+                    line = '  ' + line
+            new_text += line + '\n'
+        return new_text
 
     def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         encoding = "encoding: utf-16le" if operating_system == "Windows" else "charset: BINARY"
-        
+
         svr_per_core, cpu, core_count, ram, hon_user, priority, affinity_override, allow_botmatch = 1, 'undefined', 0, 0, 'undefined', 'undefined', False, True
 
         if global_config:
@@ -381,42 +393,63 @@ async def configure_filebeat(silent=False,test=False):
             affinity_override = global_config['hon_data']['svr_override_affinity']
             allow_botmatch = global_config['hon_data']['svr_enableBotMatch']
 
-        replacements = {
-            b"$server_name": str.encode(svr_name),
-            b"$id": str.encode(svr_name.replace(" ", "-")),
-            b"$region": str.encode(svr_location),
-            b"$slave_log": str.encode(str(slave_log)),
-            b"$match_log": str.encode(str(match_log)),
-            b"$hon_user": str.encode(str(hon_user)),
-            b"$server_launcher": str.encode(str(launcher)),
-            b"Servers_per_Core: 1": str.encode(str(f"Servers_per_Core: {svr_per_core}")),
-            b"$cpu": str.encode(str(cpu)),
-            b"CPU_Num_Cores: 0": str.encode(str(f"CPU_Num_Cores: {core_count}")),
-            b"$priority": str.encode(str(priority)),
-            b"Affinity_Override: false": str.encode(f"Affinity_Override: {affinity_override}"),
-            b"BotMatch_Allowed: true": str.encode(f"BotMatch_Allowed: {allow_botmatch}"),
-            b"RAM: 0": str.encode(str(f"RAM: {ram}")),
-            b"0.0.0.0": str.encode(external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip']),
-            b"charset: $encoding": str.encode(encoding),
-            b"$ca_chain": str.encode(str(Path(destination_folder) / "honfigurator-chain.pem")),
-            b"$client_cert": str.encode(str(Path(destination_folder) / "client.crt")),
-            b"$client_key": str.encode(str(Path(destination_folder) / "client.key"))
+        server_values = {
+            'Name': svr_name,
+            'Launcher': launcher,
+            'Admin': looked_up_discord_username if looked_up_discord_username and not isinstance(looked_up_discord_username,bool) else existing_discord_id,
+            'Region': svr_location,
+            'Logging_Config_Version': '1.3',
+            'Public_IP': external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip'],
+            'HoN_User': hon_user,
+            'Servers_per_Core': svr_per_core,
+            'CPU': cpu,
+            'CPU_Num_Cores': core_count,
+            'RAM': ram,
+            'Priority': priority,
+            'Affinity_Override': affinity_override,
+            'BotMatch_Allowed': allow_botmatch
         }
 
-        if looked_up_discord_username and not isinstance(looked_up_discord_username,bool):
-            discord_id = looked_up_discord_username
-        elif existing_discord_id == "$discord_id":
-            discord_id = input(f"What is your discord user name?: ")
-        elif existing_discord_id:
-            discord_id = existing_discord_id
+        # Convert filebeat_config from bytes to string
+        filebeat_config = filebeat_config.decode('utf-8')
 
-        
-        print_or_log('debug',f"Server details for log submission\n\tsvr name: {svr_name}\n\tsvr location: {svr_location}\n\tdiscord username: {discord_id}")
-        replacements[b"$discord_id"] = str.encode(discord_id)
+        # Separate the file into chunks
+        inputs_split = filebeat_config.split('filebeat.inputs:')
+        inputs = inputs_split[1].split('filebeat.config.modules:')[0]
+        rest_of_file = 'filebeat.config.modules:' + inputs_split[1].split('filebeat.config.modules:')[1]
+
+        inputs_chunks = inputs.split('- type: filestream')
+        new_inputs = [inputs_chunks[0]]
+
+        # Modify the Server sections in each input chunk
+        for chunk in inputs_chunks[1:]:
+            server_values_yaml = yaml.dump({'Server': server_values}, default_flow_style=False)
+            server_values_lines = server_values_yaml.split("\n")
+            # Increase indentation by 6 spaces for each line after the first one
+            server_values_yaml = server_values_lines[0] + "\n" + "\n".join(["      " + line if line else line for line in server_values_lines[1:]])
+            # Include 'fields:' in the replacement string
+            new_chunk = re.sub(r'(fields:\s*)Server:.*?(\n\n|$)', r'\1' + server_values_yaml, '- type: filestream' + chunk, flags=re.DOTALL)
+            new_inputs.append(new_chunk)
+
+        replacements = {
+            "charset: $encoding": encoding,
+            "$ca_chain": str(Path(destination_folder) / "honfigurator-chain.pem"),
+            "$client_cert": str(Path(destination_folder) / "client.crt"),
+            "$client_key": str(Path(destination_folder) / "client.key"),
+            "$match_log": str(Path(match_log)),
+            "$slave_log": str(Path(slave_log))
+        }
+
+        # Combine all the chunks back together
+        filebeat_config = 'filebeat.inputs:' + ''.join(new_inputs) + rest_of_file
+        filebeat_config = resolve_filestream_indentation(filebeat_config, '- type: filestream')
 
         for old, new in replacements.items():
             filebeat_config = filebeat_config.replace(old, new)
-        
+
+        # Convert filebeat_config back to bytes
+        filebeat_config = filebeat_config.encode('utf-8')
+
         return filebeat_config
 
     external_ip = await get_public_ip()
