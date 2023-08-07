@@ -289,15 +289,13 @@ async def request_client_certificate(svr_name, filebeat_path):
                     error_message = result.stderr.strip()
                     print_or_log('info',f"Error: {error_message}")
                     return False
-            else:
-                return True
+            
+        print_or_log('info',"Requesting new client certificate...")
+        # Construct the command for new certificate request
+        if __name__ == "__main__":
+            return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
         else:
-            print_or_log('info',"Requesting new client certificate...")
-            # Construct the command for new certificate request
-            if __name__ == "__main__":
-                return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path)
-            else:
-                return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path, token=get_filebeat_auth_token())
+            return await step_certificate.discord_oauth_flow_stepca(svr_name, csr_file_path, crt_file_path, key_file_path, token=get_filebeat_auth_token())
 
     except Exception as e:
         print_or_log('error',f"Encountered an error while requesting a client certificate. {traceback.format_exc()}")
