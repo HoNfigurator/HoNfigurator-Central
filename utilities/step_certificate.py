@@ -248,8 +248,8 @@ def is_certificate_expired(cert_path):
     # Convert the expiration date string into a datetime object
     not_after = datetime.strptime(not_after, '%Y-%m-%dT%H:%M:%S%z')
 
-    # Return True if the certificate is not expired, False otherwise
-    return datetime.now(tz=not_after.tzinfo) <= not_after
+    # Return True if the certificate is expired, False otherwise
+    return datetime.now(tz=not_after.tzinfo) > not_after
 
 def renew_certificate(crt_file_path, key_file_path):
     command = [
