@@ -393,7 +393,8 @@ async def configure_filebeat(silent=False,test=False):
             'RAM': global_config['system_data']['total_ram'],
             'Priority': global_config['hon_data']['svr_priority'],
             'Affinity_Override': global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None,
-            'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch']
+            'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch'],
+            'GitHub_Branch': MISC.get_current_github_branch()
         }
         filebeat_inputs = {}
         filebeat_inputs['slave_logs'] = \
