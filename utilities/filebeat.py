@@ -430,7 +430,7 @@ async def configure_filebeat(silent=False,test=False):
         }
         
         if global_config:
-            if global_config['hon_data']['man_enableProxy'] and operating_system == "Windows":
+            if operating_system == "Windows" and global_config['hon_data']['man_enableProxy']:
                 filebeat_inputs['proxy_logs'] = \
                 {
                     'type': 'filestream',
