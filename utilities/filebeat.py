@@ -394,7 +394,7 @@ async def configure_filebeat(silent=False,test=False):
             'Priority': global_config['hon_data']['svr_priority'],
             'Affinity_Override': global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None,
             'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch'],
-            'GitHub_Branch': MISC.get_current_github_branch()
+            'GitHub_Branch': MISC.github_branch
         }
         filebeat_inputs = {}
         filebeat_inputs['slave_logs'] = \
