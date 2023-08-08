@@ -26,7 +26,7 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home
     from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
     LOGGER = get_logger()
@@ -377,22 +377,8 @@ async def configure_filebeat(silent=False,test=False):
                     line = '  ' + line
             new_text += line + '\n'
         return new_text
-
-    def perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
-        encoding = "encoding: utf-16le" if operating_system == "Windows" else "charset: BINARY"
-
-        svr_per_core, cpu, core_count, ram, hon_user, priority, affinity_override, allow_botmatch = 1, 'undefined', 0, 0, 'undefined', 'undefined', False, True
-
-        if global_config:
-            cpu = global_config['system_data']['cpu_name']
-            core_count = global_config['system_data']['cpu_count']
-            ram = global_config['system_data']['total_ram']
-            svr_per_core = global_config['hon_data']['svr_total_per_core']
-            hon_user = global_config['hon_data']['svr_login']
-            priority = global_config['hon_data']['svr_priority']
-            affinity_override = global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None
-            allow_botmatch = global_config['hon_data']['svr_enableBotMatch']
-
+    
+    def perform_config_replacements(svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         server_values = {
             'Name': svr_name,
             'Launcher': launcher,
@@ -400,65 +386,133 @@ async def configure_filebeat(silent=False,test=False):
             'Region': svr_location,
             'Logging_Config_Version': '1.3',
             'Public_IP': external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip'],
-            'HoN_User': hon_user,
-            'Servers_per_Core': svr_per_core,
-            'CPU': cpu,
-            'CPU_Num_Cores': core_count,
-            'RAM': ram,
-            'Priority': priority,
-            'Affinity_Override': affinity_override,
-            'BotMatch_Allowed': allow_botmatch
+            'HoN_User': global_config['hon_data']['svr_login'],
+            'Servers_per_Core': global_config['hon_data']['svr_total_per_core'],
+            'CPU': global_config['system_data']['cpu_name'],
+            'CPU_Num_Cores': global_config['system_data']['cpu_count'],
+            'RAM': global_config['system_data']['total_ram'],
+            'Priority': global_config['hon_data']['svr_priority'],
+            'Affinity_Override': global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None,
+            'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch']
         }
-        if not operating_system == "Windows":
-            del server_values['Affinity_Override']
-
-        # Convert filebeat_config from bytes to string
-        filebeat_config = filebeat_config.decode('utf-8')
-
-        # Separate the file into chunks
-        inputs_split = filebeat_config.split('filebeat.inputs:')
-        inputs = inputs_split[1].split('filebeat.config.modules:')[0]
-        rest_of_file = 'filebeat.config.modules:' + inputs_split[1].split('filebeat.config.modules:')[1]
-
-        inputs_chunks = inputs.split('- type: filestream')
-        new_inputs = [inputs_chunks[0]]
-
-        # Modify the Server sections in each input chunk
-        for chunk in inputs_chunks[1:]:
-            server_values_yaml = yaml.dump({'Server': server_values}, default_flow_style=False)
-            server_values_lines = server_values_yaml.split("\n")
-            # Increase indentation by 6 spaces for each line after the first one
-            server_values_yaml = server_values_lines[0] + "\n" + "\n".join(["      " + line if line else line for line in server_values_lines[1:]])
-            # Include 'fields:' in the replacement string
-            new_chunk = re.sub(r'(fields:\s*)Server:.*?(\n\n|$)', r'\1' + server_values_yaml, '- type: filestream' + chunk, flags=re.DOTALL)
-            new_inputs.append(new_chunk)
-
-        replacements = {
-            "charset: $encoding": encoding,
-            "$ca_chain": str(Path(destination_folder) / "honfigurator-chain.pem"),
-            "$client_cert": str(Path(destination_folder) / "client.crt"),
-            "$client_key": str(Path(destination_folder) / "client.key"),
-            "$match_log": str(Path(match_log)),
-            "$slave_log": str(Path(slave_log))
+        filebeat_inputs = {}
+        filebeat_inputs['slave_logs'] = \
+        {
+            'type': 'filestream',
+            'id': 'slave_logs',
+            'enabled': True,
+            'paths': [str(Path(slave_log))],
+            'ignore_older': '24h',
+            'scan_frequency': '60s',
+            'exclude_files': '[".gz$"]',
+            'fields_under_root': True,
+            'fields': {
+                'Server': server_values,
+                'Log_Type': 'console'
+            }
         }
 
-        # Combine all the chunks back together
-        filebeat_config = 'filebeat.inputs:' + ''.join(new_inputs) + rest_of_file
-        filebeat_config = resolve_filestream_indentation(filebeat_config, '- type: filestream')
+        filebeat_inputs['match_logs'] = \
+        {
+            'type': 'filestream',
+            'id': 'match_logs',
+            'enabled': True,
+            'paths': [str(Path(match_log))],
+            'ignore_older': '24h',
+            'scan_frequency': '60s',
+            'exclude_files': '[".gz$"]',
+            'fields_under_root': True,
+            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_SWAP','INFO_SETTINGS'],
+            'fields': {
+                'Server': server_values,
+                'Log_Type': 'match'
+            }
+        }
+        
+        if global_config:
+            if global_config['hon_data']['man_enableProxy'] and operating_system == "Windows":
+                filebeat_inputs['proxy_logs'] = \
+                {
+                    'type': 'filestream',
+                    'id': 'proxy_logs',
+                    'enabled': True,
+                    'paths': [str(Path(global_config['hon_data']['hon_artefacts_directory'] / 'HoNProxyManager' / 'proxy*.log'))],
+                    'ignore_older': '24h',
+                    'scan_frequency': '60s',
+                    'exclude_files': '[".gz$"]',
+                    'fields_under_root': True,
+                    'fields': {
+                        'Server': server_values,
+                        'Log_Type': 'proxy'
+                    }
+                }
 
-        for old, new in replacements.items():
-            filebeat_config = filebeat_config.replace(old, new)
+                filebeat_inputs['honfigurator_logs'] = \
+                {
+                    'type': 'filestream',
+                    'id': 'honfigurator_logs',
+                    'enabled': True,
+                    'paths': [str(Path(get_home() / 'logs' / 'server.log'))],
+                    'ignore_older': '24h',
+                    'scan_frequency': '60s',
+                    'exclude_files': '[".gz$"]',
+                    'fields_under_root': True,
+                    'fields': {
+                        'Server': server_values,
+                        'Log_Type': 'honfigurator'
+                    },
+                    'parsers': [
+                        {
+                            'multiline': {
+                                'type': 'pattern',
+                                'pattern': '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}',
+                                'negate': True,
+                                'match': 'after'
+                            }
+                        }
+                    ]
+                }
+        
+        if operating_system == "Windows":
+            filebeat_inputs['slave_logs']['encoding'] = 'utf-16le'
+            filebeat_inputs['match_logs']['encoding'] = 'utf-16le'
+            if 'proxy_logs' in filebeat_inputs:
+                filebeat_inputs['proxy_logs']['encoding'] = 'utf-8' 
+        else:
+            filebeat_inputs['slave_logs']['charset'] = 'BINARY'
+            filebeat_inputs['match_logs']['charset'] = 'BINARY'
+        if 'honfigurator_logs' in filebeat_inputs:
+            filebeat_inputs['honfigurator_logs']['encoding'] = 'utf-8'
 
-        # Convert filebeat_config back to bytes
-        filebeat_config = filebeat_config.encode('utf-8')
+        filebeat_config = {
+            'filebeat.inputs': list(filebeat_inputs.values()),
+            'filebeat.config.modules': {
+                'path': '${path.config}/modules.d/*.yml',
+                'reload.enabled': False
+            },
+            'setup.template.settings': {
+                'index.number_of_shards': '1'
+            },
+            'output.logstash': {
+                'hosts': 'hon-elk.honfigurator.app:5044',
+                'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
+                'ssl.certificate': str(Path(destination_folder) / "client.crt"),
+                'ssl.key': str(Path(destination_folder) / "client.key")
+            },
+            'processors': [
+                {'add_host_metadata': {'when.not.contains.tags': 'forwarded'}},
+                {'add_locale': None}
+            ],
+            'filebeat.registry.flush': '60s'
+        }
 
-        return filebeat_config
+        yaml_config = yaml.dump(filebeat_config)
+        return yaml_config.encode('utf-8')
 
     external_ip = await get_public_ip()
     if not external_ip:
         print_or_log('error','Obtaining public IP address failed.')
 
-    filebeat_config_url = "https://honfigurator.app/hon-server-monitoring/filebeat-test.yml" if test else "https://honfigurator.app/hon-server-monitoring/filebeat.yml"
     honfigurator_ca_chain_url = "https://honfigurator.app/honfigurator-chain.pem"
     honfigurator_ca_chain_bundle_url = "https://honfigurator.app/honfigurator-chain-bundle.pem"
 
@@ -478,13 +532,6 @@ async def configure_filebeat(silent=False,test=False):
                 content = await response.read()
                 async with aiofiles.open(Path(destination_folder) / "honfigurator-chain-bundle.pem", 'wb') as chain_file:
                     await chain_file.write(content)
-
-    async with aiohttp.ClientSession() as session:
-        async with session.get(filebeat_config_url) as response:
-            if response.status != 200:
-                print_or_log('info',"Failed to download Filebeat configuration file.")
-                return
-            filebeat_config = await response.read()
     
     config_file_path = os.path.join(config_folder, "filebeat.yml")
 
@@ -550,7 +597,7 @@ async def configure_filebeat(silent=False,test=False):
         print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
         return
         
-    filebeat_config = perform_config_replacements(filebeat_config, svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
+    filebeat_config = perform_config_replacements(svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
 
     temp_dir = tempfile.TemporaryDirectory()
     temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
