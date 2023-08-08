@@ -447,31 +447,31 @@ async def configure_filebeat(silent=False,test=False):
                     }
                 }
 
-                filebeat_inputs['honfigurator_logs'] = \
-                {
-                    'type': 'filestream',
-                    'id': 'honfigurator_logs',
-                    'enabled': True,
-                    'paths': [str(Path(get_home() / 'logs' / 'server.log'))],
-                    'ignore_older': '24h',
-                    'scan_frequency': '60s',
-                    'exclude_files': '[".gz$"]',
-                    'fields_under_root': True,
-                    'fields': {
-                        'Server': server_values,
-                        'Log_Type': 'honfigurator'
-                    },
-                    'parsers': [
-                        {
-                            'multiline': {
-                                'type': 'pattern',
-                                'pattern': '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}',
-                                'negate': True,
-                                'match': 'after'
-                            }
+            filebeat_inputs['honfigurator_logs'] = \
+            {
+                'type': 'filestream',
+                'id': 'honfigurator_logs',
+                'enabled': True,
+                'paths': [str(Path(get_home() / 'logs' / 'server.log'))],
+                'ignore_older': '24h',
+                'scan_frequency': '60s',
+                'exclude_files': '[".gz$"]',
+                'fields_under_root': True,
+                'fields': {
+                    'Server': server_values,
+                    'Log_Type': 'honfigurator'
+                },
+                'parsers': [
+                    {
+                        'multiline': {
+                            'type': 'pattern',
+                            'pattern': '^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2},\d{3}',
+                            'negate': True,
+                            'match': 'after'
                         }
-                    ]
-                }
+                    }
+                ]
+            }
         
         if operating_system == "Windows":
             filebeat_inputs['slave_logs']['encoding'] = 'utf-16le'
