@@ -130,7 +130,7 @@ class SetupEnvironment:
                 }
             }
         }
-    
+
     def get_server_region(self):
         try:
             public_ip = MISC.get_public_ip()
@@ -200,7 +200,7 @@ class SetupEnvironment:
                     major_issues.append(f"Invalid path for {key}: {value}")
                     return None
             return value
-        
+
         def is_valid_time_format(time_str):
             try:
                 datetime.strptime(time_str, "%H:%M")
@@ -413,7 +413,7 @@ class SetupEnvironment:
         with open(str(self.config_file_logging), 'w') as config_file_logging:
             json.dump(self.get_default_logging_configuration(),
                       config_file_logging, indent=4)
-            
+
     def create_hon_configuration_file(self, detected=None):
         print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
         while True:

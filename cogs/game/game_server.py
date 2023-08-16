@@ -642,7 +642,10 @@ class GameServer:
         """
             Check if existing hon server is running.
         """
-        running_procs = MISC.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
+        #running_procs = MISC.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
+        running_procs = [MISC.get_process_by_port(self.port)]
+        if running_procs[0] == None:
+            running_procs = []
         last_good_proc = None
         i=0
         while len(running_procs) > 0:
@@ -678,17 +681,23 @@ class GameServer:
                 LOGGER.exception(f"GameServer #{self.id} {traceback.format_exc()}")
         else:
             return False
+
     async def set_server_priority_reduce(self):
         if not self._proc_hook:
-            await self.get_running_server()
+            if not await self.get_running_server():
+                LOGGER.warn(f"GameServer #{self.id} - Process not found")
+                return
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.IDLE_PRIORITY_CLASS)
         else:
             self._proc_hook.nice(20)
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
+
     async def set_server_priority_increase(self):
         if not self._proc_hook:
-            await self.get_running_server()
+            if not await self.get_running_server():
+                LOGGER.warn(f"GameServer #{self.id} - Process not found")
+                return
         if sys.platform == "win32":
             if self.global_config['hon_data']['svr_priority'] == "REALTIME":
                 self._proc_hook.nice(psutil.REALTIME_PRIORITY_CLASS)

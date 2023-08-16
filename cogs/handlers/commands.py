@@ -50,7 +50,7 @@ def compute_sub_command_depth(sub_commands, target_sub_command):
             return max(depths)
         else:
             return 0
-        
+
 def get_value_from_nested_dict(nested_dict, keys):
     current_dict = nested_dict
     for key in keys:
@@ -87,7 +87,7 @@ class Command:
         self.sub_commands = sub_commands or {}
         self.args = args or []
         self.aliases = aliases or []
-        
+
     def get(self, key, default=None):
         return super().get(key, default)
 
@@ -106,10 +106,10 @@ class Commands:
 
     async def disconnect_subcommands(self):
         return self.generate_subcommands(self.disconnect)
-    
+
     async def startup_servers_subcommands(self):
         return self.generate_subcommands(self.startup_servers)
-    
+
     async def custom_command_subcommands(self):
         return self.generate_subcommands(self.cmd_custom_cmd)
 
@@ -192,7 +192,7 @@ class Commands:
             args_list.append(new_path + [value])
 
         return args_list
-    
+
     async def set_config(self, args):
         keys = args[:-1]
         value = args[-1]
@@ -235,11 +235,11 @@ class Commands:
     async def handle_input(self):
         self.subcommands_changed = asyncio.Event()
         await self.initialise_commands()
-        print_formatted_text("""    __  __      _   _______                        __            
+        print_formatted_text("""    __  __      _   _______                        __
    / / / /___  / | / / __(_)___ ___  ___________ _/ /_____  _____
   / /_/ / __ \/  |/ / /_/ / __ `/ / / / ___/ __ `/ __/ __ \/ ___/
- / __  / /_/ / /|  / __/ / /_/ / /_/ / /  / /_/ / /_/ /_/ / /    
-/_/ /_/\____/_/ |_/_/ /_/\__, /\__,_/_/   \__,_/\__/\____/_/     
+ / __  / /_/ / /|  / __/ / /_/ / /_/ / /  / /_/ / /_/ /_/ / /
+/_/ /_/\____/_/ |_/_/ /_/\__, /\__,_/_/   \__,_/\__/\____/_/
                         /____/                                   """)
         await self.help()
 
@@ -340,7 +340,7 @@ class Commands:
 
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    await self.manager_event_bus.emit('cmd_wake_server', game_server)    
+                    await self.manager_event_bus.emit('cmd_wake_server', game_server)
             else:
                 await self.manager_event_bus.emit('cmd_wake_server', game_server)
         except Exception as e:
@@ -352,18 +352,18 @@ class Commands:
 
             elif game_server == "all":
                 for game_server in list(self.game_servers.values()):
-                    await self.manager_event_bus.emit('cmd_sleep_server', game_server)    
+                    await self.manager_event_bus.emit('cmd_sleep_server', game_server)
             else:
                 await self.manager_event_bus.emit('cmd_sleep_server', game_server)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def cmd_message_server(self, game_server=None, message=None):
         try:
             if game_server is None or message is None:
                 print_formatted_text("Usage: message <GameServer#> <message>")
                 return
-            
+
             if game_server == "all":
                 for game_server in list(self.game_servers.values()):
                     await self.manager_event_bus.emit('cmd_message_server', game_server, message)
@@ -377,11 +377,9 @@ class Commands:
             if game_server is None or command is None:
                 print_formatted_text("Usage: command <GameServer#> <command>")
                 return
-            
             if isinstance(command[0],str) and command[0].lower() not in ['message','terminateplayer','serverreset','addfakeplayer','adjustservertime','remake','flushserverlogs']:
                 LOGGER.warn("Command disallowed")
                 return
-            
             if game_server == "all":
                 for game_server in list(self.game_servers.values()):
                     await self.manager_event_bus.emit('cmd_custom_command', game_server, command)
@@ -391,6 +389,9 @@ class Commands:
 
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def cmd_cowmaster_fork(self):
+        await self.manager_event_bus.emit('start_gameserver_from_cowmaster', num = "all")
 
     async def disconnect(self, *cmd_args):
         try:
@@ -409,7 +410,7 @@ class Commands:
                 await self.manager_event_bus.emit('start_game_servers', [game_server])
         else:
             await self.manager_event_bus.emit('start_game_servers', [game_server])
-    
+
     async def shutdown_servers(self,game_server):
         if game_server == "all":
             for game_server in list(self.game_servers.values()):
@@ -462,7 +463,7 @@ class Commands:
             print_formatted_text(table)
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-    
+
     async def update(self):
         await self.manager_event_bus.emit('update')
 
@@ -535,7 +536,7 @@ class CustomCommandCompleter(Completer):
                                     for subcommand in temp_sub_command.keys():
                                         if subcommand.lower().startswith(current_word.lower()):
                                             yield Completion(subcommand, start_position=-len(current_word))
-                                
+
                                 elif callable(temp_sub_command):
                                     for arg in current_command.args:
                                         if arg.lower().startswith(current_word.lower()):

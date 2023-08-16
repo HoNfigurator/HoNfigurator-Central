@@ -60,6 +60,7 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
         self.event_bus.subscribe('cmd_custom_command', self.cmd_custom_command)
+        self.event_bus.subscribe('start_gameserver_from_cowmaster', self.start_gameserver_from_cowmaster)
         self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
@@ -95,7 +96,8 @@ class GameServerManager:
         self.auto_ping_listener = AutoPingListener(self.global_config, self.global_config['hon_data']['autoping_responder_port'])
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
-        self.create_all_game_servers()
+        #FIXME Dont create gameserver objects, cause the cow needs some room
+        # self.create_all_game_servers()
 
         coro = self.commands.handle_input()
         self.schedule_task(coro, 'cli_handler')
@@ -111,19 +113,19 @@ class GameServerManager:
         self.schedule_task(coro, 'health_checks')
 
         MISC.save_last_working_branch()
-    
+
     def cleanup_tasks(self, tasks_dict, current_time):
         for task_name, task in list(tasks_dict.items()):  # Use list() to avoid "dictionary changed size during iteration" error
             if task is None:
                 continue
-            
+
             if not isinstance(task, asyncio.Task):
                 LOGGER.error(f"Item '{task_name}' in tasks is not a Task object.")
                 return
 
             if task.done() and task.exception() is None and task.end_time + timedelta(minutes=30) < current_time:
                 del tasks_dict[task_name]
-                
+
     async def cleanup_tasks_every_30_minutes(self):
         while True:
             current_time = datetime.now()
@@ -135,7 +137,7 @@ class GameServerManager:
                 if stop_event.is_set():
                     break
                 await asyncio.sleep(1)
-    
+
     def schedule_task(self, coro, name, override = False):
         existing_task = self.tasks.get(name)  # Get existing task if any
 
@@ -166,7 +168,7 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-                    
+
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True):
         try:
             if game_server is None: return False
@@ -251,10 +253,48 @@ class GameServerManager:
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(command_bytes)
             await client_connection.writer.drain()
-            LOGGER.info(f"Command - '{command}' sent to GameServer #{game_server.id}.")
+            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-        
+
+    async def cmd_cowmaster_fork(self, instance_number, port):
+        try:
+            cowmaster_port = self.global_config.get("hon_data").get("svr_starting_gamePort") - 2
+            cowmaster = self.game_servers[cowmaster_port]
+            client_connection = self.client_connections.get(cowmaster.port, None)
+
+            if client_connection is None:
+                return
+
+            command_bytes = b'\x28' + instance_number.to_bytes(1, "little") + port.to_bytes(2, "little") + b'\x00'
+
+            #command_bytes = b'\x28\x01\x11\x27\x00'
+            length = len(command_bytes)
+            length_bytes = length.to_bytes(2, byteorder='little')
+
+            client_connection.writer.write(length_bytes)
+            client_connection.writer.write(command_bytes)
+            await client_connection.writer.drain()
+
+            LOGGER.info(f"Command - command sent to CowMaster.")
+        except Exception:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def start_gameserver_from_cowmaster(self, num = "all"):
+        try:
+            starting_port = self.global_config.get("hon_data").get("svr_starting_gamePort")
+            if num == "all":
+                number_of_instances = self.global_config.get("hon_data").get("svr_total")
+            else:
+                number_of_instances = num
+
+            for i in range(number_of_instances):
+                print(i)
+                await self.cmd_cowmaster_fork(i+1, starting_port)
+                starting_port += 1
+        except Exception as e:
+            LOGGER.exception(e)
+
     async def check_upstream_patch(self):
         if self.patching:
             LOGGER.info("Server patching is ongoing.. Please wait.")
@@ -515,7 +555,7 @@ class GameServerManager:
                     LOGGER.warn("No available ports for creating a new game server.")
             coro = self.start_game_servers(start_servers)
             self.schedule_task(coro, 'gameserver_startup', override = True)
-        
+
         async def remove_servers(servers, server_type):
             servers_removed = 0
             servers_to_remove = []
@@ -531,7 +571,7 @@ class GameServerManager:
             #     if port in self.game_servers:
             #         game_server.cancel_tasks()
             #         del self.game_servers[port]
-            
+
             LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {total_num_servers - servers_removed} game servers are now running.")
             return servers_removed
 
@@ -567,7 +607,7 @@ class GameServerManager:
                 LOGGER.info(f"Game server created at game_port: {game_port}")
             else:
                 LOGGER.warn("No available ports for creating a new game server.")
-        
+
         coro = self.start_game_servers(start_servers)
         self.schedule_task(coro, 'gameserver_startup', override = True)
 
@@ -583,7 +623,7 @@ class GameServerManager:
                 await self.cmd_shutdown_server(game_server,disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
-            
+
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
@@ -690,7 +730,7 @@ class GameServerManager:
             #TODO: raise error or happy with logger?
             LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
             return False
-    
+
     async def find_replay_file(self,replay_file_name):
         replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
         if self.global_config['application_data']['longterm_storage']['active']:
@@ -710,7 +750,7 @@ class GameServerManager:
         if self.global_config['application_data']['longterm_storage']['active']:
             replay_file_paths.append(Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
         file_exists,replay_file_path = await self.find_replay_file(replay_file_name)
-        
+
         if not file_exists:
             # Send the "does not exist" packet
             # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
@@ -783,11 +823,11 @@ class GameServerManager:
                 self.commands.subcommands_changed.set()
                 return True
         return False
-    
+
     def update_server_start_semaphore(self):
         max_start_at_once = self.global_config['hon_data']['svr_max_start_at_once']
         self.server_start_semaphore = asyncio.Semaphore(max_start_at_once)
-    
+
     async def start_game_servers_task(self, game_servers):
         coro = self.start_game_servers(game_servers)
         self.schedule_task(coro, 'gameserver_startup')
@@ -820,6 +860,11 @@ class GameServerManager:
             else:
                 # TODO: Linux patching logic here?
                 pass
+
+            if MISC.get_os_platform() == "linux" and launch:
+                x = get_cowmaster_configuration(self.global_config.get("hon_data"))
+                cmdline_args = MISC.build_commandline_args(x, self.global_config, cowmaster = True)
+                exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
             async def start_game_server_with_semaphore(game_server, timeout):
                 game_server.game_state.update({'status':GameStatus.QUEUED.value})
@@ -860,13 +905,13 @@ class GameServerManager:
             start_tasks = []
             if game_servers == "all":
                 game_servers = list(self.game_servers.values())
-                
+
             for game_server in game_servers:
                 already_running = await game_server.get_running_server()
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
-            
-            
+
+
             # setup or verify filebeat configuration for match log submission
             await filebeat_status()
             if launch:
@@ -876,13 +921,13 @@ class GameServerManager:
             if launch and not self.global_config['hon_data']['svr_start_on_launch']:
                 LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
                 return
-            
+
             if not service_recovery and not get_filebeat_status()['running']:
                 msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Status: {get_filebeat_status()['certificate_status']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
                 if get_filebeat_auth_url():
                     print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
-            
+
             for game_server in game_servers:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
 
@@ -905,7 +950,7 @@ class GameServerManager:
             filename = components[3]
             hon_update_exe_crc = components[-1]
             return hon_update_exe_crc
-        
+
         except Exception as e:
             LOGGER.error(f"Error occurred while extracting CRC from file: {e}")
             return None
@@ -922,7 +967,7 @@ class GameServerManager:
 
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
             return
-        
+
         hon_update_x64_crc = await self.patch_extract_crc_from_file(HON_VERSION_URL)
         if (not exists(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe')) or (hon_update_x64_crc and hon_update_x64_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe').lower()):
             try:
@@ -930,7 +975,7 @@ class GameServerManager:
                 temp_path = temp_folder.name
                 temp_zip_path = Path(temp_path) / 'hon_update_x64.zip'
                 temp_update_x64_path = Path(temp_path) / 'hon_update_x64.exe'
-                
+
                 download_hon_update_x64 = urllib.request.urlretrieve(HON_UPDATE_X64_DOWNLOAD_URL, temp_zip_path)
                 if not download_hon_update_x64:
                     LOGGER.warn(f"Newer hon_update_x64.zip is available, however the download failed.\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
@@ -956,7 +1001,7 @@ class GameServerManager:
 
             except Exception as e:
                 LOGGER.error(f"Error occurred during file download or extraction: {e}")
-        
+
         patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
         # subprocess.run([patcher_exe, "-norun"])
         try:
