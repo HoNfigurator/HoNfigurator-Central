@@ -31,7 +31,7 @@ class Misc:
         self.public_ip = self.lookup_public_ip()
         self.hon_version = None
 
-    def build_commandline_args(self,config_local, config_global):
+    def build_commandline_args(self,config_local, config_global, cowmaster = False):
         params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
         if self.get_os_platform() == "win32":
             if config_global['hon_data']['svr_noConsole']:
@@ -57,6 +57,8 @@ class Misc:
                 ]
             return [
                 config_local['config']['file_path'],
+                '-cowmaster',
+                '-servicecvars',
                 '-dedicated',
                 '-noconfig',
                 '-mod game;KONGOR',
@@ -87,7 +89,7 @@ class Misc:
 
     def get_proc(self, proc_name, slave_id=''):
         if sys.platform == "linux":
-            return self.parse_linux_procs(proc_name, port)
+            return self.parse_linux_procs(proc_name, slave_id)
         procs = []
         for proc in psutil.process_iter():
             try:

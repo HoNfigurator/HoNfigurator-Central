@@ -99,7 +99,8 @@ class SetupEnvironment:
                 "svr_starting_voicePort": 10061,
                 "svr_managerPort": 1134,
                 "svr_startup_timeout": 180,
-                "svr_api_port": 5000
+                "svr_api_port": 5000,
+                "man_use_cowserver":False
             },
             "application_data": {
                 "timers": {
@@ -223,7 +224,7 @@ class SetupEnvironment:
                 return handle_path(key, value)
             else:
                 return value
-            
+
         def handle_float(key, value):
             if not isinstance(value, float):
                 try:
@@ -231,7 +232,7 @@ class SetupEnvironment:
                 except ValueError:
                     return None
             return value
-        
+
         def handle_int(key, value):
             if not isinstance(value, int):
                 try:

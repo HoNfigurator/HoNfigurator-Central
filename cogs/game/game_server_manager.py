@@ -27,6 +27,7 @@ from os.path import exists
 from utilities.filebeat import main as filebeat, filebeat_status
 
 LOGGER = get_logger()
+from cogs.handlers.data_handler import get_cowmaster_configuration
 MISC = get_misc()
 HOME_PATH = get_home()
 HON_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
