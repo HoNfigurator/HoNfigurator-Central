@@ -59,7 +59,8 @@ def get_cowmaster_configuration(global_config):
         'sv_logcollection_highping_reportclientnum':1,
         'sv_logcollection_highping_interval':120000,
         #'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core'])),
-        'man_cowServerPort':global_config.get('svr_starting_gamePort') - 2
+        'man_cowServerPort':global_config.get('svr_starting_gamePort') - 2,
+        'cow_precache':True
     },
     'name' : f'{global_config.get("svr_name")}'
     })
