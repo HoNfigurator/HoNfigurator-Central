@@ -240,6 +240,13 @@ class GameManagerParser:
         # await game_server.save_gamestate_to_file()
         game_server.reset_skipped_frames()
 
+    async def cow_being_used(self, packet, gameserver):
+        """ 0x46 Server is being used
+            full packet: \x46\x00\x00
+            this packet arrives right before the lobby created packet and i assume its being used to
+            tell the manager that the server is in use.
+        """
+
 
     async def server_connection(self,packet, game_server):
         """ 0x47 Server selected / player joined
@@ -247,6 +254,27 @@ class GameManagerParser:
                 This packet arrives any time someone begins connecting to the server
         """
         self.log("debug",f"GameServer #{self.id} - Received server connection packet: {packet}")
+
+    async def cow_not_being_used(self, packet, gameserver):
+        """ 0x48 server not used anymore / game ended
+            this packet comes between game phase 8 (final stage) and
+            lobby closed packet
+        """
+
+    async def cow_announce(self, packet, game_server):
+        """ 0x49 Fork was successful and server says hello
+
+            This packet arrives from the game server instasnce after a fork from the cowmaster
+            example: \x49\x11\x27\x86\xae
+
+            2 bytes - message type
+            4 bytes - port (\x11\x27 = 10001)
+            4 bytes - unknown (translates into 44678 decimal)
+                Best guess on that is the source port. Unsure tho.
+                In some case it probably has to do something with the identification, cause
+                The manager has to know which server is getting ready.
+                Idea: Create a gameserver object based on the port
+        """
 
 
     async def replay_update(self,packet, game_server):
