@@ -275,7 +275,13 @@ class GameManagerParser:
                 b'H\x00\x00'
             """
 
-            self.log("debug",f"GameServer #{self.id} - Received unknown packet: {packet}")
+
+            formatted = ''.join(['\\x{:02x}'.format(byte) for byte in packet])
+
+            #TODO: Python decodes the output of bytes weirdly. We want to prevent that.
+
+
+            self.log("debug",f"GameServer #{self.id} - Received unknown packet: {formatted}")
 
 class ManagerChatParser:
     def __init__(self,logger=None):
@@ -550,7 +556,7 @@ class ClientChatParser:
         file_format, offset = read_string(packet_data, offset)
 
         self.log("debug",f"{self.print_prefix}Replay Request\n\tMatch ID: {match_id}\n\tfile format: {file_format}")
-    
+
     async def chat_replay_upload_status(self, packet_data):
         offset = 2
         replay_status = {}
@@ -559,7 +565,7 @@ class ClientChatParser:
         replay_status['status'], offset = read_byte(packet_data, offset)
         if replay_status['status'] == 7:  # "UPLOAD_COMPLETE"
             replay_status['extra_byte'], offset = read_byte(packet_data, offset)
-        
+
         status = None
         if replay_status['status'] == -1: status = 'None'
         if replay_status['status'] == 0: status = 'GENERAL_FAILURE'
@@ -581,7 +587,7 @@ class ClientChatParser:
         offset = 2
         status, offset = read_int(packet_data, offset)
         return status
-    
+
     async def chat_authentication_fail(self,packet_data):
         offset = 2
         status, offset = read_int(packet_data, offset)
