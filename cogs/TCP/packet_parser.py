@@ -245,6 +245,7 @@ class GameManagerParser:
             full packet: \x46\x00\x00
             this packet arrives right before the lobby created packet and i assume its being used to
             tell the manager that the server is in use.
+            assumption: byte 3-4 is a status
         """
 
 
@@ -255,10 +256,13 @@ class GameManagerParser:
         """
         self.log("debug",f"GameServer #{self.id} - Received server connection packet: {packet}")
 
-    async def cow_not_being_used(self, packet, gameserver):
-        """ 0x48 server not used anymore / game ended
-            this packet comes between game phase 8 (final stage) and
-            lobby closed packet
+    async def cow_stats_submission(self, packet, gameserver):
+        """ 0x48 state of stats submission
+            full example: \x48\x00\x00
+            \x48\x00\x00 is Stat submission successful
+            \x48\x06\x00 is connected to:
+                [Aug 17 10:59:48] Error: [10:59:48] Stat submission failure
+                [Aug 17 10:59:48] Error: [10:59:48] Stat submission [3485594] request completely failed
         """
 
     async def cow_announce(self, packet, game_server):
