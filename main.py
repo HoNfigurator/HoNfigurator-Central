@@ -121,7 +121,7 @@ async def main():
         auth_coro = game_server_manager.manage_upstream_connections(udp_ping_responder_port)
         auth_task = game_server_manager.schedule_task(auth_coro, 'authentication_handler')
         tasks.append(auth_task)
-        
+
         start_coro = game_server_manager.start_game_servers("all", launch=True)
         start_task = game_server_manager.schedule_task(start_coro, 'gameserver_startup')
         tasks.append(start_task)
