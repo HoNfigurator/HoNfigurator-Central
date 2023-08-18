@@ -258,6 +258,8 @@ class GameServer:
     
     def set_client_connection(self, client_connection):
         self.client_connection = client_connection
+        # when servers connect they may be in a "Sleeping" state. Wake them up
+        self.client_connection.send_packet(GameServerCommands.WAKE_BYTES.value, send_len=True)
     
     def unset_client_connection(self):
         self.client_connection = None
