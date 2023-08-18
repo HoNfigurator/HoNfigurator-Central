@@ -41,10 +41,13 @@ class CowMaster:
 
     async def start_cow_master(self):
         cmdline_args = MISC.build_commandline_args(self.cowmaster_cmdline, self.global_config, cowmaster = True)
-        os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_artefacts_directory'])
-        os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-        DETACHED_PROCESS = 0x00000008
-        exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+        if MISC.get_os_platform() == "win32":
+            os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_artefacts_directory'])
+            os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
+            DETACHED_PROCESS = 0x00000008
+            exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+        else:
+            exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         self._pid = exe.pid
         self._proc_hook = psutil.Process(pid=self._pid)
