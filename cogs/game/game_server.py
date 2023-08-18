@@ -256,7 +256,7 @@ class GameServer:
         else:
             raise KeyError(f"Attribute '{attribute}' not found in game_state or performance dictionary.")
     
-    def set_client_connection(self, client_connection):
+    async def set_client_connection(self, client_connection):
         self.client_connection = client_connection
         # when servers connect they may be in a "Sleeping" state. Wake them up
         await self.client_connection.send_packet(GameServerCommands.WAKE_BYTES.value, send_len=True)
