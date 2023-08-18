@@ -733,7 +733,7 @@ class GameServerManager:
             self.client_connections[port] = client_connection
 
             if port == self.cowmaster.get_port():
-                self.cowmaster.set_client_connection(client_connection)
+                await self.cowmaster.set_client_connection(client_connection)
                 self.cowmaster.status_received.set()
             
             else:
