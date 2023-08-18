@@ -32,7 +32,8 @@ class GameManagerParser:
             0x44: self.lobby_created,
             0x45: self.lobby_closed,
             0x47: self.server_connection,
-            0x4A: self.replay_update,
+            0x49: self.cow_announce,
+            0x4A: self.replay_update
         }
         self.id = client_id
 
@@ -266,10 +267,14 @@ class GameManagerParser:
         """
 
     async def cow_announce(self, packet, game_server):
-        """ 0x49 Fork was successful and server says hello
+        """ 0x49 Fork status response (success or fail)
 
-            This packet arrives from the game server instasnce after a fork from the cowmaster
-            example: \x49\x11\x27\x86\xae
+            This packet arrives from the cow master after fork completed or attempted
+            example:
+                Success fork \x49\x11\x27\x86\xae
+                Fail fork (tried on windows): \x49\x11\x27\x00\x00
+                 - Sv: [01:45:45] Received message to fork...
+                 - Error: [01:45:45] Server manager requested a fork, but we're a non linux server build.
 
             2 bytes - message type
             4 bytes - port (\x11\x27 = 10001)
@@ -278,7 +283,9 @@ class GameManagerParser:
                 In some case it probably has to do something with the identification, cause
                 The manager has to know which server is getting ready.
                 Idea: Create a gameserver object based on the port
+                Update: when failed to fork, these 4 bytes are 0000
         """
+        self.log('debug',f'CowMaster fork response: {self.format_packet(packet)}')
 
 
     async def replay_update(self,packet, game_server):
@@ -308,12 +315,15 @@ class GameManagerParser:
             """
 
 
-            formatted = ''.join(['\\x{:02x}'.format(byte) for byte in packet])
+            
 
             #TODO: Python decodes the output of bytes weirdly. We want to prevent that.
 
 
-            self.log("debug",f"GameServer #{self.id} - Received unknown packet: {formatted}")
+            self.log("debug",f"GameServer #{self.id} - Received unknown packet: {self.format_packet(packet)}")
+    
+    def format_packet(self,packet):
+        return ''.join(['\\x{:02x}'.format(byte) for byte in packet])
 
 class ManagerChatParser:
     def __init__(self,logger=None):

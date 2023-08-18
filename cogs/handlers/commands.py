@@ -109,6 +109,12 @@ class Commands:
 
     async def startup_servers_subcommands(self):
         return self.generate_subcommands(self.startup_servers)
+    
+    async def add_servers_subcommands(self):
+        return self.generate_subcommands(self.add_servers)
+    
+    async def cow_subcommands(self):
+        return self.generate_subcommands(self.cmd_cowmaster_fork)
 
     async def custom_command_subcommands(self):
         return self.generate_subcommands(self.cmd_custom_cmd)
@@ -123,13 +129,14 @@ class Commands:
     async def config_commands(self):
         return self.generate_config_subcommands(self.global_config, self.set_config)
 
-    def __init__(self, game_servers, client_connections, global_config, manager_event_bus):
+    def __init__(self, game_servers, client_connections, global_config, manager_event_bus, cowmaster):
         self.manager_event_bus = manager_event_bus
         self.game_servers = game_servers
         self.client_connections = client_connections
         self.global_config = global_config
         self.commands = {}
         self.setup = SetupEnvironment(CONFIG_FILE)
+        self.cowmaster = cowmaster
 
     async def initialise_commands(self):
         self.commands = {
@@ -137,9 +144,9 @@ class Commands:
             "wake": Command("wake", description="Wake up a GameServer", usage="wake <GameServer#>", function=None, sub_commands=await self.wake_subcommands()),
             "sleep": Command("sleep", description="Put a GameServer to sleep", usage="sleep <GameServer#>", function=None, sub_commands=await self.sleep_subcommands()),
             "message": Command("message", description="Send a message to a GameServer", usage="message <GameServer# / ALL> <message>", function=None, sub_commands=await self.message_subcommands(),args=["<type your message>"]),
-            "cowmaster": Command("cowmaster", description="Use the cowserver to fork a new game server", usage="cowserver <num>", function=self.cmd_cowmaster_fork, sub_commands={}),
             "command": Command("command", description="Initiate a command on a GameServer as if you were typing into the console.", usage="command <GameServer# / ALL> <command>", function=None, sub_commands=await self.custom_command_subcommands()),
             "startup": Command("startup", description="Start 1 or more game servers", usage="startup <GameServer# / ALL>", function=None, sub_commands=await self.startup_servers_subcommands()),
+            "addservers": Command("addservers", description="Add 1 or more game servers", usage="add <Num / ALL>", function=None, sub_commands=await self.add_servers_subcommands()),
             "status": Command("status", description="Show status of connected GameServers", usage="status", function=self.status, sub_commands={}),
             "reconnect": Command("reconnect", description="Close all GameServer connections, forcing them to reconnect", usage="reconnect", function=self.reconnect, sub_commands={}),
             "disconnect": Command("disconnect", description="Disconnect the specified GameServer. This only closes the network communication between the manager and game server, not shutdown.", usage="disconnect <GameServer# / ALL>", function=None, sub_commands=await self.disconnect_subcommands()),
@@ -390,9 +397,21 @@ class Commands:
 
         except Exception as e:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-
-    async def cmd_cowmaster_fork(self):
-        await self.manager_event_bus.emit('start_gameserver_from_cowmaster', num = "all")
+    
+    async def cmd_cowmaster_fork(self, num="all"):
+        # TODO: Change above back to num=none
+        if num == "none":
+            LOGGER.warn(self.commands['cowmaster-forkserver']['usage'])
+        if num == "all":
+            # logic to fork all servers
+            LOGGER.info("Forking all available servers")
+            await self.manager_event_bus.emit('start_gameserver_from_cowmaster', num)
+        else:
+            # logic to fork specific number of servers
+            num_servers = int(num)
+            LOGGER.info(f"Forking {num_servers} servers...")
+            await self.manager_event_bus.emit('start_gameserver_from_cowmaster', num)
+        # Add your actual logic to fork the servers here
 
     async def disconnect(self, *cmd_args):
         try:
@@ -407,10 +426,15 @@ class Commands:
 
     async def startup_servers(self,game_server):
         if game_server == "all":
-            for game_server in list(self.game_servers.values()):
-                await self.manager_event_bus.emit('start_game_servers', [game_server])
+            await self.manager_event_bus.emit('start_game_servers', 'all')
         else:
             await self.manager_event_bus.emit('start_game_servers', [game_server])
+    
+    async def add_servers(self,game_server):
+        if game_server == "all":
+            await self.manager_event_bus.emit('balance_game_server_count', 'all')
+        else:
+            LOGGER.info("not yet implemented")
 
     async def shutdown_servers(self,game_server):
         if game_server == "all":
@@ -421,6 +445,11 @@ class Commands:
 
     async def status(self):
         try:
+            if self.global_config['hon_data']['man_use_cowserver'] and self.cowmaster:
+                if self.cowmaster.client_connection:
+                    print_formatted_text("Cowmaster is in use. Cowmaster connected.")
+                else:
+                    print_formatted_text("Cowmaster is in use. Cowmaster NOT connected.")
             if len(self.game_servers) == 0:
                 print_formatted_text("No GameServers connected.")
                 return

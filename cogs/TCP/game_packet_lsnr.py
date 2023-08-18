@@ -87,10 +87,14 @@ class ClientConnection:
             self.game_server.reset_game_state() # clear the game server state object to indicate we've lost comms from this server.
         await self.close()
 
-    async def send_packet(self, packet):
+    async def send_packet(self, packet, send_len=False):
         try:
             if not self.writer.is_closing():
                 data = bytes(packet)
+                if send_len:
+                    length = len(data)
+                    length_bytes = length.to_bytes(2, byteorder='little')
+                    self.writer.write(length_bytes)
                 self.writer.write(data)
                 await self.writer.drain()
         except Exception as e:
@@ -140,6 +144,8 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
         # Get or create the game server
         game_server = game_server_manager.get_game_server_by_port(game_server_port)
         if game_server is None:
+            # TODO: CowServer may not be in the game_servers dictionary, and be created here as game server
+            # this shouldn't happen tho
             game_server = game_server_manager.create_game_server(game_server_port)
             await game_server.get_running_server()
 

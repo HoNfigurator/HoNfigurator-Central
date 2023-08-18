@@ -10,32 +10,31 @@ LOGGER = get_logger()
 HOME_PATH = get_home()
 MISC = get_misc()
 
-def get_cowmaster_configuration(global_config):
-    executable = "hon-x86_64-server"
-    file_name = executable
+def get_cowmaster_configuration(hon_data):
+    file_name = hon_data['hon_executable_name']
 
     local = ({
         'config' : {
-        'file_name':file_name,
-        'file_path' : str(Path(global_config.get("hon_install_directory")) / f'{file_name}')
+            'file_name':file_name,
+            'file_path' : str(Path(hon_data.get("hon_install_directory")) / f'{file_name}')
     },
     'params' : {
-        'svr_login':f"{global_config.get('svr_login')}:0",
-        'svr_password':global_config.get('svr_password'),
+        'svr_login':f"{hon_data.get('svr_login')}:0",
+        'svr_password':hon_data.get('svr_password'),
         'svr_description':MISC.get_svr_description(),
-        'sv_masterName':f"{global_config.get('svr_login')}:",
-        'svr_slave':1,
+        'sv_masterName':f"{hon_data.get('svr_login')}:",
+        'svr_slave':0,
         'svr_adminPassword':"",
-        'svr_name':f"{global_config.get('svr_name')} 0",
-        'svr_ip':global_config.get('svr_ip') if 'svr_ip' in global_config else MISC.get_public_ip(),
-        'svr_port':global_config.get('svr_starting_gamePort') - 2,
+        'svr_name':f"{hon_data.get('svr_name')} 0",
+        'svr_ip':hon_data.get('svr_ip') if 'svr_ip' in hon_data else MISC.get_public_ip(),
+        'svr_port':hon_data.get('svr_starting_gamePort') - 2,
 #'svr_proxyPort':self.get_global_by_key('svr_starting_gamePort')+self.id+10000 - 1,
 #'svr_proxyLocalVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
 #'svr_proxyRemoteVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id+10000 - 1,
-        'svr_voicePortStart':global_config.get('svr_starting_voicePort'),
-        'man_enableProxy':global_config.get('man_enableProxy'),
-        'svr_location':global_config.get('svr_location'),
-        'svr_enableBotMatch': global_config.get('svr_enableBotMatch'),
+        'svr_voicePortStart':hon_data.get('svr_starting_voicePort'),
+        'man_enableProxy':hon_data.get('man_enableProxy'),
+        'svr_location':hon_data.get('svr_location'),
+        'svr_enableBotMatch': hon_data.get('svr_enableBotMatch'),
 #'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
         'svr_broadcast':True,
         'upd_checkForUpdates':False,
@@ -59,10 +58,10 @@ def get_cowmaster_configuration(global_config):
         'sv_logcollection_highping_reportclientnum':1,
         'sv_logcollection_highping_interval':120000,
         #'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core'])),
-        'man_cowServerPort':global_config.get('svr_starting_gamePort') - 2,
+        'man_cowServerPort':hon_data.get('svr_starting_gamePort') - 2,
         'cow_precache':True
     },
-    'name' : f'{global_config.get("svr_name")}'
+    'name' : f'{hon_data.get("svr_name")}'
     })
     return local
 

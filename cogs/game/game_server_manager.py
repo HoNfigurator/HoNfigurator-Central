@@ -17,6 +17,7 @@ from cogs.TCP.game_packet_lsnr import handle_clients
 from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
+from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
 from cogs.misc.logger import get_logger, get_misc, get_home, get_filebeat_status, get_filebeat_auth_url
@@ -61,7 +62,8 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
         self.event_bus.subscribe('cmd_custom_command', self.cmd_custom_command)
-        self.event_bus.subscribe('start_gameserver_from_cowmaster', self.start_gameserver_from_cowmaster)
+        self.event_bus.subscribe('fork_server_from_cowmaster', self.fork_server_from_cowmaster),
+        # self.event_bus.subscribe('start_gameserver_from_cowmaster', self.start_gameserver_from_cowmaster)
         self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
@@ -91,8 +93,14 @@ class GameServerManager:
         self.game_servers = {}
         self.client_connections = {}
 
+        # make cowmaster, we may or may not use it
+        self.use_cowmaster = False
+        if self.global_config['hon_data']['man_use_cowserver']:
+            self.use_cowmaster = True
+        self.cowmaster = CowMaster(self.global_config['hon_data']['svr_starting_gamePort'] - 2, self.global_config)
+
         # Initialize a Commands object for sending commands to game servers
-        self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.event_bus)
+        self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.event_bus, self.cowmaster)
         # Initialise the autoping listener object
         self.auto_ping_listener = AutoPingListener(self.global_config, self.global_config['hon_data']['autoping_responder_port'])
         # Create game server instances
@@ -200,6 +208,7 @@ class GameServerManager:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
 
+            # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
             client_connection.writer.write(GameServerCommands.WAKE_BYTES.value)
             await client_connection.writer.drain()
@@ -213,6 +222,7 @@ class GameServerManager:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
 
+            # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
             client_connection.writer.write(GameServerCommands.SLEEP_BYTES.value)
             await client_connection.writer.drain()
@@ -231,7 +241,8 @@ class GameServerManager:
             message_bytes = GameServerCommands.MESSAGE_BYTES.value + message.encode('ascii') + b'\x00'
             length = len(message_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
-
+            
+            # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(message_bytes)
             await client_connection.writer.drain()
@@ -251,6 +262,7 @@ class GameServerManager:
             length = len(command_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
 
+            # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(command_bytes)
             await client_connection.writer.drain()
@@ -260,9 +272,7 @@ class GameServerManager:
 
     async def cmd_cowmaster_fork(self, instance_number, port):
         try:
-            cowmaster_port = self.global_config.get("hon_data").get("svr_starting_gamePort") - 2
-            cowmaster = self.game_servers[cowmaster_port]
-            client_connection = self.client_connections.get(cowmaster.port, None)
+            client_connection = self.client_connections.get(self.cowmaster.get_port(), None)
 
             if client_connection is None:
                 return
@@ -280,6 +290,12 @@ class GameServerManager:
             LOGGER.info(f"Command - command sent to CowMaster.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def fork_server_from_cowmaster(self, game_server):
+        try:
+            await self.cowmaster.fork_new_server(game_server)
+        except Exception:
+            LOGGER.error(traceback.format_exc())
 
     async def start_gameserver_from_cowmaster(self, num = "all"):
         try:
@@ -697,6 +713,9 @@ class GameServerManager:
         Returns:
             GameServer or None: the game server instance, or None if no game server with the specified port exists
         """
+        if game_server_port == self.cowmaster.get_port():
+            return self.cowmaster
+        
         return self.game_servers.get(game_server_port, None)
 
     async def add_client_connection(self,client_connection, port):
@@ -712,16 +731,23 @@ class GameServerManager:
         """
         if port not in self.client_connections:
             self.client_connections[port] = client_connection
-            game_server = self.game_servers.get(port, None)
-            # this is in case game server doesn't exist (config change maybe)
-            if game_server:
-                game_server.status_received.set()
-                game_server.set_client_connection(client_connection)
-                await self.check_for_restart_required(game_server)
-            # TODO
-            # Create game server object here?
-            # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
-            # since the game server isn't actually off yet, it will keep creating a connection.
+
+            if port == self.cowmaster.get_port():
+                self.cowmaster.set_client_connection(client_connection)
+                self.cowmaster.status_received.set()
+            
+            else:
+
+                game_server = self.game_servers.get(port, None)
+                # this is in case game server doesn't exist (config change maybe)
+                if game_server:
+                    game_server.status_received.set()
+                    game_server.set_client_connection(client_connection)
+                    await self.check_for_restart_required(game_server)
+                # TODO
+                # Create game server object here? May be happening already in game_packet_lsnr.py (handle_client_connection)
+                # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
+                # since the game server isn't actually off yet, it will keep creating a connection.
 
             # indicate that the sub commands should be regenerated since the list of connected servers has changed.
             asyncio.create_task(self.commands.initialise_commands())
@@ -863,9 +889,8 @@ class GameServerManager:
                 pass
 
             if MISC.get_os_platform() == "linux" and launch:
-                x = get_cowmaster_configuration(self.global_config.get("hon_data"))
-                cmdline_args = MISC.build_commandline_args(x, self.global_config, cowmaster = True)
-                exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                if self.use_cowmaster:
+                    await self.cowmaster.start_cow_master()
 
             async def start_game_server_with_semaphore(game_server, timeout):
                 game_server.game_state.update({'status':GameStatus.QUEUED.value})
@@ -929,6 +954,11 @@ class GameServerManager:
                     print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
 
+            if self.use_cowmaster and MISC.get_os_platform() == "linux":
+                if not self.cowmaster.client_connection:
+                    LOGGER.warn("Cannot start servers. Cowmaster is in use, but not yet connected to the manager. Please wait and try again")
+                    return
+                
             for game_server in game_servers:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
 

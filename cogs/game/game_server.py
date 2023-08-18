@@ -54,6 +54,9 @@ class GameServer:
         self.client_connection = None
         self.idle_disconnect_timer = 0
         self.game_in_progress = False
+        self.use_cowmaster = False
+        if self.global_config['hon_data']['man_use_cowserver']:
+            self.use_cowmaster = True
         """
         Game State specific variables
         """
@@ -461,6 +464,12 @@ class GameServer:
         if task is not None:
             task.cancel()
     
+    def get_fork_bytes(self):
+        """
+            Return the bytearray required to fork this game server from the cowmaster
+        """
+        return b'\x28' + self.id.to_bytes(1, "little") + self.port.to_bytes(2, "little") + b'\x00'
+    
     def set_server_affinity(self):
         if not self.global_config['hon_data']['svr_override_affinity']:
             return
@@ -489,6 +498,10 @@ class GameServer:
         
         coro = self.start_proxy
         self.schedule_task(coro,'proxy_task', coro_bracket=True)
+
+        if self.use_cowmaster and MISC.get_os_platform() == "linux":
+            await self.manager_event_bus.emit('fork_server_from_cowmaster', self)
+            return
 
         # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
         cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)

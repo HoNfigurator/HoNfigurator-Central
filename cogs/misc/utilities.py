@@ -31,44 +31,44 @@ class Misc:
         self.public_ip = self.lookup_public_ip()
         self.hon_version = None
 
-    def build_commandline_args(self,config_local, config_global, cowmaster = False):
-        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
+    def build_commandline_args(self, config_local, config_global, cowmaster=False):
+        # Prepare the parameters
+        params = ';'.join(' '.join((f"Set {key}", str(val))) for (key, val) in config_local['params'].items())
+
+        # Base command
+        base_cmd = [
+            config_local['config']['file_path'],
+            "-dedicated",
+            "-noconfig",
+            "-execute",
+            params if self.get_os_platform() == "win32" else f'"{params}"',
+            "-masterserver",
+            config_global['hon_data']['svr_masterServer'],
+            "-register",
+            f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"
+        ]
+
+        # Additional options based on conditions
         if self.get_os_platform() == "win32":
+            base_cmd.insert(2,"-mod")
+            base_cmd.insert(3,"game;KONGOR")
+
             if config_global['hon_data']['svr_noConsole']:
-                return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconsole","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
-            else:
-                return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
-        elif self.get_os_platform() == "linux":
+                base_cmd.insert(4, "-noconsole")
+            
+            
             if cowmaster:
-                params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
-                return [
-                    config_local['config']['file_path'],
-                    '-cowmaster',
-                    '-servicecvars',
-                    '-dedicated',
-                    '-noconfig',
-                    '-mod game;KONGOR',
-                    '-execute',
-                    f'"{params}"',
-                    '-masterserver',
-                    config_global['hon_data']['svr_masterServer'],
-                    '-register',
-                    f'127.0.0.1:{config_global["hon_data"]["svr_managerPort"]}'
-                ]
-            return [
-                config_local['config']['file_path'],
-                '-cowmaster',
-                '-servicecvars',
-                '-dedicated',
-                '-noconfig',
-                '-mod game;KONGOR',
-                '-execute',
-                f'"{params}"',
-                '-masterserver',
-                config_global['hon_data']['svr_masterServer'],
-                '-register',
-                f'127.0.0.1:{config_global["hon_data"]["svr_managerPort"]}'
-            ]
+                base_cmd.insert(1, '-cowmaster')
+                base_cmd.insert(2, '-servicecvars')
+
+        elif self.get_os_platform() == "linux":
+            base_cmd[2] = "-mod game;KONGOR"  # Modify the mod parameter
+
+            if cowmaster:
+                base_cmd.insert(1, '-cowmaster')
+                base_cmd.insert(2, '-servicecvars')
+
+        return base_cmd
 
     def parse_linux_procs(self, proc_name, slave_id):
         for proc in psutil.process_iter():
