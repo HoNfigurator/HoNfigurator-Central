@@ -742,7 +742,7 @@ class GameServerManager:
                 # this is in case game server doesn't exist (config change maybe)
                 if game_server:
                     game_server.status_received.set()
-                    game_server.set_client_connection(client_connection)
+                    await game_server.set_client_connection(client_connection)
                     await self.check_for_restart_required(game_server)
                 # TODO
                 # Create game server object here? May be happening already in game_packet_lsnr.py (handle_client_connection)
