@@ -103,7 +103,7 @@ class GameServer:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-    
+
     def stop_task(self, task):
         if task is None:
             return
@@ -117,13 +117,13 @@ class GameServer:
     def cancel_tasks(self):
         for task in self.tasks.values():
             self.stop_task(task)
-    
+
     def get_public_game_port(self):
         if self.config.local['params']['man_enableProxy']:
             return self.config.local['params']['svr_proxyPort']
         else:
             return self.config.local['params']['svr_port']
-    
+
     def get_public_voice_port(self):
         if self.config.local['params']['man_enableProxy']:
             return self.config.local['params']['svr_proxyRemoteVoicePort']
@@ -151,7 +151,7 @@ class GameServer:
             return True
         LOGGER.debug(f"GameServer #{self.id} A server configuration change has been suggested, but the suggested settings and existing live executable settings match. Skipping.")
         return False
-    
+
     async def match_timer(self):
         while True:
             elapsed_time = time.time() - self.game_state['match_info']['start_time']
@@ -166,7 +166,7 @@ class GameServer:
     async def stop_match_timer(self):
         self.stop_task(self.tasks['match_monitor'])
         self.game_state['match_info']['start_time'] = 0
-    
+
     async def start_disconnect_timer(self):
         while True:
             self.idle_disconnect_timer += 1
@@ -181,15 +181,15 @@ class GameServer:
                         player_name = re.sub(r'\[.*?\]', '', player_name)
                         LOGGER.info(f"GameServer #{self.id} - Attempting to terminate player: {player_name}")
                         await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
-                        
+
                     LOGGER.info(f"GameServer #{self.id} - {self.game_state['players']} are still connected. Waiting for termination of idle players.")
                     await asyncio.sleep(5)
                     i += 1
-                    
+
                 if len(self.game_state['players']) > 0:
                     LOGGER.info(f"GameServer #{self.id} - Waited 1 minute. Players still connected. Resetting server.")
                     await self.manager_event_bus.emit('cmd_custom_command', self, "serverreset", delay=5)
-                    
+
                 break
             await asyncio.sleep(1)
 
@@ -255,12 +255,12 @@ class GameServer:
             self.game_state._state['performance'][attribute] = value
         else:
             raise KeyError(f"Attribute '{attribute}' not found in game_state or performance dictionary.")
-    
+
     async def set_client_connection(self, client_connection):
         self.client_connection = client_connection
         # when servers connect they may be in a "Sleeping" state. Wake them up
         await self.client_connection.send_packet(GameServerCommands.WAKE_BYTES.value, send_len=True)
-    
+
     def unset_client_connection(self):
         self.client_connection = None
 
@@ -383,7 +383,7 @@ class GameServer:
         temp['Uptime'] = format_time(self.get_dict_value('uptime') / 1000) if self.get_dict_value('uptime') is not None else 'Unknown'
 
         return (temp)
-    
+
     def get_pretty_status_for_webui(self):
         def format_time(seconds):
             minutes, seconds = divmod(seconds, 60)
@@ -465,13 +465,13 @@ class GameServer:
         task = self.tasks.get(task_name)
         if task is not None:
             task.cancel()
-    
+
     def get_fork_bytes(self):
         """
             Return the bytearray required to fork this game server from the cowmaster
         """
         return b'\x28' + self.id.to_bytes(1, "little") + self.port.to_bytes(2, "little") + b'\x00'
-    
+
     def set_server_affinity(self):
         if not self.global_config['hon_data']['svr_override_affinity']:
             return
@@ -479,7 +479,7 @@ class GameServer:
         for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
             affinity.append(int(_))
         self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
-        
+
 
     async def start_server(self, timeout=180):
         self.reset_game_state()
@@ -497,7 +497,7 @@ class GameServer:
             LOGGER.error((f"GameServer #{self.id} - cannot start as there is not enough free RAM"))
             raise HoNServerError(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
         LOGGER.info(f"GameServer #{self.id} - Starting...")
-        
+
         coro = self.start_proxy
         self.schedule_task(coro,'proxy_task', coro_bracket=True)
 
@@ -516,30 +516,13 @@ class GameServer:
             exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
         else: # linux
-            def parse_svr_id(cmdline):
-                for item in cmdline[4].split(";"):
-                    if "svr_slave" in item:
-                        return item.split(" ")[-1]
-
-            def remove_ansi_control_chars(s: str) -> str:
-                ansi_escape_pattern = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-                return ansi_escape_pattern.sub('', s)
-
-            def process_output(output_stream, log_file, stop_event):
-                for line in iter(output_stream.readline, b''):
-                    clean_line =line
-                    #clean_line = remove_ansi_control_chars(line)
-                    log_file.write(clean_line)
-                    log_file.flush()
-
-            # old:
             exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         self._pid = exe.pid
         self._proc = exe
         self._proc_hook = psutil.Process(pid=exe.pid)
         self._proc_owner =self._proc_hook.username()
-        
+
         if MISC.get_os_platform() == "win32":
             self.set_server_affinity()
 
@@ -575,7 +558,7 @@ class GameServer:
         except Exception as e:
             LOGGER.error(f"GameServer #{self.id} - Unexpected error occurred: {traceback.format_exc()}")
             return False
-    
+
     def mark_for_deletion(self):
         self.delete_me = True
 
@@ -593,7 +576,7 @@ class GameServer:
         if nice:
             if self.game_state["num_clients"] != 0:
                 return
-            
+
         self.status_received.clear()
         self.stop_proxy()
         LOGGER.info(f"GameServer #{self.id} - Stopping")
@@ -606,7 +589,7 @@ class GameServer:
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
-    
+
     async def tail_game_log_then_close(self, wait=60):
         end_time = time.time() + wait
         old_size = 0
@@ -629,7 +612,7 @@ class GameServer:
 
             # Sleep for a while before checking again
             await asyncio.sleep(1)
-            
+
         # Close the tailing
         await self.stop_server_exe(disable=False)
 
@@ -720,7 +703,7 @@ class GameServer:
                 self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
         else:
             self._proc_hook.nice(-19)
-        LOGGER.info(f"GameServer #{self.id} - Priority set to {self.global_config['hon_data']['svr_priority']}.")        
+        LOGGER.info(f"GameServer #{self.id} - Priority set to {self.global_config['hon_data']['svr_priority']}.")
 
     async def create_proxy_config(self):
         config_filename = f"Config{self.id}"
@@ -739,7 +722,7 @@ region=naeu
                 existing_config = await existing_config_file.read()
             if existing_config == config_data:
                 return config_file_path, True
-        
+
         os.makedirs(os.path.dirname(config_file_path), exist_ok=True)
         async with aiofiles.open(config_file_path, "w") as config_file:
             await config_file.write(config_data)
@@ -853,7 +836,7 @@ region=naeu
                     elif status != 'zombie' and not self.enabled and not self.scheduled_shutdown:
                         #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                         self.schedule_shutdown()
-                
+
                 for _ in range(5):  # Monitor process every 5 seconds
                     if stop_event.is_set():
                         break
