@@ -10,7 +10,7 @@ from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.hide_pass import getpass
 
 ALLOWED_REGIONS = ["AU", "BR", "EU", "RU",
-                   "SEA", "TH", "USE", "USW", "NEWERTH"]
+                   "SEA", "TH", "USE", "USW", "NEWERTH", "TEST"]
 LOGGER = get_logger()
 HOME_PATH = get_home()
 MISC = get_misc()
