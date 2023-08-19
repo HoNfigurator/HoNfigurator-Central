@@ -67,6 +67,8 @@ class Misc:
             if cowmaster:
                 base_cmd.insert(1, '-cowmaster')
                 base_cmd.insert(2, '-servicecvars')
+                base_cmd.insert(3, '-noconfig')
+                base_cmd.insert(4, '-noconsole')
 
         return base_cmd
 
