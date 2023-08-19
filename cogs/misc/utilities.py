@@ -113,13 +113,10 @@ class Misc:
         return procs
 
     def get_process_by_port(self,port):
-        for conn in psutil.net_connections(kind='inet'):
-            if conn.status == 'LISTEN' and conn.laddr.port == port:
-                try:
-                    process = psutil.Process(conn.pid)
-                    return process
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
+        kind = 'udp4'
+        for connection in psutil.net_connections(kind=kind):
+            if connection.laddr.port == port:
+                return psutil.Process(connection.pid)
         return None
 
     def check_port(self, port):
