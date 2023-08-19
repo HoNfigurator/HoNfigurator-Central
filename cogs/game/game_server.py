@@ -654,7 +654,7 @@ class GameServer:
                 if status:
                     last_good_proc = proc
                 else:
-                    if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
+                    if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']) and not self.use_cowmaster:
                         proc.terminate()
                         LOGGER.debug(f"Terminated GameServer #{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
