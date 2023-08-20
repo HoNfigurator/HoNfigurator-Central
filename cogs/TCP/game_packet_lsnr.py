@@ -85,9 +85,9 @@ class ClientConnection:
                 break # exit the loop and continue to the post loop actions (clear game state, close connection, etc)
             
             if self.game_server:
-                await self.game_server.game_manager_parser.handle_packet(packet,self.game_server)
+                await self.game_server.game_manager_parser.handle_packet(packet,game_server=self.game_server)
             else:
-                await self.cowmaster.game_manager_parser.handle_packet(packet,self.cowmaster)
+                await self.cowmaster.game_manager_parser.handle_packet(packet,cowmaster=self.cowmaster)
 
             # Add a small delay to allow other clients to send packets
             await asyncio.sleep(0.001)
