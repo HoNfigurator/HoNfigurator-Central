@@ -117,7 +117,7 @@ class Misc:
                 return psutil.Process(connection.pid)
         return None
 
-    def get_pid_by_tcp_source_port(local_server_port, client_source_port):
+    def get_pid_by_tcp_source_port(self, local_server_port, client_source_port):
         """
         Get the Process object of a local client connecting to the given server port.
         """
