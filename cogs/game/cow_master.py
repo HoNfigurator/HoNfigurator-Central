@@ -30,7 +30,7 @@ class CowMaster:
         self.status_received = asyncio.Event()
 
         self.game_state = GameState()
-        self.reset_game_state()
+        self.reset_cowmaster_state()
         self.game_state.add_listener(self.on_game_state_change)
     
     async def fork_new_server(self, game_server):
@@ -40,14 +40,13 @@ class CowMaster:
         await self.client_connection.send_packet(game_server.get_fork_bytes(), send_len=True)
 
     async def start_cow_master(self):
+        """
+            Linux only feature, the cow master is used to preload resources for each available map type.
+            The cow master can then be commanded to "fork" new game servers, off existing resources and RAM.
+            This results in instant server startup times and some significantly less RAM usage overall 
+        """
         cmdline_args = MISC.build_commandline_args(self.cowmaster_cmdline, self.global_config, cowmaster = True)
-        if MISC.get_os_platform() == "win32":
-            os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_artefacts_directory'])
-            os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            DETACHED_PROCESS = 0x00000008
-            exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
-        else:
-            exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
         self._pid = exe.pid
         self._proc_hook = psutil.Process(pid=self._pid)
@@ -65,9 +64,8 @@ class CowMaster:
 
     def get_port(self):
         return self.port
-
-    def reset_game_state(self):
-        LOGGER.debug(f"GameServer #{self.id} - Reset state")
+    
+    def reset_cowmaster_state(self):
+        LOGGER.debug(f"CowMaster #{self.id} - Reset state")
         self.status_received.clear()
         self.game_state.clear()
-        self.game_in_progress = False
