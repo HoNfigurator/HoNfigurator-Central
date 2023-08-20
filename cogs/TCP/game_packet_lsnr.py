@@ -162,7 +162,7 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
             if game_server is None:
                 # TODO: CowServer may not be in the game_servers dictionary, and be created here as game server
                 # this shouldn't happen tho
-                if game_server_port == game_server_manager.cowserver.get_port():
+                if game_server_port == game_server_manager.cowmaster.get_port():
                     LOGGER.error("CowMaster has connected or a server using CowMaster port")
                 game_server = game_server_manager.create_game_server(game_server_port)
 
