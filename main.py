@@ -90,7 +90,7 @@ async def main():
         LOGGER.exception(f"{traceback.format_exc()}")
         raise HoNConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
     # check for other HoNfigurator instances.
-    check_existing_proc = MISC.get_process_by_port(global_config['hon_data']['svr_managerPort'])
+    check_existing_proc = MISC.get_process_by_port(global_config['hon_data']['svr_managerPort'], protocol='tcp4')
     if check_existing_proc:
         check_existing_proc.terminate()
 

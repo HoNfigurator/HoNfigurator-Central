@@ -67,8 +67,7 @@ class Misc:
             if cowmaster:
                 base_cmd.insert(1, '-cowmaster')
                 base_cmd.insert(2, '-servicecvars')
-                base_cmd.insert(3, '-noconfig')
-                base_cmd.insert(4, '-noconsole')
+                base_cmd.insert(3, '-noconsole')
 
         return base_cmd
 
@@ -112,9 +111,8 @@ class Misc:
                 pass
         return procs
 
-    def get_process_by_port(self,port):
-        kind = 'udp4'
-        for connection in psutil.net_connections(kind=kind):
+    def get_process_by_port(self, port, protocol='udp4'):
+        for connection in psutil.net_connections(kind=protocol):
             if connection.laddr.port == port:
                 return psutil.Process(connection.pid)
         return None

@@ -105,8 +105,7 @@ class GameServerManager:
         self.auto_ping_listener = AutoPingListener(self.global_config, self.global_config['hon_data']['autoping_responder_port'])
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
-        #FIXME Dont create gameserver objects, cause the cow needs some room
-        # self.create_all_game_servers()
+        self.create_all_game_servers()
 
         coro = self.commands.handle_input()
         self.schedule_task(coro, 'cli_handler')
