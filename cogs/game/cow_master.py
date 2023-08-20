@@ -32,6 +32,8 @@ class CowMaster:
         self.game_state = GameState()
         self.reset_cowmaster_state()
         self.game_state.add_listener(self.on_game_state_change)
+
+        asyncio.create_task(self.monitor_process())
     
     async def fork_new_server(self, game_server):
         if not self.client_connection:
@@ -50,6 +52,7 @@ class CowMaster:
 
         self._pid = exe.pid
         self._proc_hook = psutil.Process(pid=self._pid)
+        self.enabled = True
 
     def stop_cow_master(self):
         self._proc_hook.terminate()
@@ -66,6 +69,40 @@ class CowMaster:
         return self.port
     
     def reset_cowmaster_state(self):
-        LOGGER.debug(f"CowMaster #{self.id} - Reset state")
+        LOGGER.debug(f"CowMaster - Reset state")
         self.status_received.clear()
         self.game_state.clear()
+    
+    async def monitor_process(self):
+        LOGGER.debug(f"CowMaster - Process monitor started")
+        try:
+            while not stop_event.is_set():
+                if self._proc is not None and self._proc_hook is not None:
+                    try:
+                        status = self._proc_hook.status()  # Get the status of the process
+                    except psutil.NoSuchProcess:
+                        status = 'stopped'
+                    if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped. a "suspended" process will also show as stopped on windows.
+                        LOGGER.warn(f"CowMaster stopped unexpectedly")
+                        self._proc = None  # Reset the process reference
+                        self._proc_hook = None  # Reset the process hook reference
+                        self._pid = None
+                        self._proc_owner = None
+                        self.reset_cowmaster_state()
+                        # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
+                        self.start_cow_master()
+                    elif status != 'zombie' and not self.enabled:
+                        #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
+                        self.stop_cow_master()
+
+                for _ in range(5):  # Monitor process every 5 seconds
+                    if stop_event.is_set():
+                        break
+                    await asyncio.sleep(1)
+
+        except asyncio.CancelledError:
+            LOGGER.debug(f"GameServer #{self.id} Process monitor cancelled")
+            # Propagate the cancellation
+            raise
+        except Exception as e:
+            LOGGER.error(f"GameServer #{self.id} Unexpected error in monitor_process: {e}")

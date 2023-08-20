@@ -509,28 +509,28 @@ class GameServer:
 
         if self.use_cowmaster:
             await self.manager_event_bus.emit('fork_server_from_cowmaster', self)
-            return
 
-        # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
-        cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
+        else:
+            # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+            cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
 
-        if MISC.get_os_platform() == "win32":
-            # Server instances write files to location dependent on USERPROFILE and APPDATA variables
-            os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_artefacts_directory'])
-            os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            DETACHED_PROCESS = 0x00000008
-            exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+            if MISC.get_os_platform() == "win32":
+                # Server instances write files to location dependent on USERPROFILE and APPDATA variables
+                os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_artefacts_directory'])
+                os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
+                DETACHED_PROCESS = 0x00000008
+                exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
-        else: # linux
-            exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else: # linux
+                exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        self._pid = exe.pid
-        self._proc = exe
-        self._proc_hook = psutil.Process(pid=exe.pid)
-        self._proc_owner =self._proc_hook.username()
+            self._pid = exe.pid
+            self._proc = exe
+            self._proc_hook = psutil.Process(pid=exe.pid)
+            self._proc_owner =self._proc_hook.username()
 
-        if MISC.get_os_platform() == "win32":
-            self.set_server_affinity()
+            if MISC.get_os_platform() == "win32":
+                self.set_server_affinity()
 
         self.scheduled_shutdown = False
         self.game_state.update({'status':GameStatus.STARTING.value})
