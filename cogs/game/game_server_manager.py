@@ -760,7 +760,7 @@ class GameServerManager:
                 LOGGER.debug(f"Attempting to locate duplicate CowMaster server. Looking for TCP source port ({client_connection.addr[1]}) and TCP dest port ({self.global_config['hon_data']['svr_managerPort']})")
                 cowmaster_proc = MISC.get_client_pid_by_tcp_source_port(self.global_config['hon_data']['svr_managerPort'], client_connection.addr[1])
                 if cowmaster_proc:
-                    LOGGER.debug(f"Found duplicate CowMaster server. Killing process {cowmaster_proc.pid}")
+                    LOGGER.info(f"Found duplicate CowMaster server. Killing process {cowmaster_proc.pid}")
                     cowmaster_proc.terminate()
                     return
                 else:
