@@ -17,6 +17,7 @@ class CowMaster:
         self.port = port
         self.id = 0
         self.global_config = global_config
+        self.enabled = False
 
         self.client_connection = None
         self.cowmaster_cmdline = get_cowmaster_configuration(self.global_config.get("hon_data"))
@@ -56,6 +57,7 @@ class CowMaster:
 
     def stop_cow_master(self):
         self._proc_hook.terminate()
+        self.enabled = False
     
     async def set_client_connection(self, client_connection):
         LOGGER.highlight("CowMaster - Connected to manager.")
