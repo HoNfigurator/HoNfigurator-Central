@@ -266,6 +266,10 @@ class GameServer:
 
     def unset_client_connection(self):
         self.client_connection = None
+        self._pid = None
+        self._proc = None
+        self._proc_owner = None
+        self._proc_hook = None
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
@@ -598,7 +602,7 @@ class GameServer:
         old_size = 0
         while time.time() < end_time:
             # Find all files matching pattern
-            files = glob.glob(os.path.join(self.global_config['hon_data']['hon_logs_directory'], f"Slave-{self.id}_*.clog"))
+            files = glob.glob(os.path.join(self.global_config['hon_data']['hon_logs_directory'], f"Slave{self.id}_*.clog"))
             if not files:
                 break
 
