@@ -62,7 +62,7 @@ class Misc:
                 base_cmd.insert(2, '-servicecvars')
 
         elif self.get_os_platform() == "linux":
-            base_cmd[2] = "-mod game;KONGOR"  # Modify the mod parameter
+            base_cmd.insert(2, "-mod game;KONGOR")  # Modify the mod parameter
 
             if cowmaster:
                 base_cmd.insert(1, '-cowmaster')
