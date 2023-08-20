@@ -21,7 +21,7 @@ class CowMaster:
         self.client_connection = None
         self.cowmaster_cmdline = get_cowmaster_configuration(self.global_config.get("hon_data"))
 
-        self.game_manager_parser = GameManagerParser(self.id)
+        self.game_manager_parser = GameManagerParser(self.id, logger = LOGGER)
         
         # state variables
         self._started = None
