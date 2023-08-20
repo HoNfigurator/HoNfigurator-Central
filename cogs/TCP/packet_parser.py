@@ -139,7 +139,10 @@ class GameManagerParser:
             'match_started': packet[11],                                # extract match started field from packet
             'game_phase': packet[40],                                   # extract game phase field from packet
         })
-        game_server.game_state.update(temp)
+        if game_server:
+            game_server.game_state.update(temp)
+        if cowmaster:
+            cowmaster.game_state.update(temp)
 
         # If the packet only contains fixed-length fields, print the game info and return
         if len(packet) == 54:
@@ -172,7 +175,8 @@ class GameManagerParser:
                 'ip': data[ip_start:ip_end].decode('utf-8')
             })
         # Update game dictionary with player information and print
-        game_server.game_state.update({'players':clients})
+        if game_server:
+            game_server.game_state.update({'players':clients})
 
     async def long_frame(self, packet, game_server=None, cowmaster=None):
         """  0x43 Long Frame
