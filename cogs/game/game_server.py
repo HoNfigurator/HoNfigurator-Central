@@ -258,8 +258,7 @@ class GameServer:
 
     async def set_client_connection(self, client_connection):
         self.client_connection = client_connection
-        if not self._proc_hook:
-            await self.get_running_server()
+        await self.get_running_server()
 
         # when servers connect they may be in a "Sleeping" state. Wake them up
         await self.client_connection.send_packet(GameServerCommands.WAKE_BYTES.value, send_len=True)
