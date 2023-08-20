@@ -13,13 +13,18 @@ class ClientConnection:
         self.writer = writer
         self.addr = addr
         self.game_server = None
+        self.cowmaster = None
         self.game_server_manager = game_server_manager
         self.closed = False
         self.id = None
 
-    def set_game_server(self,game_server):
+    def set_game_server(self,game_server=None, cowmaster = None):
         self.game_server = game_server
-        self.id = game_server.id
+        self.cowmaster = cowmaster
+        if self.game_server:
+            self.id = game_server.id
+        else:
+            self.id = cowmaster.id
 
     async def receive_packet(self, timeout=30):
         try:
@@ -43,8 +48,9 @@ class ClientConnection:
             LOGGER.error(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
             return None
 
-    async def run(self, game_server, timeout=60):
+    async def run(self, game_server=None, cowmaster=None, timeout=60):
         self.game_server = game_server
+        self.cowmaster = cowmaster
         while not stop_event.is_set():
             try:
                 packet = await self.receive_packet(timeout=timeout)
@@ -77,14 +83,19 @@ class ClientConnection:
             except Exception as e:
                 LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
                 break # exit the loop and continue to the post loop actions (clear game state, close connection, etc)
-
-            await self.game_server.game_manager_parser.handle_packet(packet,self.game_server)
+            
+            if self.game_server:
+                await self.game_server.game_manager_parser.handle_packet(packet,game_server=self.game_server)
+            else:
+                await self.cowmaster.game_manager_parser.handle_packet(packet,cowmaster=self.cowmaster)
 
             # Add a small delay to allow other clients to send packets
             await asyncio.sleep(0.001)
         
         if self.game_server:
             self.game_server.reset_game_state() # clear the game server state object to indicate we've lost comms from this server.
+        else:
+            self.cowmaster.reset_cowmaster_state()
         await self.close()
 
     async def send_packet(self, packet, send_len=False):
@@ -111,8 +122,7 @@ class ClientConnection:
                 pass # it doesnt seem that wait_closed always works when called. We don't care as long as it's closed.
 
         try:
-            if self.game_server is not None:
-                # await self.game_server.save_gamestate_to_file()
+            if self.game_server or self.cowmaster:
                 await self.game_server_manager.remove_client_connection(self)
         except Exception as e:
             LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -129,6 +139,9 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
         # Wait for the server hello packet
         packets = await client_connection.receive_packet()
 
+        cowmaster = None
+        game_server = None
+
         if packets is None:
             # Handle the case where the packet is incomplete
             LOGGER.warn(f"Incomplete packet received from {client_addr[0]}:{client_addr[1]}")
@@ -141,22 +154,33 @@ async def handle_client_connection(client_reader, client_writer, game_server_man
         # Process the server hello packet
         game_server_port = await GameManagerParser.server_announce(None,packets[1])
 
-        # Get or create the game server
-        game_server = game_server_manager.get_game_server_by_port(game_server_port)
-        if game_server is None:
-            # TODO: CowServer may not be in the game_servers dictionary, and be created here as game server
-            # this shouldn't happen tho
-            game_server = game_server_manager.create_game_server(game_server_port)
-            await game_server.get_running_server()
+        # check if the connection is for the cowmaster
+        if game_server_port == game_server_manager.cowmaster.get_port():
+            cowmaster = game_server_manager.cowmaster
+        
+        else:
+            # Get or create the game server
+            game_server = game_server_manager.get_game_server_by_port(game_server_port)
+            
+            if game_server is None:
+                # TODO: CowServer may not be in the game_servers dictionary, and be created here as game server
+                # this shouldn't happen tho
+                if game_server_port == game_server_manager.cowmaster.get_port():
+                    LOGGER.error("CowMaster has connected or a server using CowMaster port")
+                game_server = game_server_manager.create_game_server(game_server_port)
 
         # register the client connection in the game server manager
         await game_server_manager.add_client_connection(client_connection,game_server_port)
 
-        # register the game server in the client connection
-        client_connection.set_game_server(game_server)
-
-        # Run the client connection coroutine
-        await client_connection.run(game_server)
+        # register the game server in the client connection and run the client connection coroutine
+        if game_server:
+            client_connection.set_game_server(game_server=game_server)
+            await client_connection.run(game_server=game_server)
+        elif cowmaster:
+            client_connection.set_game_server(cowmaster=cowmaster)
+            await client_connection.run(cowmaster=cowmaster)
+        else:
+            LOGGER.warn("Incoming connection is neither GameServer nor CowMaster")        
 
     except (ConnectionResetError, asyncio.exceptions.IncompleteReadError, asyncio.CancelledError) as e:
         LOGGER.exception(f"Client #{client_connection.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")

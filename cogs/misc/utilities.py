@@ -62,13 +62,12 @@ class Misc:
                 base_cmd.insert(2, '-servicecvars')
 
         elif self.get_os_platform() == "linux":
-            base_cmd[2] = "-mod game;KONGOR"  # Modify the mod parameter
+            base_cmd.insert(2, "-mod game;KONGOR")  # Modify the mod parameter
 
             if cowmaster:
                 base_cmd.insert(1, '-cowmaster')
                 base_cmd.insert(2, '-servicecvars')
-                base_cmd.insert(3, '-noconfig')
-                base_cmd.insert(4, '-noconsole')
+                base_cmd.insert(3, '-noconsole')
 
         return base_cmd
 
@@ -112,10 +111,19 @@ class Misc:
                 pass
         return procs
 
-    def get_process_by_port(self,port):
-        kind = 'udp4'
-        for connection in psutil.net_connections(kind=kind):
+    def get_process_by_port(self, port, protocol='udp4'):
+        for connection in psutil.net_connections(kind=protocol):
             if connection.laddr.port == port:
+                return psutil.Process(connection.pid)
+        return None
+
+    def get_client_pid_by_tcp_source_port(self, local_server_port, client_source_port):
+        """
+        Get the Process object of a local client based on its source port and the server port it's connecting to.
+        """
+        for connection in psutil.net_connections(kind='inet'):
+            # Check for a match on both client source port and server port
+            if connection.laddr.port == client_source_port and connection.raddr.port == local_server_port and connection.status == 'ESTABLISHED':
                 return psutil.Process(connection.pid)
         return None
 

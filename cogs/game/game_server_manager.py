@@ -95,7 +95,7 @@ class GameServerManager:
 
         # make cowmaster, we may or may not use it
         self.use_cowmaster = False
-        if self.global_config['hon_data']['man_use_cowserver']:
+        if self.global_config['hon_data']['man_use_cowmaster']:
             self.use_cowmaster = True
         self.cowmaster = CowMaster(self.global_config['hon_data']['svr_starting_gamePort'] - 2, self.global_config)
 
@@ -105,8 +105,7 @@ class GameServerManager:
         self.auto_ping_listener = AutoPingListener(self.global_config, self.global_config['hon_data']['autoping_responder_port'])
         # Create game server instances
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
-        #FIXME Dont create gameserver objects, cause the cow needs some room
-        # self.create_all_game_servers()
+        self.create_all_game_servers()
 
         coro = self.commands.handle_input()
         self.schedule_task(coro, 'cli_handler')
@@ -633,11 +632,13 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 if game_server.params_are_different():
                     await self.cmd_shutdown_server(game_server,disable=False)
+                    self.cowmaster.stop_cow_master(disable=False)
                     await asyncio.sleep(0.1)
                     game_server.enable_server()
         else:
             if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server,disable=False)
+                self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
 
@@ -755,7 +756,17 @@ class GameServerManager:
             return True
         else:
             #TODO: raise error or happy with logger?
-            LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
+            if port == self.cowmaster.get_port():
+                LOGGER.debug(f"Attempting to locate duplicate CowMaster server. Looking for TCP source port ({client_connection.addr[1]}) and TCP dest port ({self.global_config['hon_data']['svr_managerPort']})")
+                cowmaster_proc = MISC.get_client_pid_by_tcp_source_port(self.global_config['hon_data']['svr_managerPort'], client_connection.addr[1])
+                if cowmaster_proc:
+                    LOGGER.info(f"Found duplicate CowMaster server. Killing process {cowmaster_proc.pid}")
+                    cowmaster_proc.terminate()
+                    return
+                else:
+                    LOGGER.warn("There is a duplicate CowMaster and we're unable to identify it's PID (Process ID). This  won't cause issues, but there may be some wasteful RAM usage.")
+                    return
+            LOGGER.error(f"A GameServer connection is already established for port {port}, this is either a dead connection, or something is very wrong (two servers with the same port).")
             return False
 
     async def find_replay_file(self,replay_file_name):
@@ -888,10 +899,6 @@ class GameServerManager:
                 # TODO: Linux patching logic here?
                 pass
 
-            if MISC.get_os_platform() == "linux" and launch:
-                if self.use_cowmaster:
-                    await self.cowmaster.start_cow_master()
-
             async def start_game_server_with_semaphore(game_server, timeout):
                 game_server.game_state.update({'status':GameStatus.QUEUED.value})
                 async with self.server_start_semaphore:
@@ -943,10 +950,12 @@ class GameServerManager:
             if launch:
                 await filebeat(self.global_config)
 
-            # Start all game servers using the semaphore
-            if launch and not self.global_config['hon_data']['svr_start_on_launch']:
-                LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
-                return
+                if self.use_cowmaster:
+                    await self.cowmaster.start_cow_master()
+
+                if not self.global_config['hon_data']['svr_start_on_launch']:
+                    LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
+                    return
 
             if not service_recovery and not get_filebeat_status()['running']:
                 msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Status: {get_filebeat_status()['certificate_status']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
@@ -954,10 +963,20 @@ class GameServerManager:
                     print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
 
-            if self.use_cowmaster and MISC.get_os_platform() == "linux":
+            if self.use_cowmaster:
                 if not self.cowmaster.client_connection:
-                    LOGGER.warn("Cannot start servers. Cowmaster is in use, but not yet connected to the manager. Please wait and try again")
-                    return
+                    if launch:
+                        i = 0
+                        incr = 5
+                        while not self.cowmaster.client_connection:
+                            LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
+                            await asyncio.sleep(incr)
+                            i += incr
+                            if i > timeout:
+                                return False
+                    else:
+                        LOGGER.warn("Cannot start servers. Cowmaster is in use, but not yet connected to the manager. Please wait and try again")
+                        return
                 
             for game_server in game_servers:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))

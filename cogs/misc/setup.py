@@ -100,7 +100,7 @@ class SetupEnvironment:
                 "svr_managerPort": 1134,
                 "svr_startup_timeout": 180,
                 "svr_api_port": 5000,
-                "man_use_cowserver":False
+                "man_use_cowmaster":False
             },
             "application_data": {
                 "timers": {
@@ -343,6 +343,8 @@ class SetupEnvironment:
                     if new_value > total_allowed:
                         self.hon_data[key] = total_allowed
                         minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
+                elif key == "man_use_cowmaster" and MISC.get_os_platform() != "linux":
+                    minor_issues.append("Resolved: CowMaster is reserved for linux use only. Setting this value to false.")
 
             if key in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
                 pass

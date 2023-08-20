@@ -10,15 +10,12 @@ import sys
 import os
 from datetime import datetime, timedelta
 from os.path import exists
-from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
+from cogs.misc.logger import get_logger, get_home, get_misc
 from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, GamePhase
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
-from cogs.misc.utilities import Misc
 import aiofiles
 import glob
-
-
 import re
 
 LOGGER = get_logger()
@@ -55,7 +52,7 @@ class GameServer:
         self.idle_disconnect_timer = 0
         self.game_in_progress = False
         self.use_cowmaster = False
-        if self.global_config['hon_data']['man_use_cowserver']:
+        if self.global_config['hon_data']['man_use_cowmaster']:
             self.use_cowmaster = True
         """
         Game State specific variables
@@ -144,8 +141,11 @@ class GameServer:
         except psutil.NoSuchProcess:
             return False
         self.set_configuration()
-        new_params = MISC.build_commandline_args(self.config.local, self.global_config)
-        # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+        if self.use_cowmaster:
+            new_params = MISC.build_commandline_args(data_handler.get_cowmaster_configuration(self.global_config['hon_data']), self.global_config, cowmaster=True)
+        else:
+            new_params = MISC.build_commandline_args(self.config.local, self.global_config)
+        
         if current_params != new_params:
             LOGGER.info(f"GameServer #{self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
             return True
@@ -258,11 +258,17 @@ class GameServer:
 
     async def set_client_connection(self, client_connection):
         self.client_connection = client_connection
+        await self.get_running_server()
+
         # when servers connect they may be in a "Sleeping" state. Wake them up
         await self.client_connection.send_packet(GameServerCommands.WAKE_BYTES.value, send_len=True)
 
     def unset_client_connection(self):
         self.client_connection = None
+        self._pid = None
+        self._proc = None
+        self._proc_owner = None
+        self._proc_hook = None
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
@@ -501,30 +507,30 @@ class GameServer:
         coro = self.start_proxy
         self.schedule_task(coro,'proxy_task', coro_bracket=True)
 
-        if self.use_cowmaster and MISC.get_os_platform() == "linux":
+        if self.use_cowmaster:
             await self.manager_event_bus.emit('fork_server_from_cowmaster', self)
-            return
 
-        # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
-        cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
+        else:
+            # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+            cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
 
-        if MISC.get_os_platform() == "win32":
-            # Server instances write files to location dependent on USERPROFILE and APPDATA variables
-            os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_artefacts_directory'])
-            os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            DETACHED_PROCESS = 0x00000008
-            exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+            if MISC.get_os_platform() == "win32":
+                # Server instances write files to location dependent on USERPROFILE and APPDATA variables
+                os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_artefacts_directory'])
+                os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
+                DETACHED_PROCESS = 0x00000008
+                exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
-        else: # linux
-            exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+            else: # linux
+                exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-        self._pid = exe.pid
-        self._proc = exe
-        self._proc_hook = psutil.Process(pid=exe.pid)
-        self._proc_owner =self._proc_hook.username()
+            self._pid = exe.pid
+            self._proc = exe
+            self._proc_hook = psutil.Process(pid=exe.pid)
+            self._proc_owner =self._proc_hook.username()
 
-        if MISC.get_os_platform() == "win32":
-            self.set_server_affinity()
+            if MISC.get_os_platform() == "win32":
+                self.set_server_affinity()
 
         self.scheduled_shutdown = False
         self.game_state.update({'status':GameStatus.STARTING.value})
@@ -545,7 +551,7 @@ class GameServer:
                 for task in pending:
                     task.cancel()
                 LOGGER.error(f"GameServer #{self.id} startup timed out. {timeout} seconds waited for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
-                self.stop_server_exe()
+                await self.stop_server_exe()
                 return False
 
             if self.status_received.is_set():
@@ -595,7 +601,7 @@ class GameServer:
         old_size = 0
         while time.time() < end_time:
             # Find all files matching pattern
-            files = glob.glob(os.path.join(self.global_config['hon_data']['hon_logs_directory'], f"Slave-{self.id}_*.clog"))
+            files = glob.glob(os.path.join(self.global_config['hon_data']['hon_logs_directory'], f"Slave{self.id}_*.clog"))
             if not files:
                 break
 
@@ -692,10 +698,10 @@ class GameServer:
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
 
     async def set_server_priority_increase(self):
-        if not self._proc_hook:
-            if not await self.get_running_server():
-                LOGGER.warn(f"GameServer #{self.id} - Process not found")
-                return
+        if not self._proc_hook: # This code may not be required, since the "get_running_server" function is called from self.set_client_connection
+            if not await self.get_running_server(): #
+                LOGGER.warn(f"GameServer #{self.id} - Process not found") #
+                return #
         if sys.platform == "win32":
             if self.global_config['hon_data']['svr_priority'] == "REALTIME":
                 self._proc_hook.nice(psutil.REALTIME_PRIORITY_CLASS)

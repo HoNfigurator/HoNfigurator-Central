@@ -46,7 +46,7 @@ class GameManagerParser:
     def update_client_id(self, new_id):
         self.id = new_id
 
-    async def handle_packet(self, packet, game_server):
+    async def handle_packet(self, packet, game_server=None, cowmaster=None):
         packet_len, packet_data = packet
         packet_type = packet_data[0]
 
@@ -58,7 +58,7 @@ class GameManagerParser:
 
         # Call the handler with the split_packet as an argument
         try:
-            await handler(packet_data,game_server)
+            await handler(packet_data,game_server,cowmaster)
         except Exception as e:
             self.log("exception",f"GameServer #{self.id}: An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet type: {hex(packet_type)}")
 
@@ -81,7 +81,7 @@ class GameManagerParser:
         return port
 
 
-    async def server_closed(self,packet, game_server):
+    async def server_closed(self,packet, game_server=None, cowmaster=None):
         """  0x41 Server closed
         when the server is killed / crashes / gracefully stopped.
 
@@ -91,13 +91,17 @@ class GameManagerParser:
             [Mar 13 11:54:25] Sv: [11:54:25] Shutting down server...
 
         """
-        self.log("debug",f"GameServer #{self.id} - Received server closed packet: {packet}")
-        game_server.reset_game_state()
-        # await game_server.save_gamestate_to_file()
-        game_server.reset_skipped_frames()
+        if game_server:
+            self.log("debug",f"GameServer #{self.id} - Received server closed packet: {packet}")
+            game_server.reset_game_state()
+            # await game_server.save_gamestate_to_file()
+            game_server.reset_skipped_frames()
+        else:
+            self.log("debug",f"CowMaster #{self.id} - Received server closed packet: {packet}")
+            cowmaster.reset_cowmaster_state()
 
 
-    async def server_status(self,packet, game_server):
+    async def server_status(self,packet, game_server=None, cowmaster=None):
         """  0x42 Server status update packet.
 
                 The most valuable packet so far, is sent multiple times a second, contains all "live" state including:
@@ -135,12 +139,16 @@ class GameManagerParser:
             'match_started': packet[11],                                # extract match started field from packet
             'game_phase': packet[40],                                   # extract game phase field from packet
         })
-        game_server.game_state.update(temp)
+        if game_server:
+            game_server.game_state.update(temp)
+        if cowmaster:
+            cowmaster.game_state.update(temp)
 
         # If the packet only contains fixed-length fields, print the game info and return
         if len(packet) == 54:
-            if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
-                game_server.game_state._state['players'] = ''
+            if game_server:
+                if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
+                    game_server.game_state._state['players'] = ''
             return
 
         # Otherwise, extract player data sections from the packet
@@ -168,9 +176,10 @@ class GameManagerParser:
                 'ip': data[ip_start:ip_end].decode('utf-8')
             })
         # Update game dictionary with player information and print
-        game_server.game_state.update({'players':clients})
+        if game_server:
+            game_server.game_state.update({'players':clients})
 
-    async def long_frame(self, packet, game_server):
+    async def long_frame(self, packet, game_server=None, cowmaster=None):
         """  0x43 Long Frame
         when there are skipped server frames, this packet contains the time spent skipping frames (msec)
         int 1 msg type
@@ -180,11 +189,12 @@ class GameManagerParser:
         skipped_frames = int.from_bytes(packet[1:3], byteorder='little')
         current_time = datetime.datetime.now().timestamp()  # Get current time in Unix timestamp format
         self.log("debug", f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
-        game_server.increment_skipped_frames(skipped_frames, current_time)
+        if game_server:
+            game_server.increment_skipped_frames(skipped_frames, current_time)
 
 
 
-    async def lobby_created(self,packet, game_server):
+    async def lobby_created(self,packet, game_server=None, cowmaster=None):
         """  0x44 Lobby created
                 int 4 matchid (64 bit for futureproof) # 0-4
                 string date     ? didnt find
@@ -225,7 +235,7 @@ class GameManagerParser:
 
         self.log("debug", f"GameServer #{self.id} - {lobby_info}")
 
-    async def lobby_closed(self,packet, game_server):
+    async def lobby_closed(self,packet, game_server=None, cowmaster=None):
         """   0x45 Lobby closed
         """
         self.log("debug",f"GameServer #{self.id} - Received lobby closed packet: {packet}")
@@ -237,11 +247,14 @@ class GameManagerParser:
         }
         game_server.game_state.update({'match_info':empty_lobby_info})
         game_server.game_state.update({'players':[]})
-        game_server.reset_game_state()
-        # await game_server.save_gamestate_to_file()
-        game_server.reset_skipped_frames()
+        if game_server:
+            game_server.reset_game_state()
+            # await game_server.save_gamestate_to_file()
+            game_server.reset_skipped_frames()
+        else:
+            cowmaster.reset_cowmaster_state()
 
-    async def cow_being_used(self, packet, gameserver):
+    async def cow_being_used(self, packet, game_server=None, cowmaster=None):
         """ 0x46 Server is being used
             full packet: \x46\x00\x00
             this packet arrives right before the lobby created packet and i assume its being used to
@@ -250,14 +263,14 @@ class GameManagerParser:
         """
 
 
-    async def server_connection(self,packet, game_server):
+    async def server_connection(self,packet, game_server=None, cowmaster=None):
         """ 0x47 Server selected / player joined
 
                 This packet arrives any time someone begins connecting to the server
         """
         self.log("debug",f"GameServer #{self.id} - Received server connection packet: {packet}")
 
-    async def cow_stats_submission(self, packet, gameserver):
+    async def cow_stats_submission(self, packet, game_server=None, cowmaster=None):
         """ 0x48 state of stats submission
             full example: \x48\x00\x00
             \x48\x00\x00 is Stat submission successful
@@ -266,7 +279,7 @@ class GameManagerParser:
                 [Aug 17 10:59:48] Error: [10:59:48] Stat submission [3485594] request completely failed
         """
 
-    async def cow_announce(self, packet, game_server):
+    async def cow_announce(self, packet, game_server=None, cowmaster=None):
         """ 0x49 Fork status response (success or fail)
 
             This packet arrives from the cow master after fork completed or attempted
@@ -288,7 +301,7 @@ class GameManagerParser:
         self.log('debug',f'CowMaster fork response: {self.format_packet(packet)}')
 
 
-    async def replay_update(self,packet, game_server):
+    async def replay_update(self,packet, game_server=None, cowmaster=None):
         """ 0x4A Replay status packet
 
             This is an update from the game server regarding the status of the zipped replay file.
@@ -306,7 +319,7 @@ class GameManagerParser:
                 self.log("debug","Match ID not found")
 
 
-    async def unhandled_packet(self,packet, game_server):
+    async def unhandled_packet(self,packet, game_server=None, cowmaster=None):
             """    Any unhandled packet
 
             Unknowns:

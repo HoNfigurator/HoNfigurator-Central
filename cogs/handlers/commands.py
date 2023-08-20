@@ -445,7 +445,7 @@ class Commands:
 
     async def status(self):
         try:
-            if self.global_config['hon_data']['man_use_cowserver'] and self.cowmaster:
+            if self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster:
                 if self.cowmaster.client_connection:
                     print_formatted_text("Cowmaster is in use. Cowmaster connected.")
                 else:
