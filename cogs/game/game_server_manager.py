@@ -628,17 +628,17 @@ class GameServerManager:
         self.schedule_task(coro, 'gameserver_startup', override = True)
 
     async def check_for_restart_required(self, game_server='all'):
-        if self.use_cowmaster:
-            return  # !!!! FIXME: forked servers have the same cmdlind arguments as one another. Below creates an infinite loop for restart servers having 'detected changes'  !!!!
         if game_server == 'all':
             for game_server in self.game_servers.values():
                 if game_server.params_are_different():
                     await self.cmd_shutdown_server(game_server,disable=False)
+                    self.cowmaster.stop_cow_master(disable=False)
                     await asyncio.sleep(0.1)
                     game_server.enable_server()
         else:
             if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server,disable=False)
+                self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
 

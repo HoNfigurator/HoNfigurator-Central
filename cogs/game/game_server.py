@@ -10,15 +10,12 @@ import sys
 import os
 from datetime import datetime, timedelta
 from os.path import exists
-from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
+from cogs.misc.logger import get_logger, get_home, get_misc
 from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, GamePhase
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
-from cogs.misc.utilities import Misc
 import aiofiles
 import glob
-
-
 import re
 
 LOGGER = get_logger()
@@ -144,8 +141,11 @@ class GameServer:
         except psutil.NoSuchProcess:
             return False
         self.set_configuration()
-        new_params = MISC.build_commandline_args(self.config.local, self.global_config)
-        # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+        if self.use_cowmaster:
+            new_params = MISC.build_commandline_args(data_handler.get_cowmaster_configuration(self.global_config['hon_data']), self.global_config, cowmaster=True)
+        else:
+            new_params = MISC.build_commandline_args(self.config.local, self.global_config)
+        
         if current_params != new_params:
             LOGGER.info(f"GameServer #{self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
             return True
