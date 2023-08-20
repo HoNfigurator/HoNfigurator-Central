@@ -117,6 +117,19 @@ class Misc:
                 return psutil.Process(connection.pid)
         return None
 
+    def get_pid_by_tcp_source_port(local_server_port, client_source_port):
+        """
+        Get the Process object of a local client connecting to the given server port.
+        """
+        for connection in psutil.net_connections(kind='inet'):
+            if connection.laddr.port == local_server_port and connection.status == 'ESTABLISHED':
+                # This gives the ephemeral port used by the client on the local machine
+                client_ephemeral_port = connection.raddr.port
+                for conn in psutil.net_connections(kind='inet'):
+                    if connection.laddr.port == local_server_port and connection.raddr.port == client_source_port and connection.status == 'ESTABLISHED':
+                        return psutil.Process(connection.pid)
+        return None
+
     def check_port(self, port):
         for conn in psutil.net_connections('udp'):
             if conn.laddr.port == port:
