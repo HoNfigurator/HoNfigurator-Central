@@ -95,7 +95,7 @@ class GameServerManager:
 
         # make cowmaster, we may or may not use it
         self.use_cowmaster = False
-        if self.global_config['hon_data']['man_use_cowserver']:
+        if self.global_config['hon_data']['man_use_cowmaster']:
             self.use_cowmaster = True
         self.cowmaster = CowMaster(self.global_config['hon_data']['svr_starting_gamePort'] - 2, self.global_config)
 
@@ -888,10 +888,6 @@ class GameServerManager:
                 # TODO: Linux patching logic here?
                 pass
 
-            if MISC.get_os_platform() == "linux" and launch:
-                if self.use_cowmaster:
-                    await self.cowmaster.start_cow_master()
-
             async def start_game_server_with_semaphore(game_server, timeout):
                 game_server.game_state.update({'status':GameStatus.QUEUED.value})
                 async with self.server_start_semaphore:
@@ -943,10 +939,12 @@ class GameServerManager:
             if launch:
                 await filebeat(self.global_config)
 
-            # Start all game servers using the semaphore
-            if launch and not self.global_config['hon_data']['svr_start_on_launch']:
-                LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
-                return
+                if self.use_cowmaster:
+                    await self.cowmaster.start_cow_master()
+
+                if not self.global_config['hon_data']['svr_start_on_launch']:
+                    LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
+                    return
 
             if not service_recovery and not get_filebeat_status()['running']:
                 msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Status: {get_filebeat_status()['certificate_status']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
@@ -954,10 +952,20 @@ class GameServerManager:
                     print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
 
-            if self.use_cowmaster and MISC.get_os_platform() == "linux":
+            if self.use_cowmaster:
                 if not self.cowmaster.client_connection:
-                    LOGGER.warn("Cannot start servers. Cowmaster is in use, but not yet connected to the manager. Please wait and try again")
-                    return
+                    if launch:
+                        i = 0
+                        incr = 5
+                        while not self.cowmaster.client_connection:
+                            LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
+                            await asyncio.sleep(incr)
+                            i += incr
+                            if i > timeout:
+                                return False
+                    else:
+                        LOGGER.warn("Cannot start servers. Cowmaster is in use, but not yet connected to the manager. Please wait and try again")
+                        return
                 
             for game_server in game_servers:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))

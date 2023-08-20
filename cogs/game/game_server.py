@@ -55,7 +55,7 @@ class GameServer:
         self.idle_disconnect_timer = 0
         self.game_in_progress = False
         self.use_cowmaster = False
-        if self.global_config['hon_data']['man_use_cowserver']:
+        if self.global_config['hon_data']['man_use_cowmaster']:
             self.use_cowmaster = True
         """
         Game State specific variables
@@ -258,6 +258,9 @@ class GameServer:
 
     async def set_client_connection(self, client_connection):
         self.client_connection = client_connection
+        if not self._proc_hook:
+            await self.get_running_server()
+
         # when servers connect they may be in a "Sleeping" state. Wake them up
         await self.client_connection.send_packet(GameServerCommands.WAKE_BYTES.value, send_len=True)
 
@@ -501,7 +504,7 @@ class GameServer:
         coro = self.start_proxy
         self.schedule_task(coro,'proxy_task', coro_bracket=True)
 
-        if self.use_cowmaster and MISC.get_os_platform() == "linux":
+        if self.use_cowmaster:
             await self.manager_event_bus.emit('fork_server_from_cowmaster', self)
             return
 
@@ -692,10 +695,10 @@ class GameServer:
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
 
     async def set_server_priority_increase(self):
-        if not self._proc_hook:
-            if not await self.get_running_server():
-                LOGGER.warn(f"GameServer #{self.id} - Process not found")
-                return
+        if not self._proc_hook: # This code may not be required, since the "get_running_server" function is called from self.set_client_connection
+            if not await self.get_running_server(): #
+                LOGGER.warn(f"GameServer #{self.id} - Process not found") #
+                return #
         if sys.platform == "win32":
             if self.global_config['hon_data']['svr_priority'] == "REALTIME":
                 self._proc_hook.nice(psutil.REALTIME_PRIORITY_CLASS)
