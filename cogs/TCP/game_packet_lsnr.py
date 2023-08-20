@@ -21,7 +21,10 @@ class ClientConnection:
     def set_game_server(self,game_server=None, cowmaster = None):
         self.game_server = game_server
         self.cowmaster = cowmaster
-        self.id = game_server.id
+        if self.game_server:
+            self.id = game_server.id
+        else:
+            self.id = cowmaster.id
 
     async def receive_packet(self, timeout=30):
         try:
