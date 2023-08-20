@@ -89,7 +89,7 @@ class CowMaster:
                         self._proc_owner = None
                         self.reset_cowmaster_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
-                        self.start_cow_master()
+                        await self.start_cow_master()
                     elif status != 'zombie' and not self.enabled:
                         #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                         self.stop_cow_master()
