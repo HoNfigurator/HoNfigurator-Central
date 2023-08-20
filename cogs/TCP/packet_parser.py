@@ -146,8 +146,9 @@ class GameManagerParser:
 
         # If the packet only contains fixed-length fields, print the game info and return
         if len(packet) == 54:
-            if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
-                game_server.game_state._state['players'] = ''
+            if game_server:
+                if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
+                    game_server.game_state._state['players'] = ''
             return
 
         # Otherwise, extract player data sections from the packet
