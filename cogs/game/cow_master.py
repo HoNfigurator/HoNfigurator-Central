@@ -60,6 +60,13 @@ class CowMaster:
     async def set_client_connection(self, client_connection):
         LOGGER.highlight("CowMaster - Connected to manager.")
         self.client_connection = client_connection
+        self._proc_hook = MISC.get_client_pid_by_tcp_source_port(self.global_config['hon_data']['svr_managerPort'], client_connection.addr[1])
+        self._pid = self._proc_hook.pid
+    
+    def unset_client_connection(self):
+        self.client_connection = None
+        self._pid = None
+        self._proc_hook = None
 
     async def on_game_state_change(self, key, value):
         # do things
