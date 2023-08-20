@@ -757,10 +757,16 @@ class GameServerManager:
         else:
             #TODO: raise error or happy with logger?
             if port == self.cowmaster.get_port():
-                cowmaster_proc = MISC.get_pid_by_tcp_source_port(self.global_config['hon_data']['svr_managerPort'], client_connection.addr[1])
+                LOGGER.debug(f"Attempting to locate duplicate CowMaster server. Looking for TCP source port ({client_connection.addr[1]}) and TCP dest port ({self.global_config['hon_data']['svr_managerPort']})")
+                cowmaster_proc = MISC.get_client_pid_by_tcp_source_port(self.global_config['hon_data']['svr_managerPort'], client_connection.addr[1])
                 if cowmaster_proc:
+                    LOGGER.debug(f"Found duplicate CowMaster server. Killing process {cowmaster_proc.pid}")
                     cowmaster_proc.terminate()
-            LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
+                    return
+                else:
+                    LOGGER.warn("There is a duplicate CowMaster and we're unable to identify it's PID (Process ID). This  won't cause issues, but there may be some wasteful RAM usage.")
+                    return
+            LOGGER.error(f"A GameServer connection is already established for port {port}, this is either a dead connection, or something is very wrong (two servers with the same port).")
             return False
 
     async def find_replay_file(self,replay_file_name):
