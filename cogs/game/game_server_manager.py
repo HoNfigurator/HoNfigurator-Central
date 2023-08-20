@@ -757,7 +757,7 @@ class GameServerManager:
         else:
             #TODO: raise error or happy with logger?
             if port == self.cowmaster.get_port():
-                cowmaster_proc = MISC.get_pid_by_tcp_source_port(self.global_config['hon_data']['svr_managerPort'], client_connection.client_addr[1])
+                cowmaster_proc = MISC.get_pid_by_tcp_source_port(self.global_config['hon_data']['svr_managerPort'], client_connection.addr[1])
                 if cowmaster_proc:
                     cowmaster_proc.terminate()
             LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
