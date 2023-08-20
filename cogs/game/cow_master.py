@@ -77,14 +77,13 @@ class CowMaster:
         LOGGER.debug(f"CowMaster - Process monitor started")
         try:
             while not stop_event.is_set():
-                if self._proc is not None and self._proc_hook is not None:
+                if self._proc_hook is not None:
                     try:
                         status = self._proc_hook.status()  # Get the status of the process
                     except psutil.NoSuchProcess:
                         status = 'stopped'
                     if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped. a "suspended" process will also show as stopped on windows.
                         LOGGER.warn(f"CowMaster stopped unexpectedly")
-                        self._proc = None  # Reset the process reference
                         self._proc_hook = None  # Reset the process hook reference
                         self._pid = None
                         self._proc_owner = None
