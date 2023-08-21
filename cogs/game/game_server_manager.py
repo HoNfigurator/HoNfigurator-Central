@@ -629,13 +629,15 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 if game_server.params_are_different():
                     await self.cmd_shutdown_server(game_server,disable=False)
-                    self.cowmaster.stop_cow_master(disable=False)
+                    if self.cowmaster.client_connection:
+                        self.cowmaster.stop_cow_master(disable=False)
                     await asyncio.sleep(0.1)
                     game_server.enable_server()
         else:
             if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server,disable=False)
-                self.cowmaster.stop_cow_master(disable=False)
+                if self.cowmaster.client_connection:
+                    self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
     
