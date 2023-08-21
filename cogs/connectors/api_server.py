@@ -184,7 +184,12 @@ class GlobalConfigResponse(BaseModel):
 
 @app.get("/api/get_global_config", description="Returns the global configuration of the manager")
 async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    return global_config
+    global_config_dupe = global_config.copy()
+    if MISC.get_os_platform() == "win32":
+        for key in SETUP.LINUX_SPECIFIC_CONFIG_ITEMS:
+            if key in global_config_dupe['hon_data']:
+                del global_config_dupe['hon_data'][key]
+    return global_config_dupe
 
 @app.get("/api/get_hon_version")
 async def get_hon_version(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):

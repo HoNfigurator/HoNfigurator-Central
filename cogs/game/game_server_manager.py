@@ -93,10 +93,6 @@ class GameServerManager:
         self.game_servers = {}
         self.client_connections = {}
 
-        # make cowmaster, we may or may not use it
-        self.use_cowmaster = False
-        if 'man_use_cowmaster' in self.global_config and self.global_config['hon_data']['man_use_cowmaster']:
-            self.use_cowmaster = True
         self.cowmaster = CowMaster(self.global_config['hon_data']['svr_starting_gamePort'] - 2, self.global_config)
 
         # Initialize a Commands object for sending commands to game servers
@@ -176,7 +172,7 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-
+    
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True):
         try:
             if game_server is None: return False
@@ -641,6 +637,11 @@ class GameServerManager:
                 self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
+        
+        if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
+            self.cowmaster.stop_cow_master()
+        elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection and not self.cowmaster.enabled:
+            self.cowmaster.start_cow_master()
 
 
     async def remove_dynamic_game_server(self):
@@ -941,7 +942,7 @@ class GameServerManager:
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
 
-            if self.use_cowmaster and not self.cowmaster.client_connection:
+            if self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
                 await self.cowmaster.start_cow_master()
 
             # setup or verify filebeat configuration for match log submission
@@ -959,7 +960,7 @@ class GameServerManager:
                     print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
 
-            if self.use_cowmaster:
+            if self.global_config['hon_data']['man_use_cowmaster']:
                 if not self.cowmaster.client_connection:
                     if launch:
                         i = 0

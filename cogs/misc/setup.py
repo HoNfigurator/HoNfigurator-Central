@@ -502,8 +502,6 @@ class SetupEnvironment:
 
             for key in d1:
                 if type(d1[key]) != type(d2[key]) or d1[key] is not d2[key]:
-                    if key == "man_use_cowmaster":
-                        LOGGER.info("Cow Master enabled or disabled.")
                     return False
 
             return True
@@ -542,10 +540,10 @@ class SetupEnvironment:
             for key in self.WINDOWS_SPECIFIC_CONFIG_ITEMS:
                 if key in config['hon_data']:
                     del config['hon_data'][key]
-        else:
-            for key in self.LINUX_SPECIFIC_CONFIG_ITEMS:
-                if key in config['hon_data']:
-                    del config['hon_data'][key]
+        # else:
+        #     for key in self.LINUX_SPECIFIC_CONFIG_ITEMS:
+        #         if key in config['hon_data']:
+        #             del config['hon_data'][key]
         return config
 
     def add_runtime_data(self):
