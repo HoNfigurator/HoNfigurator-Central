@@ -343,8 +343,6 @@ class SetupEnvironment:
                     if new_value > total_allowed:
                         self.hon_data[key] = total_allowed
                         minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
-                elif key == "man_use_cowmaster" and MISC.get_os_platform() != "linux":
-                    minor_issues.append("Resolved: CowMaster is reserved for linux use only. Setting this value to false.")
 
             if key in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
                 pass
@@ -359,6 +357,10 @@ class SetupEnvironment:
             elif default_value_type is type(None):
                 del self.hon_data[key]
                 minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
+            elif key == "man_use_cowmaster" and MISC.get_os_platform() != "linux":
+                if self.hon_data[key]:
+                    self.hon_data[key] = False
+                    minor_issues.append("Resolved: CowMaster is reserved for linux use only. Setting this value to false.")
 
 
         if major_issues:
