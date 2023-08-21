@@ -31,6 +31,7 @@ class SetupEnvironment:
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
         self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity','man_enableProxy']
+        self.LINUX_SPECIFIC_CONFIG_ITEMS = ['man_use_cowmaster']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()
@@ -537,6 +538,10 @@ class SetupEnvironment:
         config['application_data'].update(self.application_data)
         if MISC.get_os_platform() == "linux":
             for key in self.WINDOWS_SPECIFIC_CONFIG_ITEMS:
+                if key in config['hon_data']:
+                    del config['hon_data'][key]
+        else:
+            for key in self.LINUX_SPECIFIC_CONFIG_ITEMS:
                 if key in config['hon_data']:
                     del config['hon_data'][key]
         return config
