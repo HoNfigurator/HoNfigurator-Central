@@ -164,7 +164,7 @@ class GameServerManager:
                     if exception:
                         LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
                 else:
-                    LOGGER.info(f"The previous task '{name}' was cancelled.")
+                    LOGGER.debug(f"The previous task '{name}' was cancelled.")
             else:
                 if not override:
                     # Task is still running

@@ -265,10 +265,6 @@ class GameServer:
 
     def unset_client_connection(self):
         self.client_connection = None
-        self._pid = None
-        self._proc = None
-        self._proc_owner = None
-        self._proc_hook = None
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
