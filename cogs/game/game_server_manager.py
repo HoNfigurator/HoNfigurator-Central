@@ -63,6 +63,7 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
         self.event_bus.subscribe('cmd_custom_command', self.cmd_custom_command)
         self.event_bus.subscribe('fork_server_from_cowmaster', self.fork_server_from_cowmaster),
+        self.event_bus.subscribe('config_change_hook_actions', self.config_change_hook_actions),
         # self.event_bus.subscribe('start_gameserver_from_cowmaster', self.start_gameserver_from_cowmaster)
         self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
@@ -637,12 +638,12 @@ class GameServerManager:
                 self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
-        
+    
+    async def config_change_hook_actions(self):
         if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
             self.cowmaster.stop_cow_master()
         elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection and not self.cowmaster.enabled:
-            self.cowmaster.start_cow_master()
-
+            await self.cowmaster.start_cow_master()
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
