@@ -641,11 +641,20 @@ class GameServerManager:
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
     
-    async def config_change_hook_actions(self):
+    async def config_change_hook_actions(self, timeout=180):
         if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
             self.cowmaster.stop_cow_master()
         elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
             await self.cowmaster.start_cow_master()
+            
+            i = 0
+            incr = 5
+            while not self.cowmaster.client_connection:
+                LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
+                await asyncio.sleep(incr)
+                i += incr
+                if i > timeout:
+                    return False
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']

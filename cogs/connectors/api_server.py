@@ -245,8 +245,8 @@ async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = D
         if validation:
             global_config['hon_data'] = hon_data
             await manager_event_bus.emit('update_server_start_semaphore')
-            await manager_event_bus.emit('check_for_restart_required')
             await manager_event_bus.emit('config_change_hook_actions')
+            await manager_event_bus.emit('check_for_restart_required')
     except ValueError as e:
         return JSONResponse(status_code=501, content=str(e))
 
