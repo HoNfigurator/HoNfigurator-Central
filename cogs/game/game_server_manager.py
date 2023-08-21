@@ -624,24 +624,24 @@ class GameServerManager:
         coro = self.start_game_servers(start_servers)
         self.schedule_task(coro, 'gameserver_startup', override = True)
 
-    async def check_for_restart_required(self, game_server='all', disable=False):
+    async def check_for_restart_required(self, game_server='all'):
         if game_server == 'all':
             for game_server in self.game_servers.values():
                 if game_server.params_are_different():
-                    await self.cmd_shutdown_server(game_server,disable=disable)
+                    await self.cmd_shutdown_server(game_server,disable=False)
                     if self.cowmaster.client_connection:
-                        self.cowmaster.stop_cow_master(disable=disable)
+                        self.cowmaster.stop_cow_master(disable=False)
                     await asyncio.sleep(0.1)
-                    # game_server.enable_server()
+                    game_server.enable_server()
         else:
             if game_server.params_are_different():
-                await self.cmd_shutdown_server(game_server,disable=disable)
+                await self.cmd_shutdown_server(game_server,disable=False)
                 if self.cowmaster.client_connection:
-                    self.cowmaster.stop_cow_master(disable=disable)
+                    self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
-                # game_server.enable_server()
+                game_server.enable_server()
     
-    async def config_change_hook_actions(self, timeout=180):
+    async def config_change_hook_actions(self):
         if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
             self.cowmaster.stop_cow_master()
         elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
