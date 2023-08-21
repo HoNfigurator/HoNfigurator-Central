@@ -256,7 +256,7 @@ async def set_app_data(app_data: dict = Body(...), token_and_user_info: dict = D
         validation = SETUP.validate_hon_data(application_data=app_data)
         if validation:
             global_config['application_data'] = app_data
-            await manager_event_bus.emit('check_for_restart_required')
+            await manager_event_bus.emit('check_for_restart_required', config_reload=True)
     except ValueError as e:
         return JSONResponse(status_code=501, content=str(e))
 

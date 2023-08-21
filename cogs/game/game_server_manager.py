@@ -646,15 +646,6 @@ class GameServerManager:
             self.cowmaster.stop_cow_master()
         elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
             await self.cowmaster.start_cow_master()
-            
-            i = 0
-            incr = 5
-            while not self.cowmaster.client_connection:
-                LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
-                await asyncio.sleep(incr)
-                i += incr
-                if i > timeout:
-                    return False
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
@@ -880,7 +871,7 @@ class GameServerManager:
         coro = self.start_game_servers(game_servers)
         self.schedule_task(coro, 'gameserver_startup')
 
-    async def start_game_servers(self, game_servers, timeout=120, launch=False, service_recovery=False):
+    async def start_game_servers(self, game_servers, timeout=120, launch=False, service_recovery=False, config_reload=True):
         try:
             timeout = self.global_config['hon_data']['svr_startup_timeout']
             """
@@ -975,7 +966,7 @@ class GameServerManager:
             if self.global_config['hon_data']['man_use_cowmaster']:
                 LOGGER.info("Detected use of cowmaster")
                 if not self.cowmaster.client_connection:
-                    if launch:
+                    if launch or config_reload:
                         i = 0
                         incr = 5
                         while not self.cowmaster.client_connection:
