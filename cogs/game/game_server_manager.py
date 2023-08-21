@@ -964,6 +964,7 @@ class GameServerManager:
                 raise RuntimeError(msg)
 
             if self.global_config['hon_data']['man_use_cowmaster']:
+                LOGGER.info("Detected use of cowmaster")
                 if not self.cowmaster.client_connection:
                     if launch:
                         i = 0
