@@ -644,7 +644,7 @@ class GameServerManager:
     async def config_change_hook_actions(self):
         if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
             self.cowmaster.stop_cow_master()
-        elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection and not self.cowmaster.enabled:
+        elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
             await self.cowmaster.start_cow_master()
 
     async def remove_dynamic_game_server(self):
