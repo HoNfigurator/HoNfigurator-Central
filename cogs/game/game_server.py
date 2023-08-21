@@ -52,7 +52,7 @@ class GameServer:
         self.idle_disconnect_timer = 0
         self.game_in_progress = False
         self.use_cowmaster = False
-        if self.global_config['hon_data']['man_use_cowmaster']:
+        if 'man_use_cowmaster' in self.global_config and self.global_config['hon_data']['man_use_cowmaster']:
             self.use_cowmaster = True
         """
         Game State specific variables

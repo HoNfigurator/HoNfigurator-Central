@@ -95,7 +95,7 @@ class GameServerManager:
 
         # make cowmaster, we may or may not use it
         self.use_cowmaster = False
-        if self.global_config['hon_data']['man_use_cowmaster']:
+        if 'man_use_cowmaster' in self.global_config and self.global_config['hon_data']['man_use_cowmaster']:
             self.use_cowmaster = True
         self.cowmaster = CowMaster(self.global_config['hon_data']['svr_starting_gamePort'] - 2, self.global_config)
 
@@ -941,14 +941,13 @@ class GameServerManager:
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
 
+            if self.use_cowmaster and not self.cowmaster.client_connection:
+                await self.cowmaster.start_cow_master()
 
             # setup or verify filebeat configuration for match log submission
             await filebeat_status()
             if launch:
                 await filebeat(self.global_config)
-
-                if self.use_cowmaster:
-                    await self.cowmaster.start_cow_master()
 
                 if not self.global_config['hon_data']['svr_start_on_launch']:
                     LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
