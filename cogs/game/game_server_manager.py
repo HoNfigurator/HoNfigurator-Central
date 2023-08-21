@@ -240,7 +240,7 @@ class GameServerManager:
             message_bytes = GameServerCommands.MESSAGE_BYTES.value + message.encode('ascii') + b'\x00'
             length = len(message_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
-            
+
             # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(message_bytes)
@@ -716,7 +716,7 @@ class GameServerManager:
         """
         if game_server_port == self.cowmaster.get_port():
             return self.cowmaster
-        
+
         return self.game_servers.get(game_server_port, None)
 
     async def add_client_connection(self,client_connection, port):
@@ -736,7 +736,7 @@ class GameServerManager:
             if port == self.cowmaster.get_port():
                 await self.cowmaster.set_client_connection(client_connection)
                 self.cowmaster.status_received.set()
-            
+
             else:
 
                 game_server = self.game_servers.get(port, None)
@@ -750,9 +750,6 @@ class GameServerManager:
                 # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
                 # since the game server isn't actually off yet, it will keep creating a connection.
 
-            # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-            asyncio.create_task(self.commands.initialise_commands())
-            self.commands.subcommands_changed.set()
             return True
         else:
             #TODO: raise error or happy with logger?
@@ -977,11 +974,15 @@ class GameServerManager:
                     else:
                         LOGGER.warn("Cannot start servers. Cowmaster is in use, but not yet connected to the manager. Please wait and try again")
                         return
-                
+
             for game_server in game_servers:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
 
             await asyncio.gather(*start_tasks)
+
+            # indicate that the sub commands should be regenerated since the list of connected servers has changed.
+            asyncio.create_task(self.commands.initialise_commands())
+            self.commands.subcommands_changed.set()
 
         except Exception as e:
             LOGGER.error(f"GameServers failed to start\n{traceback.format_exc()}")
