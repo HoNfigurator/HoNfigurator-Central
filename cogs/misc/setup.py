@@ -502,6 +502,8 @@ class SetupEnvironment:
 
             for key in d1:
                 if type(d1[key]) != type(d2[key]) or d1[key] is not d2[key]:
+                    if key == "man_use_cowmaster":
+                        LOGGER.info("Cow Master enabled or disabled.")
                     return False
 
             return True
