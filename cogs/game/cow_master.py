@@ -50,7 +50,7 @@ class CowMaster:
         """
         cmdline_args = MISC.build_commandline_args(self.cowmaster_cmdline, self.global_config, cowmaster = True)
         exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-        
+
         self._pid = exe.pid
         self._proc_hook = psutil.Process(pid=self._pid)
         self.enabled = True
@@ -61,6 +61,7 @@ class CowMaster:
             self.enabled = disable
             self._pid = None
             self._proc_hook = None
+        self.unset_client_connection()
     
     async def set_client_connection(self, client_connection):
         LOGGER.highlight("CowMaster - Connected to manager.")

@@ -100,7 +100,6 @@ class ClientConnection:
             self.game_server.reset_game_state() # clear the game server state object to indicate we've lost comms from this server.
         else:
             self.cowmaster.reset_cowmaster_state()
-            self.cowmaster.unset_client_connection()
         await self.close()
 
     async def send_packet(self, packet, send_len=False):
