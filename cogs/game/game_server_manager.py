@@ -964,13 +964,13 @@ class GameServerManager:
                 raise RuntimeError(msg)
 
             if self.global_config['hon_data']['man_use_cowmaster']:
-                LOGGER.info("Detected use of cowmaster")
                 if not self.cowmaster.client_connection:
                     if launch or config_reload:
                         i = 0
                         incr = 5
                         while not self.cowmaster.client_connection:
-                            LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
+                            if not config_reload: # prevent excessive prints
+                                LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
                             await asyncio.sleep(incr)
                             i += incr
                             if i > timeout:
