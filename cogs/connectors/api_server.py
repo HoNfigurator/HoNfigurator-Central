@@ -901,11 +901,14 @@ async def asgi_server(app, host, port):
     server_task = asyncio.create_task(server.serve())
 
     try:
-        server_pingable_resp_status, server_pingable_resp_text = await fetch_server_ping_response()
-        if server_pingable_resp_status == 200:
-            LOGGER.interest(f"Remote Management: https://management.honfigurator.app\n\tUse the following information to connect to your server:\n\tServer Name: {global_config['hon_data']['svr_name']}\n\tServer Address: {global_config['hon_data']['svr_ip']}")
-        else:
-            LOGGER.error(f"Server is not pingable over port {global_config['hon_data']['svr_api_port']}/tcp. Ensure that your firewall / router is configured to accept this traffic.")
+        try:
+            server_pingable_resp_status, server_pingable_resp_text = await fetch_server_ping_response()
+            if server_pingable_resp_status == 200:
+                LOGGER.interest(f"Remote Management: https://management.honfigurator.app\n\tUse the following information to connect to your server:\n\tServer Name: {global_config['hon_data']['svr_name']}\n\tServer Address: {global_config['hon_data']['svr_ip']}")
+            else:
+                LOGGER.error(f"Server is not pingable over port {global_config['hon_data']['svr_api_port']}/tcp. Ensure that your firewall / router is configured to accept this traffic.")
+        except Exception:
+            LOGGER.error(f"Error when attempting to ping server from remote management\n{traceback.format_exc()}")
         await stop_event.wait()
     finally:
         server.should_exit = True  # this flag tells Uvicorn to wrap up and exit
