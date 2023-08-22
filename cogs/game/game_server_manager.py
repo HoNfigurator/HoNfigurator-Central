@@ -63,6 +63,7 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
         self.event_bus.subscribe('cmd_custom_command', self.cmd_custom_command)
         self.event_bus.subscribe('fork_server_from_cowmaster', self.fork_server_from_cowmaster),
+        self.event_bus.subscribe('config_change_hook_actions', self.config_change_hook_actions),
         # self.event_bus.subscribe('start_gameserver_from_cowmaster', self.start_gameserver_from_cowmaster)
         self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
@@ -93,10 +94,6 @@ class GameServerManager:
         self.game_servers = {}
         self.client_connections = {}
 
-        # make cowmaster, we may or may not use it
-        self.use_cowmaster = False
-        if self.global_config['hon_data']['man_use_cowmaster']:
-            self.use_cowmaster = True
         self.cowmaster = CowMaster(self.global_config['hon_data']['svr_starting_gamePort'] - 2, self.global_config)
 
         # Initialize a Commands object for sending commands to game servers
@@ -164,7 +161,7 @@ class GameServerManager:
                     if exception:
                         LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
                 else:
-                    LOGGER.info(f"The previous task '{name}' was cancelled.")
+                    LOGGER.debug(f"The previous task '{name}' was cancelled.")
             else:
                 if not override:
                     # Task is still running
@@ -176,7 +173,7 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-
+    
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True):
         try:
             if game_server is None: return False
@@ -632,16 +629,23 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 if game_server.params_are_different():
                     await self.cmd_shutdown_server(game_server,disable=False)
-                    self.cowmaster.stop_cow_master(disable=False)
+                    if self.cowmaster.client_connection:
+                        self.cowmaster.stop_cow_master(disable=False)
                     await asyncio.sleep(0.1)
                     game_server.enable_server()
         else:
             if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server,disable=False)
-                self.cowmaster.stop_cow_master(disable=False)
+                if self.cowmaster.client_connection:
+                    self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
-
+    
+    async def config_change_hook_actions(self):
+        if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
+            self.cowmaster.stop_cow_master()
+        elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
+            await self.cowmaster.start_cow_master()
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
@@ -867,7 +871,7 @@ class GameServerManager:
         coro = self.start_game_servers(game_servers)
         self.schedule_task(coro, 'gameserver_startup')
 
-    async def start_game_servers(self, game_servers, timeout=120, launch=False, service_recovery=False):
+    async def start_game_servers(self, game_servers, timeout=120, launch=False, service_recovery=False, config_reload=True):
         try:
             timeout = self.global_config['hon_data']['svr_startup_timeout']
             """
@@ -941,14 +945,13 @@ class GameServerManager:
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
 
+            if self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
+                await self.cowmaster.start_cow_master()
 
             # setup or verify filebeat configuration for match log submission
             await filebeat_status()
             if launch:
                 await filebeat(self.global_config)
-
-                if self.use_cowmaster:
-                    await self.cowmaster.start_cow_master()
 
                 if not self.global_config['hon_data']['svr_start_on_launch']:
                     LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
@@ -960,13 +963,14 @@ class GameServerManager:
                     print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
 
-            if self.use_cowmaster:
+            if self.global_config['hon_data']['man_use_cowmaster']:
                 if not self.cowmaster.client_connection:
-                    if launch:
+                    if launch or config_reload:
                         i = 0
                         incr = 5
                         while not self.cowmaster.client_connection:
-                            LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
+                            if not config_reload: # prevent excessive prints
+                                LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
                             await asyncio.sleep(incr)
                             i += incr
                             if i > timeout:

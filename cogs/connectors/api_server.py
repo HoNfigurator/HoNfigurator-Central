@@ -184,7 +184,12 @@ class GlobalConfigResponse(BaseModel):
 
 @app.get("/api/get_global_config", description="Returns the global configuration of the manager")
 async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    return global_config
+    global_config_dupe = global_config.copy()
+    if MISC.get_os_platform() == "win32":
+        for key in SETUP.LINUX_SPECIFIC_CONFIG_ITEMS:
+            if key in global_config_dupe['hon_data']:
+                del global_config_dupe['hon_data'][key]
+    return global_config_dupe
 
 @app.get("/api/get_hon_version")
 async def get_hon_version(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
@@ -240,6 +245,7 @@ async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = D
         if validation:
             global_config['hon_data'] = hon_data
             await manager_event_bus.emit('update_server_start_semaphore')
+            await manager_event_bus.emit('config_change_hook_actions')
             await manager_event_bus.emit('check_for_restart_required')
     except ValueError as e:
         return JSONResponse(status_code=501, content=str(e))
@@ -250,7 +256,7 @@ async def set_app_data(app_data: dict = Body(...), token_and_user_info: dict = D
         validation = SETUP.validate_hon_data(application_data=app_data)
         if validation:
             global_config['application_data'] = app_data
-            await manager_event_bus.emit('check_for_restart_required')
+            await manager_event_bus.emit('check_for_restart_required', config_reload=True)
     except ValueError as e:
         return JSONResponse(status_code=501, content=str(e))
 

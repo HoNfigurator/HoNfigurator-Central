@@ -61,6 +61,7 @@ class CowMaster:
             self.enabled = disable
             self._pid = None
             self._proc_hook = None
+            self.unset_client_connection()
     
     async def set_client_connection(self, client_connection):
         LOGGER.highlight("CowMaster - Connected to manager.")

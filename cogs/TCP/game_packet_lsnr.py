@@ -72,7 +72,11 @@ class ClientConnection:
             except (asyncio.TimeoutError, TimeoutError) as e:
                 LOGGER.error(f"Client #{self.id} Timeout. The connection has timed out between the GameServer and the Manager. {timeout} seconds without receiving any data. Shutting down Game Server.")
                 if self.game_server:
-                    await self.game_server.schedule_task(self.game_server.tail_game_log_then_close(), 'orphan_game_server_disconnect')
+                    # await self.game_server.schedule_task(self.game_server.tail_game_log_then_close(), 'orphan_game_server_disconnect')
+                    await game_server.stop_server_exe(disable=False)
+                    await self.close()
+                    await self.game_server_manager.start_game_servers([game_server], service_recovery=True)
+
                 return # exit the loop and continue to the post loop actions (clear game state, close connection, etc)
 
             except asyncio.exceptions.IncompleteReadError:

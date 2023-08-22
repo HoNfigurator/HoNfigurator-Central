@@ -51,7 +51,7 @@ class GameManagerParser:
         packet_type = packet_data[0]
 
         if packet_len != len(packet_data):
-            self.log("debug",f"LEN DOESNT MATCH PACKET: {len} and {len(packet_data)}")
+            self.log("debug",f"GameServer #{self.id} - LEN DOESNT MATCH PACKET: {len} and {len(packet_data)}")
 
         # Retrieve the packet handler function based on the packet_type
         handler = self.packet_handlers.get(packet_type, self.unhandled_packet)
@@ -60,7 +60,7 @@ class GameManagerParser:
         try:
             await handler(packet_data,game_server,cowmaster)
         except Exception as e:
-            self.log("exception",f"GameServer #{self.id}: An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet type: {hex(packet_type)}")
+            self.log("exception",f"GameServer #{self.id} - An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet type: {hex(packet_type)}")
 
     async def server_announce_preflight(packet):
         """ 0x40  Server announce
@@ -214,7 +214,7 @@ class GameManagerParser:
             try:
                 null_byte_index = packet[current_index:].index(b'\x00')
             except ValueError:
-                self.log("exception", f"GameServer #{self.id}: Failed to find null byte in packet: {packet}")
+                self.log("error", f"GameServer #{self.id} - Failed to find null byte in packet: {packet}")
                 return
 
             string_value = packet[current_index:current_index+null_byte_index].decode('utf-8', errors='replace')
@@ -298,7 +298,8 @@ class GameManagerParser:
                 Idea: Create a gameserver object based on the port
                 Update: when failed to fork, these 4 bytes are 0000
         """
-        self.log('debug',f'CowMaster fork response: {self.format_packet(packet)}')
+        port = int.from_bytes(packet[1:3],byteorder='little')
+        self.log('debug',f'CowMaster #{self.id} - fork response: {self.format_packet(packet)} (port: {port})')
 
 
     async def replay_update(self,packet, game_server=None, cowmaster=None):
