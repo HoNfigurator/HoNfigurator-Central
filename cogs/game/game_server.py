@@ -128,7 +128,6 @@ class GameServer:
         LOGGER.debug(f"GameServer #{self.id} - Reset state")
         self.status_received.clear()
         self.game_state.clear()
-        self.game_in_progress = False
 
     def params_are_different(self):
         if not self._proc_hook: return
@@ -201,8 +200,8 @@ class GameServer:
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
-                if self.global_config['application_data']['advanced']['restart_svrs_between_games'] and self.game_in_progress:
-                    LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'restart_svrs_between_games' is enabled.")
+                if self.global_config['hon_data']['svr_restart_between_games'] and self.game_in_progress:
+                    LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'svr_restart_between_games' is enabled.")
                     coro = self.schedule_shutdown_server(disable=False)
                     self.schedule_task(coro,'shutdown_self')
                     self.game_in_progress = False
