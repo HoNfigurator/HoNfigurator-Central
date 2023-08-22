@@ -101,7 +101,8 @@ class SetupEnvironment:
                 "svr_managerPort": 1134,
                 "svr_startup_timeout": 180,
                 "svr_api_port": 5000,
-                "man_use_cowmaster":False
+                "man_use_cowmaster":False,
+                "svr_restart_between_games": False
             },
             "application_data": {
                 "timers": {
@@ -126,9 +127,6 @@ class SetupEnvironment:
                 "longterm_storage": {
                     "active": False,
                     "location": ""
-                },
-                "advanced" : {
-                    "restart_svrs_between_games": False
                 }
             }
         }
