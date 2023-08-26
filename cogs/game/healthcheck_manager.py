@@ -70,7 +70,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['public_ip_healthcheck']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             public_ip = await MISC.lookup_public_ip_async()
             if public_ip and public_ip != self.global_config['hon_data']['svr_ip']:
@@ -81,7 +81,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['general_healthcheck']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
 
             proxy_procs = []
@@ -103,7 +103,7 @@ class HealthCheckManager:
 
                 status_value = game_server.get_dict_value('status')
 
-                if status_value not in GameStatus._value2member_map_:
+                if status_value not in GameStatus._value2member_map_ and not game_server.client_connection:
                     LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
                     await self.event_bus.emit('cmd_shutdown_server',game_server, kill=True)
                 
@@ -116,7 +116,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['lag_healthcheck']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             for game_server in self.game_servers.values():
                 # Perform the lag health check for each game server
@@ -127,7 +127,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['check_for_hon_update']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             try:
                 if not MISC.get_os_platform() == "win32": # TODO: not checking patch on linux yet
@@ -142,7 +142,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             try:
                 # await filebeat_setup(self.global_config)
@@ -154,7 +154,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['check_for_honfigurator_update']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             try:
                 await self.event_bus.emit('update')
@@ -165,7 +165,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(10):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             try:
                 for file_name in os.listdir(self.global_config['hon_data']['hon_logs_directory']):
@@ -185,7 +185,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['general_healthcheck']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
 
     async def run_health_checks(self):
@@ -228,5 +228,5 @@ class HealthCheckManager:
             for _ in range(10):
                 if stop_event.is_set():
                     LOGGER.info("Stopping HealthCheck Manager")
-                    break
+                    return
                 await asyncio.sleep(1)
