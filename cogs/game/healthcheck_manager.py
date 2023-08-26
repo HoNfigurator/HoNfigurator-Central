@@ -100,9 +100,15 @@ class HealthCheckManager:
                     # Perform the general health check for each game server
                     # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
                     pass
+                
+                if not game_server.client_connection and game_server.started:
+                    LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
+                    await self.event_bus.emit('cmd_shutdown_server',game_server)
+                
+
             for proc in proxy_procs:
-                LOGGER.info(f"WHAT-IF: Removed orphan proxy.exe ({proc.pid}) process. It is not associated with any currently connected game server instances.")
-                # proc.terminate()
+                # LOGGER.info(f"WHAT-IF: Removed orphan proxy.exe ({proc.pid}) process. It is not associated with any currently connected game server instances.")
+                proc.terminate()
 
     async def lag_healthcheck(self):
         while not stop_event.is_set():
