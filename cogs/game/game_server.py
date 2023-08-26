@@ -614,7 +614,7 @@ class GameServer:
         # Close the tailing
         await self.stop_server_exe(disable=False)
 
-    async def stop_server_exe(self, disable=True, delete=False):
+    async def stop_server_exe(self, disable=True, delete=False, kill=False):
         if disable:
             self.disable_server()
         self.delete_me = delete
@@ -622,7 +622,10 @@ class GameServer:
             if disable:
                 self.disable_server()
             try:
-                self._proc.terminate()
+                if kill:
+                    self._proc.kill()
+                else:
+                    self._proc.terminate()
             except psutil.NoSuchProcess:
                 pass # process doesn't exist, probably race condition of something else terminating it.
             self.started = False

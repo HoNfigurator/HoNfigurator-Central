@@ -174,7 +174,7 @@ class GameServerManager:
         self.tasks[name] = task
         return task
     
-    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True):
+    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True, kill=False):
         try:
             if game_server is None: return False
             client_connection = self.client_connections.get(game_server.port, None)
@@ -193,7 +193,7 @@ class GameServerManager:
                     return True
             else:
                 # this server hasn't connected to the manager yet
-                await game_server.stop_server_exe(disable=disable, delete=delete)
+                await game_server.stop_server_exe(disable=disable, delete=delete, kill=kill)
                 game_server.reset_game_state()
                 return True
         except Exception as e:

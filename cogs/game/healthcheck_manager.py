@@ -100,11 +100,12 @@ class HealthCheckManager:
                     # Perform the general health check for each game server
                     # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
                     pass
-                
-                if not game_server.client_connection and game_server.started:
-                    if not game_server.get_dict_value('status') == GameStatus.STARTING.value:
-                        LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
-                        await self.event_bus.emit('cmd_shutdown_server',game_server)
+
+                status_value = self.get_dict_value('status')
+
+                if status_value not in GameStatus._value2member_map_:
+                    LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
+                    await self.event_bus.emit('cmd_shutdown_server',game_server, kill=True)
                 
 
             for proc in proxy_procs:
