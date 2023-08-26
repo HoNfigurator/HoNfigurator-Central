@@ -101,7 +101,7 @@ class HealthCheckManager:
                     # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
                     pass
 
-                status_value = self.get_dict_value('status')
+                status_value = game_server.get_dict_value('status')
 
                 if status_value not in GameStatus._value2member_map_:
                     LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
