@@ -105,7 +105,7 @@ class HealthCheckManager:
 
                 if status_value not in GameStatus._value2member_map_ and not game_server.client_connection:
                     LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
-                    await self.event_bus.emit('cmd_shutdown_server',game_server, kill=True)
+                    await self.event_bus.emit('cmd_shutdown_server',game_server, disable=False, kill=True)
                 
 
             for proc in proxy_procs:
