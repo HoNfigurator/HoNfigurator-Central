@@ -821,7 +821,7 @@ region=naeu
                     except psutil.NoSuchProcess:
                         status = 'stopped'
                     if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped. a "suspended" process will also show as stopped on windows.
-                        LOGGER.warn(f"GameServer #{self.id} stopped unexpectedly")
+                        LOGGER.warn(f"GameServer #{self.id} stopped unexpectedly. (Process ID: {self._proc_hook.pid})")
                         self._proc = None  # Reset the process reference
                         self._proc_hook = None  # Reset the process hook reference
                         self._pid = None
