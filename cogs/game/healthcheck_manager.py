@@ -1,7 +1,7 @@
 
 from cogs.handlers.events import stop_event, get_logger
 from cogs.misc.logger import get_logger, get_misc
-from cogs.misc.exceptions import HoNPatchError
+from cogs.handlers.events import GameStatus
 from utilities.filebeat import main as filebeat_setup
 import asyncio
 import traceback
@@ -102,8 +102,9 @@ class HealthCheckManager:
                     pass
                 
                 if not game_server.client_connection and game_server.started:
-                    LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
-                    await self.event_bus.emit('cmd_shutdown_server',game_server)
+                    if not game_server.get_dict_value('status') == GameStatus.STARTING.value:
+                        LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
+                        await self.event_bus.emit('cmd_shutdown_server',game_server)
                 
 
             for proc in proxy_procs:
