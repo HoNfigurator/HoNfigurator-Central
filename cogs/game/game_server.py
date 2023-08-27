@@ -614,7 +614,7 @@ class GameServer:
         # Close the tailing
         await self.stop_server_exe(disable=False)
 
-    async def stop_server_exe(self, disable=True, delete=False):
+    async def stop_server_exe(self, disable=True, delete=False, kill=False):
         if disable:
             self.disable_server()
         self.delete_me = delete
@@ -622,7 +622,10 @@ class GameServer:
             if disable:
                 self.disable_server()
             try:
-                self._proc.terminate()
+                if kill:
+                    self._proc.kill()
+                else:
+                    self._proc.terminate()
             except psutil.NoSuchProcess:
                 pass # process doesn't exist, probably race condition of something else terminating it.
             self.started = False
@@ -821,7 +824,7 @@ region=naeu
                     except psutil.NoSuchProcess:
                         status = 'stopped'
                     if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped. a "suspended" process will also show as stopped on windows.
-                        LOGGER.warn(f"GameServer #{self.id} stopped unexpectedly")
+                        LOGGER.warn(f"GameServer #{self.id} stopped unexpectedly. (Process ID: {self._proc_hook.pid})")
                         self._proc = None  # Reset the process reference
                         self._proc_hook = None  # Reset the process hook reference
                         self._pid = None

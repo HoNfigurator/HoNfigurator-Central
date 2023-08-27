@@ -92,7 +92,7 @@ async def main():
     # check for other HoNfigurator instances.
     check_existing_proc = MISC.get_process_by_port(global_config['hon_data']['svr_managerPort'], protocol='tcp4')
     if check_existing_proc:
-        check_existing_proc.terminate()
+        LOGGER.critical(f"A manager is already running on port {global_config['hon_data']['svr_managerPort']}. This may prevent the manager from operating correctly.")
 
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
