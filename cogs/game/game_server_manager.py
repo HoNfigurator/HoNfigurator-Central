@@ -1022,6 +1022,7 @@ class GameServerManager:
             await self.cmd_shutdown_server(game_server)
 
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
+            LOGGER.debug("Some HoN servers are still running. Waiting until they've shut down.")
             return
         
         if MISC.get_os_platform() == "win32":
