@@ -736,7 +736,8 @@ region=naeu
             if MISC.get_os_platform() == "win32":
                 pass
             elif MISC.get_os_platform() == "linux":
-                raise HoNCompatibilityError("Using the proxy is currently not supported on Linux.")
+                # raise HoNCompatibilityError("Using the proxy is currently not supported on Linux.")
+                pass
             else:
                 raise HoNCompatibilityError(f"Unknown OS: {MISC.get_os_platform()}. We cannot run the proxy.")
         except HoNCompatibilityError:
