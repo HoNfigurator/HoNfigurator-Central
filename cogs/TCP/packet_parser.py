@@ -185,7 +185,6 @@ class GameManagerParser:
         int 1 msg type
         int 2 skipped frame LE
         """
-        # TODO, event?
         skipped_frames = int.from_bytes(packet[1:3], byteorder='little')
         current_time = datetime.datetime.now().timestamp()  # Get current time in Unix timestamp format
         self.log("debug", f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
