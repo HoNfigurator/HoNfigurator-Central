@@ -1038,6 +1038,7 @@ class GameServerManager:
 
         launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
         if not launcher_crc:
+            LOGGER.error("Patching failed.")
             return False
         if (not exists(self.global_config['hon_data']['hon_install_directory'] / launcher_binary)) or (launcher_crc and launcher_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / launcher_binary).lower()):
             LOGGER.debug(f"Beginning to download new launcher from {hon_version_url}")
