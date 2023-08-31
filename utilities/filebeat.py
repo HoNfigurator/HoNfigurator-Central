@@ -160,7 +160,7 @@ async def install_filebeat_windows():
 
         # Download the Filebeat ZIP file
         async with aiohttp.ClientSession() as session:
-            async with session.get(url) as response:
+            async with session.get(url, ssl=False) as response:
                 if response.status == 200:
                     content = await response.read()
                     async with aiofiles.open(zip_file, "wb") as file:
@@ -336,7 +336,7 @@ async def get_public_ip():
     async with aiohttp.ClientSession(timeout=timeout) as session:
         for provider in providers:
             try:
-                async with session.get(provider) as response:
+                async with session.get(provider, ssl=False) as response:
                     if response.status == 200:
                         ip_str = await response.text()
                         try:
@@ -523,12 +523,12 @@ async def configure_filebeat(silent=False,test=False):
     os.makedirs(destination_folder, exist_ok=True)
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(honfigurator_ca_chain_url) as response:
+        async with session.get(honfigurator_ca_chain_url, ssl=False) as response:
             if response.status == 200:
                 content = await response.read()
                 async with aiofiles.open(Path(destination_folder) / "honfigurator-chain.pem", 'wb') as chain_file:
                     await chain_file.write(content)
-        async with session.get(honfigurator_ca_chain_bundle_url) as response:
+        async with session.get(honfigurator_ca_chain_bundle_url, ssl=False) as response:
             if response.status == 200:
                 content = await response.read()
                 async with aiofiles.open(Path(destination_folder) / "honfigurator-chain-bundle.pem", 'wb') as chain_file:
