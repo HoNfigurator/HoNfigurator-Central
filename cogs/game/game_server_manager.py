@@ -113,7 +113,7 @@ class GameServerManager:
 
         # Initialize MasterServerHandler and send requests
         self.chat_server_handler = None
-        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
+        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
@@ -327,6 +327,7 @@ class GameServerManager:
                 return
             parsed_patch_information = phpserialize.loads(patch_information[0].encode('utf-8'))
             parsed_patch_information = {key.decode() if isinstance(key, bytes) else key: (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_patch_information.items()}
+            LOGGER.debug(f"Upstream patch information: {parsed_patch_information}")
             self.latest_available_game_version = parsed_patch_information['latest']
 
             if local_svr_version != self.latest_available_game_version:
