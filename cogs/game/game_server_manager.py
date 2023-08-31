@@ -31,8 +31,10 @@ LOGGER = get_logger()
 from cogs.handlers.data_handler import get_cowmaster_configuration
 MISC = get_misc()
 HOME_PATH = get_home()
-HON_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
-HON_UPDATE_X64_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
 
 class GameServerManager:
     def __init__(self, global_config, setup):
@@ -892,13 +894,10 @@ class GameServerManager:
                 path_list = os.environ["PATH"].split(os.pathsep)
                 if str(self.global_config['hon_data']['hon_install_directory']  / 'game') not in path_list:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
-            if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
+
+            if launch and await self.check_upstream_patch():
                 if not await self.initialise_patching_procedure(source="startup"):
                     return False
-
-            else:
-                # TODO: Linux patching logic here?
-                pass
 
             async def start_game_server_with_semaphore(game_server, timeout):
                 game_server.game_state.update({'status':GameStatus.QUEUED.value})
@@ -1010,7 +1009,7 @@ class GameServerManager:
             LOGGER.error(f"Error occurred while extracting CRC from file: {e}")
             return None
 
-    async def initialise_patching_procedure(self, timeout=300, source=None):
+    async def initialise_patching_procedure(self, timeout=300, source='startup'):
         if self.patching:
             LOGGER.warn("Patching is already in progress.")
             return
@@ -1022,42 +1021,53 @@ class GameServerManager:
 
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
             return
+        
+        if MISC.get_os_platform() == "win32":
+            launcher_binary = 'hon_update_x64.exe'
+            launcher_zip = 'hon_update_x64.zip'
+            hon_version_url = HON_WAS_VERSION_URL
+            launcher_download_url = HON_WAS_LAUNCHER_DOWNLOAD_URL
+        else:
+            launcher_binary = 'launcher'
+            launcher_zip = 'launcher.zip'
+            hon_version_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
+            launcher_download_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
 
-        hon_update_x64_crc = await self.patch_extract_crc_from_file(HON_VERSION_URL)
-        if (not exists(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe')) or (hon_update_x64_crc and hon_update_x64_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe').lower()):
+        launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
+        if (not exists(self.global_config['hon_data']['hon_install_directory'] / launcher_binary)) or (launcher_crc and launcher_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / launcher_binary).lower()):
             try:
                 temp_folder = tempfile.TemporaryDirectory()
                 temp_path = temp_folder.name
-                temp_zip_path = Path(temp_path) / 'hon_update_x64.zip'
-                temp_update_x64_path = Path(temp_path) / 'hon_update_x64.exe'
+                temp_zip_path = Path(temp_path) / launcher_zip
+                temp_update_x64_path = Path(temp_path) / launcher_binary
 
-                download_hon_update_x64 = urllib.request.urlretrieve(HON_UPDATE_X64_DOWNLOAD_URL, temp_zip_path)
-                if not download_hon_update_x64:
-                    LOGGER.warn(f"Newer hon_update_x64.zip is available, however the download failed.\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                download_launcher = urllib.request.urlretrieve(launcher_download_url, temp_zip_path)
+                if not download_launcher:
+                    LOGGER.warn(f"Newer {launcher_zip} is available, however the download failed.\n\t1. Please download the file manually: {launcher_download_url}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                     return
 
                 temp_extracted_path = temp_folder.name
                 MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
 
-                hon_update_x64_path = self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'
+                hon_binary_path = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
 
                 # Check if the file is in use before moving it
                 try:
-                    shutil.move(temp_update_x64_path, hon_update_x64_path)
+                    shutil.move(temp_update_x64_path, hon_binary_path)
                 except PermissionError:
-                    LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'} is currently in use. Closing the file..")
-                    process = MISC.get_proc(proc_name='hon_update_x64.exe')
+                    LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / launcher_zip} is currently in use. Closing the file..")
+                    process = MISC.get_proc(proc_name=launcher_zip)
                     if process: process.terminate()
                     try:
-                        shutil.move(temp_update_x64_path, hon_update_x64_path)
+                        shutil.move(temp_update_x64_path, hon_binary_path)
                     except Exception:
-                        LOGGER.error(f"HoN Update - Failed to copy downloaded hon_update_x64.exe into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                        LOGGER.error(f"HoN Update - Failed to copy downloaded {launcher_binary} into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {launcher_download_url}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                         return
 
             except Exception as e:
                 LOGGER.error(f"Error occurred during file download or extraction: {e}")
 
-        patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
+        patcher_exe = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
         # subprocess.run([patcher_exe, "-norun"])
         try:
             subprocess.run([patcher_exe, "-norun"], timeout=timeout)
