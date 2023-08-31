@@ -1016,6 +1016,7 @@ class GameServerManager:
             return
 
         for game_server in self.game_servers.values():
+            LOGGER.debug(f"GameServer #{game_server.id} - Initialising server shutdown for patching")
             if game_server.started and game_server.enabled:
                 await self.cmd_message_server(game_server, "!! ANNOUNCEMENT !! This server will shutdown after the current match for patching.")
             await self.cmd_shutdown_server(game_server)
