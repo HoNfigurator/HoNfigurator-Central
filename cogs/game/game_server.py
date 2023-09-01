@@ -128,6 +128,7 @@ class GameServer:
         LOGGER.debug(f"GameServer #{self.id} - Reset state")
         self.status_received.clear()
         self.game_state.clear()
+        self.game_in_progress = False
 
     def params_are_different(self):
         if not self._proc_hook: return
@@ -463,6 +464,15 @@ class GameServer:
         task = self.tasks.get(task_name)
         if task is not None:
             task.cancel()
+    
+    def set_server_affinity(self):
+        if not self.global_config['hon_data']['svr_override_affinity']:
+            return
+        affinity = []
+        for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
+            affinity.append(int(_))
+        self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
+        
 
     def get_fork_bytes(self):
         """
@@ -587,6 +597,32 @@ class GameServer:
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
+    
+    async def tail_game_log_then_close(self, wait=60):
+        end_time = time.time() + wait
+        old_size = 0
+        while time.time() < end_time:
+            # Find all files matching pattern
+            files = glob.glob(os.path.join(self.global_config['hon_data']['hon_logs_directory'], f"Slave-{self.id}_*.clog"))
+            if not files:
+                break
+
+            # If files are found, sort them by modification time, and get the size of the most recent one
+            if files:
+                latest_file = max(files, key=os.path.getmtime)
+                size = os.path.getsize(latest_file)
+                if not old_size:
+                    old_size = size
+                else:
+                    if size != old_size:
+                        LOGGER.info("match in progress")
+                        return
+
+            # Sleep for a while before checking again
+            await asyncio.sleep(1)
+            
+        # Close the tailing
+        await self.stop_server_exe(disable=False)
 
     async def tail_game_log_then_close(self, wait=60):
         end_time = time.time() + wait

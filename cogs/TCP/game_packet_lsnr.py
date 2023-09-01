@@ -76,7 +76,7 @@ class ClientConnection:
                     await game_server.stop_server_exe(disable=False, kill=True)
                     await self.close()
                     await self.game_server_manager.start_game_servers([game_server], service_recovery=True)
-
+        
                 return # exit the loop and continue to the post loop actions (clear game state, close connection, etc)
 
             except asyncio.exceptions.IncompleteReadError:
@@ -100,6 +100,7 @@ class ClientConnection:
             self.game_server.reset_game_state() # clear the game server state object to indicate we've lost comms from this server.
         else:
             self.cowmaster.reset_cowmaster_state()
+            
         await self.close()
 
     async def send_packet(self, packet, send_len=False):
@@ -130,6 +131,7 @@ class ClientConnection:
                 await self.game_server_manager.remove_client_connection(self)
         except Exception as e:
             LOGGER.exception(f"Client #{self.id} An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
 async def handle_client_connection(client_reader, client_writer, game_server_manager):
     # Get the client address
     client_addr = client_writer.get_extra_info("peername")

@@ -228,7 +228,6 @@ class Misc:
 
         return affinity
 
-
     def get_public_ip(self):
         if self.public_ip:
             return self.public_ip

@@ -629,15 +629,6 @@ class GameServerManager:
                     await self.cmd_shutdown_server(game_server,disable=False)
                     if self.cowmaster.client_connection:
                         self.cowmaster.stop_cow_master(disable=False)
-                    await asyncio.sleep(0.1)
-                    game_server.enable_server()
-        else:
-            if game_server.params_are_different():
-                await self.cmd_shutdown_server(game_server,disable=False)
-                if self.cowmaster.client_connection:
-                    self.cowmaster.stop_cow_master(disable=False)
-                await asyncio.sleep(0.1)
-                game_server.enable_server()
     
     async def config_change_hook_actions(self):
         if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
@@ -734,13 +725,11 @@ class GameServerManager:
         """
         if port not in self.client_connections:
             self.client_connections[port] = client_connection
-
             if port == self.cowmaster.get_port():
                 await self.cowmaster.set_client_connection(client_connection)
                 self.cowmaster.status_received.set()
 
             else:
-
                 game_server = self.game_servers.get(port, None)
                 # this is in case game server doesn't exist (config change maybe)
                 if game_server:
@@ -751,8 +740,8 @@ class GameServerManager:
                 # Create game server object here? May be happening already in game_packet_lsnr.py (handle_client_connection)
                 # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
                 # since the game server isn't actually off yet, it will keep creating a connection.
-
             return True
+          
         else:
             #TODO: raise error or happy with logger?
             if port == self.cowmaster.get_port():
@@ -864,6 +853,10 @@ class GameServerManager:
     def update_server_start_semaphore(self):
         max_start_at_once = self.global_config['hon_data']['svr_max_start_at_once']
         self.server_start_semaphore = asyncio.Semaphore(max_start_at_once)
+    
+    async def start_game_servers_task(self, game_servers):
+        coro = self.start_game_servers(game_servers)
+        self.schedule_task(coro, 'gameserver_startup')
 
     async def start_game_servers_task(self, game_servers):
         coro = self.start_game_servers(game_servers)

@@ -909,7 +909,9 @@ async def asgi_server(app, host, port):
                 LOGGER.error(f"Server is not pingable over port {global_config['hon_data']['svr_api_port']}/tcp. Ensure that your firewall / router is configured to accept this traffic.")
         except Exception:
             LOGGER.error(f"Error when attempting to ping server from remote management\n{traceback.format_exc()}")
+            
         await stop_event.wait()
+        
     finally:
         server.should_exit = True  # this flag tells Uvicorn to wrap up and exit
         LOGGER.info("Shutting down API Server")

@@ -161,8 +161,3 @@ if __name__ == "__main__":
 
     if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
     sys.exit(0)
-    # except Exception:
-    #     LOGGER.error(traceback.format_exc())
-    # finally:
-    #     if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
-    #     sys.exit(0)

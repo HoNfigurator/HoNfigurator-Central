@@ -147,6 +147,7 @@ class HealthCheckManager:
             try:
                 # await filebeat_setup(self.global_config)
                 self.schedule_task(filebeat_setup(self.global_config, from_main=False),'spawned_filebeat_setup', override=True)
+
             except Exception:
                 LOGGER.error(traceback.format_exc())
     
