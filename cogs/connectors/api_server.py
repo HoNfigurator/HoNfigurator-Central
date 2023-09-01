@@ -184,7 +184,12 @@ class GlobalConfigResponse(BaseModel):
 
 @app.get("/api/get_global_config", description="Returns the global configuration of the manager")
 async def get_global_config(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
-    return global_config
+    global_config_dupe = global_config.copy()
+    if MISC.get_os_platform() == "win32":
+        for key in SETUP.LINUX_SPECIFIC_CONFIG_ITEMS:
+            if key in global_config_dupe['hon_data']:
+                del global_config_dupe['hon_data'][key]
+    return global_config_dupe
 
 @app.get("/api/get_hon_version")
 async def get_hon_version(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
@@ -240,6 +245,7 @@ async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = D
         if validation:
             global_config['hon_data'] = hon_data
             await manager_event_bus.emit('update_server_start_semaphore')
+            await manager_event_bus.emit('config_change_hook_actions')
             await manager_event_bus.emit('check_for_restart_required')
     except ValueError as e:
         return JSONResponse(status_code=501, content=str(e))
@@ -250,7 +256,7 @@ async def set_app_data(app_data: dict = Body(...), token_and_user_info: dict = D
         validation = SETUP.validate_hon_data(application_data=app_data)
         if validation:
             global_config['application_data'] = app_data
-            await manager_event_bus.emit('check_for_restart_required')
+            await manager_event_bus.emit('check_for_restart_required', config_reload=True)
     except ValueError as e:
         return JSONResponse(status_code=501, content=str(e))
 
@@ -895,19 +901,24 @@ async def asgi_server(app, host, port):
     server_task = asyncio.create_task(server.serve())
 
     try:
-        server_pingable_resp_status, server_pingable_resp_text = await fetch_server_ping_response()
-        if server_pingable_resp_status == 200:
-            LOGGER.interest(f"Remote Management: https://management.honfigurator.app\n\tUse the following information to connect to your server:\n\tServer Name: {global_config['hon_data']['svr_name']}\n\tServer Address: {global_config['hon_data']['svr_ip']}")
-        else:
-            LOGGER.error(f"Server is not pingable over port {global_config['hon_data']['svr_api_port']}/tcp. Ensure that your firewall / router is configured to accept this traffic.")
+        try:
+            server_pingable_resp_status, server_pingable_resp_text = await fetch_server_ping_response()
+            if server_pingable_resp_status == 200:
+                LOGGER.interest(f"Remote Management: https://management.honfigurator.app\n\tUse the following information to connect to your server:\n\tServer Name: {global_config['hon_data']['svr_name']}\n\tServer Address: {global_config['hon_data']['svr_ip']}")
+            else:
+                LOGGER.error(f"Server is not pingable over port {global_config['hon_data']['svr_api_port']}/tcp. Ensure that your firewall / router is configured to accept this traffic.")
+        except Exception:
+            LOGGER.error(f"Error when attempting to ping server from remote management\n{traceback.format_exc()}")
+            
         await stop_event.wait()
+        
     finally:
         server.should_exit = True  # this flag tells Uvicorn to wrap up and exit
         LOGGER.info("Shutting down API Server")
         await server_task
 
 async def fetch_server_ping_response():
-    url = 'https://management.honfigurator.app:3001/api/ping'
+    url = 'https://management.honfigurator.app:3001/api/public/ping'
     headers = {
         'Selected-Server': global_config['hon_data']['svr_ip'],
         'Selected-Port': str(global_config['hon_data']['svr_api_port'])

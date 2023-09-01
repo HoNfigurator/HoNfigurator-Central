@@ -10,15 +10,12 @@ import sys
 import os
 from datetime import datetime, timedelta
 from os.path import exists
-from cogs.misc.logger import flatten_dict, get_logger, get_home, get_misc, print_formatted_text
+from cogs.misc.logger import get_logger, get_home, get_misc
 from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, GamePhase
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
-from cogs.misc.utilities import Misc
 import aiofiles
 import glob
-
-
 import re
 
 LOGGER = get_logger()
@@ -100,7 +97,7 @@ class GameServer:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-    
+
     def stop_task(self, task):
         if task is None:
             return
@@ -120,7 +117,7 @@ class GameServer:
             return self.config.local['params']['svr_proxyPort']
         else:
             return self.config.local['params']['svr_port']
-    
+
     def get_public_voice_port(self):
         if self.config.local['params']['man_enableProxy']:
             return self.config.local['params']['svr_proxyRemoteVoicePort']
@@ -141,14 +138,17 @@ class GameServer:
         except psutil.NoSuchProcess:
             return False
         self.set_configuration()
-        new_params = MISC.build_commandline_args(self.config.local, self.global_config)
-        # new_params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+        if self.global_config['hon_data']['man_use_cowmaster']:
+            new_params = MISC.build_commandline_args(data_handler.get_cowmaster_configuration(self.global_config['hon_data']), self.global_config, cowmaster=True)
+        else:
+            new_params = MISC.build_commandline_args(self.config.local, self.global_config)
+        
         if current_params != new_params:
             LOGGER.info(f"GameServer #{self.id} New configuration has been provided. Existing executables must be relaunched, as their settings do not match the incoming settings.")
             return True
         LOGGER.debug(f"GameServer #{self.id} A server configuration change has been suggested, but the suggested settings and existing live executable settings match. Skipping.")
         return False
-    
+
     async def match_timer(self):
         while True:
             elapsed_time = time.time() - self.game_state['match_info']['start_time']
@@ -163,7 +163,7 @@ class GameServer:
     async def stop_match_timer(self):
         self.stop_task(self.tasks['match_monitor'])
         self.game_state['match_info']['start_time'] = 0
-    
+
     async def start_disconnect_timer(self):
         while True:
             self.idle_disconnect_timer += 1
@@ -178,15 +178,15 @@ class GameServer:
                         player_name = re.sub(r'\[.*?\]', '', player_name)
                         LOGGER.info(f"GameServer #{self.id} - Attempting to terminate player: {player_name}")
                         await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
-                        
+
                     LOGGER.info(f"GameServer #{self.id} - {self.game_state['players']} are still connected. Waiting for termination of idle players.")
                     await asyncio.sleep(5)
                     i += 1
-                    
+
                 if len(self.game_state['players']) > 0:
                     LOGGER.info(f"GameServer #{self.id} - Waited 1 minute. Players still connected. Resetting server.")
                     await self.manager_event_bus.emit('cmd_custom_command', self, "serverreset", delay=5)
-                    
+
                 break
             await asyncio.sleep(1)
 
@@ -201,8 +201,8 @@ class GameServer:
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
-                if self.global_config['application_data']['advanced']['restart_svrs_between_games'] and self.game_in_progress:
-                    LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'restart_svrs_between_games' is enabled.")
+                if self.global_config['hon_data']['svr_restart_between_games'] and self.game_in_progress:
+                    LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'svr_restart_between_games' is enabled.")
                     coro = self.schedule_shutdown_server(disable=False)
                     self.schedule_task(coro,'shutdown_self')
                     self.game_in_progress = False
@@ -252,10 +252,14 @@ class GameServer:
             self.game_state._state['performance'][attribute] = value
         else:
             raise KeyError(f"Attribute '{attribute}' not found in game_state or performance dictionary.")
-    
-    def set_client_connection(self, client_connection):
+
+    async def set_client_connection(self, client_connection):
         self.client_connection = client_connection
-    
+        await self.get_running_server()
+
+        # when servers connect they may be in a "Sleeping" state. Wake them up
+        await self.client_connection.send_packet(GameServerCommands.WAKE_BYTES.value, send_len=True)
+
     def unset_client_connection(self):
         self.client_connection = None
 
@@ -378,7 +382,7 @@ class GameServer:
         temp['Uptime'] = format_time(self.get_dict_value('uptime') / 1000) if self.get_dict_value('uptime') is not None else 'Unknown'
 
         return (temp)
-    
+
     def get_pretty_status_for_webui(self):
         def format_time(seconds):
             minutes, seconds = divmod(seconds, 60)
@@ -470,6 +474,21 @@ class GameServer:
         self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
         
 
+    def get_fork_bytes(self):
+        """
+            Return the bytearray required to fork this game server from the cowmaster
+        """
+        return b'\x28' + self.id.to_bytes(1, "little") + self.port.to_bytes(2, "little") + b'\x00'
+
+    def set_server_affinity(self):
+        if not self.global_config['hon_data']['svr_override_affinity']:
+            return
+        affinity = []
+        for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
+            affinity.append(int(_))
+        self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
+
+
     async def start_server(self, timeout=180):
         self.reset_game_state()
         self.server_closed.clear()
@@ -486,46 +505,34 @@ class GameServer:
             LOGGER.error((f"GameServer #{self.id} - cannot start as there is not enough free RAM"))
             raise HoNServerError(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
         LOGGER.info(f"GameServer #{self.id} - Starting...")
-        
+
         coro = self.start_proxy
         self.schedule_task(coro,'proxy_task', coro_bracket=True)
 
-        # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
-        cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
+        if self.global_config['hon_data']['man_use_cowmaster']:
+            await self.manager_event_bus.emit('fork_server_from_cowmaster', self)
 
-        if MISC.get_os_platform() == "win32":
-            # Server instances write files to location dependent on USERPROFILE and APPDATA variables
-            os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
-            DETACHED_PROCESS = 0x00000008
-            exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
+        else:
+            # params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in self.config.get_local_configuration()['params'].items())
+            cmdline_args = MISC.build_commandline_args( self.config.local, self.global_config)
 
-        else: # linux
-            def parse_svr_id(cmdline):
-                for item in cmdline[4].split(";"):
-                    if "svr_slave" in item:
-                        return item.split(" ")[-1]
+            if MISC.get_os_platform() == "win32":
+                # Server instances write files to location dependent on USERPROFILE and APPDATA variables
+                os.environ["APPDATA"] = str(self.global_config['hon_data']['hon_artefacts_directory'])
+                os.environ["USERPROFILE"] = str(self.global_config['hon_data']['hon_home_directory'])
+                DETACHED_PROCESS = 0x00000008
+                exe = subprocess.Popen(cmdline_args,close_fds=True, creationflags=DETACHED_PROCESS)
 
-            def remove_ansi_control_chars(s: str) -> str:
-                ansi_escape_pattern = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
-                return ansi_escape_pattern.sub('', s)
+            else: # linux
+                exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 
-            def process_output(output_stream, log_file, stop_event):
-                for line in iter(output_stream.readline, b''):
-                    clean_line =line
-                    #clean_line = remove_ansi_control_chars(line)
-                    log_file.write(clean_line)
-                    log_file.flush()
+            self._pid = exe.pid
+            self._proc = exe
+            self._proc_hook = psutil.Process(pid=exe.pid)
+            self._proc_owner =self._proc_hook.username()
 
-            # old:
-            exe = subprocess.Popen(cmdline_args,close_fds=True,start_new_session=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
-
-        self._pid = exe.pid
-        self._proc = exe
-        self._proc_hook = psutil.Process(pid=exe.pid)
-        self._proc_owner =self._proc_hook.username()
-        
-        if MISC.get_os_platform() == "win32":
-            self.set_server_affinity()
+            if MISC.get_os_platform() == "win32":
+                self.set_server_affinity()
 
         self.scheduled_shutdown = False
         self.game_state.update({'status':GameStatus.STARTING.value})
@@ -546,7 +553,7 @@ class GameServer:
                 for task in pending:
                     task.cancel()
                 LOGGER.error(f"GameServer #{self.id} startup timed out. {timeout} seconds waited for executable to send data. Closing executable. If you believe the server is just slow to start, you can either:\n\t1. Increase the 'svr_startup_timeout' value: setconfig hon_data svr_startup_timeout <new value>.\n\t2. Reduce the svr_max_start_at_once value: setconfig hon_data svr_max_start_at_once <new value>")
-                self.stop_server_exe()
+                await self.stop_server_exe()
                 return False
 
             if self.status_received.is_set():
@@ -559,7 +566,7 @@ class GameServer:
         except Exception as e:
             LOGGER.error(f"GameServer #{self.id} - Unexpected error occurred: {traceback.format_exc()}")
             return False
-    
+
     def mark_for_deletion(self):
         self.delete_me = True
 
@@ -577,7 +584,7 @@ class GameServer:
         if nice:
             if self.game_state["num_clients"] != 0:
                 return
-            
+
         self.status_received.clear()
         self.stop_proxy()
         LOGGER.info(f"GameServer #{self.id} - Stopping")
@@ -617,7 +624,33 @@ class GameServer:
         # Close the tailing
         await self.stop_server_exe(disable=False)
 
-    async def stop_server_exe(self, disable=True, delete=False):
+    async def tail_game_log_then_close(self, wait=60):
+        end_time = time.time() + wait
+        old_size = 0
+        while time.time() < end_time:
+            # Find all files matching pattern
+            files = glob.glob(os.path.join(self.global_config['hon_data']['hon_logs_directory'], f"Slave{self.id}_*.clog"))
+            if not files:
+                break
+
+            # If files are found, sort them by modification time, and get the size of the most recent one
+            if files:
+                latest_file = max(files, key=os.path.getmtime)
+                size = os.path.getsize(latest_file)
+                if not old_size:
+                    old_size = size
+                else:
+                    if size != old_size:
+                        LOGGER.info("match in progress")
+                        return
+
+            # Sleep for a while before checking again
+            await asyncio.sleep(1)
+
+        # Close the tailing
+        await self.stop_server_exe(disable=False)
+
+    async def stop_server_exe(self, disable=True, delete=False, kill=False):
         if disable:
             self.disable_server()
         self.delete_me = delete
@@ -625,7 +658,10 @@ class GameServer:
             if disable:
                 self.disable_server()
             try:
-                self._proc.terminate()
+                if kill:
+                    self._proc.kill()
+                else:
+                    self._proc.terminate()
             except psutil.NoSuchProcess:
                 pass # process doesn't exist, probably race condition of something else terminating it.
             self.started = False
@@ -641,7 +677,10 @@ class GameServer:
         """
             Check if existing hon server is running.
         """
-        running_procs = MISC.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
+        #running_procs = MISC.get_proc(self.config.local['config']['file_name'], slave_id = self.id)
+        running_procs = [MISC.get_process_by_port(self.port)]
+        if running_procs[0] == None:
+            running_procs = []
         last_good_proc = None
         i=0
         while len(running_procs) > 0:
@@ -652,7 +691,7 @@ class GameServer:
                 if status:
                     last_good_proc = proc
                 else:
-                    if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']):
+                    if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']) and not self.global_config['hon_data']['man_use_cowmaster']:
                         proc.terminate()
                         LOGGER.debug(f"Terminated GameServer #{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
@@ -677,17 +716,23 @@ class GameServer:
                 LOGGER.exception(f"GameServer #{self.id} {traceback.format_exc()}")
         else:
             return False
+
     async def set_server_priority_reduce(self):
         if not self._proc_hook:
-            await self.get_running_server()
+            if not await self.get_running_server():
+                LOGGER.warn(f"GameServer #{self.id} - Process not found")
+                return
         if sys.platform == "win32":
             self._proc_hook.nice(psutil.IDLE_PRIORITY_CLASS)
         else:
             self._proc_hook.nice(20)
         LOGGER.info(f"GameServer #{self.id} - Priority set to Low.")
+
     async def set_server_priority_increase(self):
-        if not self._proc_hook:
-            await self.get_running_server()
+        if not self._proc_hook: # This code may not be required, since the "get_running_server" function is called from self.set_client_connection
+            if not await self.get_running_server(): #
+                LOGGER.warn(f"GameServer #{self.id} - Process not found") #
+                return #
         if sys.platform == "win32":
             if self.global_config['hon_data']['svr_priority'] == "REALTIME":
                 self._proc_hook.nice(psutil.REALTIME_PRIORITY_CLASS)
@@ -695,7 +740,7 @@ class GameServer:
                 self._proc_hook.nice(psutil.HIGH_PRIORITY_CLASS)
         else:
             self._proc_hook.nice(-19)
-        LOGGER.info(f"GameServer #{self.id} - Priority set to {self.global_config['hon_data']['svr_priority']}.")        
+        LOGGER.info(f"GameServer #{self.id} - Priority set to {self.global_config['hon_data']['svr_priority']}.")
 
     async def create_proxy_config(self):
         config_filename = f"Config{self.id}"
@@ -714,7 +759,7 @@ region=naeu
                 existing_config = await existing_config_file.read()
             if existing_config == config_data:
                 return config_file_path, True
-        
+
         os.makedirs(os.path.dirname(config_file_path), exist_ok=True)
         async with aiofiles.open(config_file_path, "w") as config_file:
             await config_file.write(config_data)
@@ -815,7 +860,7 @@ region=naeu
                     except psutil.NoSuchProcess:
                         status = 'stopped'
                     if status in ['zombie', 'stopped'] and self.enabled:  # If the process is defunct or stopped. a "suspended" process will also show as stopped on windows.
-                        LOGGER.warn(f"GameServer #{self.id} stopped unexpectedly")
+                        LOGGER.warn(f"GameServer #{self.id} stopped unexpectedly. (Process ID: {self._proc_hook.pid})")
                         self._proc = None  # Reset the process reference
                         self._proc_hook = None  # Reset the process hook reference
                         self._pid = None
@@ -824,11 +869,11 @@ region=naeu
                         self.server_closed.set()  # Set the server_closed event
                         self.reset_game_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
-                        asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self]))  # restart the server
+                        asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self], service_recovery=False))  # restart the server
                     elif status != 'zombie' and not self.enabled and not self.scheduled_shutdown:
                         #   Schedule a shutdown, otherwise if shutdown is already scheduled, skip over
                         self.schedule_shutdown()
-                
+
                 for _ in range(5):  # Monitor process every 5 seconds
                     if stop_event.is_set():
                         break

@@ -13,16 +13,26 @@ This guide provides steps for linking the configured HoNfigurator server to a mo
 [FrankTheGodDamnMother**Tank](https://discordapp.com/users/197967989964800000)  
 [Shindara](https://discordapp.com/users/291595808858439680)
 
+
+## Table of Contents	
+  * [Requirements](#requirements)
+  * [Installation](#installation)
+  * [Remote Management - Web UI Front End](#remote-management---web-ui-front-end)
+  * [Monitoring](#monitoring)
+    
 ## Requirements
+1. You must meet the [minimum system requirements](docs/hardware-requirements.md)
 1. You must have a registered [Project Kongor](https://kongor.online/) HoN account. **1 per server hosting**
 1. You must be a member of the Project Kongor [Discord channel](https://discord.gg/kongor).
 > **Note** This is how hosts are onboarded, and given the appropriate roles.
-3. You must accept the risks of hosting game servers.
+1. You must accept the risks of hosting game servers.
 	- Your Public IP will be exposed to players connecting to your server.
 	- Hosting private game servers could have legal issues as it requires server files not public to original HoN. They are not provided in this repository.
 1. You must be willing to submit match logs to upstream services. These are logs of occurances during games played on your server.
 	- We want to ensure that trends from games can be analysed in monitoring tools, and that a fair experienced is had by all players.
  	- How it works: [Monitoring](docs/monitoring.md)
+1. You must be onboarded as a HOST in the Project Kongor Discord channel. Only whitelisted accounts can host.
+   - Use the [hosting channel](https://discord.com/channels/991034716360687637/1018466634408673340) to express your interest
 
 ## Installation
 <details>
@@ -105,7 +115,7 @@ Page Overview:
 - Troubleshooting
   - View HoNfigurator logs, and component health reports.
 
-### Role Descriptions
+#### Role Descriptions
 | Role        | Stop/Start Servers | Configuration Changes | Add/Remove Approved Users | View Server Statistics |
 |-------------|:------------------:|:---------------------:|:-------------------------:|:---------------------:|
 | Superadmin  | :heavy_check_mark: | :heavy_check_mark:    | :heavy_check_mark:        | :heavy_check_mark:    |
@@ -116,8 +126,13 @@ Page Overview:
 
 > **Warning** Superadmins can view the hon username and password used to configure the server.  
 
+## Monitoring
+When you are all done, your server should appear here after it's first match: https://hon-elk.honfigurator.app:5601
+> **Note** Select "Continue as Guest"
+
 
 ## Final Notes	
 Please submit any feature requests, or issues, via the [Issues](https://github.com/frankthetank001/HoNfigurator-Central/issues) page for this repository.  
 Reach out and [Contact me](https://discordapp.com/users/197967989964800000) if there are any concerns, or ping me in the Project Kongor discord channel.  
 The code is fully open source, so any improvements you want to make to the code, please submit a pull request and I will review.
+](https://github.com/HoNfigurator/HoNfigurator-Central/tree/main)
