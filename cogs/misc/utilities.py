@@ -301,14 +301,16 @@ class Misc:
 
         if self.get_os_platform() == "win32":
             version_offset = 88544
+            version_len = 18
         elif self.get_os_platform() == "linux":
             version_offset = 0x148b8
+            version_len = 36
         else:
             raise HoNCompatibilityError("Unsupported OS")
         
         with open(hon_exe, 'rb') as hon_x64:
             hon_x64.seek(version_offset, 1)
-            version = hon_x64.read(18)
+            version = hon_x64.read(version_len)
             # Split the byte array on b'\x00' bytes
             split_bytes = version.split(b'\x00')
             # Decode the byte sequences and join them together
