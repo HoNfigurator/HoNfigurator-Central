@@ -61,6 +61,8 @@ async def forward_data(src_reader, dst_writer, parser=None):
             new_user_agent = b"S2 Games/Heroes of Newerth/4.10.8.0/las/x86-biarch"
             data = data.replace(b"User-Agent: S2 Games/Heroes of Newerth/4.10.9.0/las/x86-biarch", b"User-Agent: " + new_user_agent)
 
+            my_print("Modified request:", data)
+
             dst_writer.write(data)
             await dst_writer.drain()
         except asyncio.TimeoutError:
