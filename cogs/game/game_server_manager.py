@@ -1029,7 +1029,7 @@ class GameServerManager:
         else:
             launcher_binary = 'launcher'
             launcher_zip = 'launcher.zip'
-            hon_version_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = HON_LAS_VERSION_URL
             launcher_download_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
 
         launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
