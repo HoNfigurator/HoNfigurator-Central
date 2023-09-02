@@ -1071,10 +1071,14 @@ class GameServerManager:
             except Exception as e:
                 LOGGER.error(f"Error occurred during file download or extraction: {e}")
 
-        patcher_exe = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
-        # subprocess.run([patcher_exe, "-norun"])
+        patcher_executable = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
         try:
-            subprocess.run([patcher_exe, "-norun"], timeout=timeout)
+            if MISC.get_os_platform() == "win32":
+                subprocess.run([patcher_executable, "-norun"], timeout=timeout)
+            else:
+                os.chmod(patcher_executable, 0o700)
+                subprocess.run([patcher_executable], timeout=timeout)
+
 
             svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
             if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:
