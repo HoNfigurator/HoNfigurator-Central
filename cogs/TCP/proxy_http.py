@@ -58,7 +58,7 @@ async def forward_data(src_reader, dst_writer, parser=None):
             if parser:
                 parser(data)
 
-            new_user_agent = f"S2 Games/Heroes of Newerth/4.10.8.0/las-crIac6LASwoafrl8FrOa/x86-biarch"
+            new_user_agent = b"S2 Games/Heroes of Newerth/4.10.8.0/las-crIac6LASwoafrl8FrOa/x86-biarch"
             data = data.replace(b"User-Agent: S2 Games/Heroes of Newerth/4.10.9.0/las-crIac6LASwoafrl8FrOa/x86-biarch", b"User-Agent: " + new_user_agent)
 
             dst_writer.write(data)
