@@ -558,7 +558,9 @@ class SetupEnvironment:
             hon_artefacts_directory = Path(self.hon_data["hon_home_directory"])
             hon_replays_directory = hon_artefacts_directory / "KONGOR" / "replays"
             hon_logs_directory = hon_artefacts_directory / "KONGOR" / "logs"
-            executable = "hon-x86_64-server"
+            executable = "hon-x86_64-server_KONGOR"
+            if not os.path.exists(self.hon_data['hon_install_directory'] / executable):
+                executable = "hon-x86_64-server"
             file_name = executable
             architecture = 'las-crIac6LASwoafrl8FrOa'
 
