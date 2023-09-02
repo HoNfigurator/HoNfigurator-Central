@@ -313,6 +313,8 @@ class Misc:
             split_bytes = version.split(b'\x00')
             # Decode the byte sequences and join them together
             version = ''.join(part.decode('utf-8') for part in split_bytes if part)
+        
+        LOGGER.debug(f"Detected version number: {version}")
 
         if not validate_version_format(version):
             raise HoNUnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
