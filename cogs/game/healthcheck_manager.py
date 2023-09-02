@@ -1,7 +1,7 @@
 
 from cogs.handlers.events import stop_event, get_logger
 from cogs.misc.logger import get_logger, get_misc
-from cogs.misc.exceptions import HoNPatchError
+from cogs.handlers.events import GameStatus
 from utilities.filebeat import main as filebeat_setup
 import asyncio
 import traceback
@@ -70,7 +70,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['public_ip_healthcheck']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             public_ip = await MISC.lookup_public_ip_async()
             if public_ip and public_ip != self.global_config['hon_data']['svr_ip']:
@@ -81,7 +81,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['general_healthcheck']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
 
             proxy_procs = []
@@ -100,15 +100,23 @@ class HealthCheckManager:
                     # Perform the general health check for each game server
                     # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
                     pass
+
+                status_value = game_server.get_dict_value('status')
+
+                if status_value not in GameStatus._value2member_map_ and not game_server.client_connection and game_server._proc:
+                    LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
+                    await self.event_bus.emit('cmd_shutdown_server',game_server, disable=False, kill=True)
+                
+
             for proc in proxy_procs:
-                LOGGER.info(f"WHAT-IF: Removed orphan proxy.exe ({proc.pid}) process. It is not associated with any currently connected game server instances.")
-                # proc.terminate()
+                # LOGGER.info(f"WHAT-IF: Removed orphan proxy.exe ({proc.pid}) process. It is not associated with any currently connected game server instances.")
+                proc.terminate()
 
     async def lag_healthcheck(self):
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['lag_healthcheck']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             for game_server in self.game_servers.values():
                 # Perform the lag health check for each game server
@@ -119,7 +127,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['check_for_hon_update']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             try:
                 if not MISC.get_os_platform() == "win32": # TODO: not checking patch on linux yet
@@ -134,11 +142,12 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             try:
                 # await filebeat_setup(self.global_config)
                 self.schedule_task(filebeat_setup(self.global_config, from_main=False),'spawned_filebeat_setup', override=True)
+
             except Exception:
                 LOGGER.error(traceback.format_exc())
     
@@ -146,7 +155,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['check_for_honfigurator_update']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             try:
                 await self.event_bus.emit('update')
@@ -157,7 +166,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(10):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
             try:
                 for file_name in os.listdir(self.global_config['hon_data']['hon_logs_directory']):
@@ -177,7 +186,7 @@ class HealthCheckManager:
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['general_healthcheck']):
                 if stop_event.is_set():
-                    break
+                    return
                 await asyncio.sleep(1)
 
     async def run_health_checks(self):
@@ -220,5 +229,5 @@ class HealthCheckManager:
             for _ in range(10):
                 if stop_event.is_set():
                     LOGGER.info("Stopping HealthCheck Manager")
-                    break
+                    return
                 await asyncio.sleep(1)

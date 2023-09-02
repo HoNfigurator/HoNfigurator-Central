@@ -10,6 +10,61 @@ LOGGER = get_logger()
 HOME_PATH = get_home()
 MISC = get_misc()
 
+def get_cowmaster_configuration(hon_data):
+    file_name = hon_data['hon_executable_name']
+
+    local = ({
+        'config' : {
+            'file_name':file_name,
+            'file_path' : str(Path(hon_data.get("hon_install_directory")) / f'{file_name}')
+    },
+    'params' : {
+        'svr_login':f"{hon_data.get('svr_login')}:0",
+        'svr_password':hon_data.get('svr_password'),
+        'svr_description':MISC.get_svr_description(),
+        'sv_masterName':f"{hon_data.get('svr_login')}:",
+        'svr_slave':0,
+        'svr_adminPassword':"",
+        'svr_name':f"{hon_data.get('svr_name')} 0",
+        'svr_ip':hon_data.get('svr_ip') if 'svr_ip' in hon_data else MISC.get_public_ip(),
+        'svr_port':hon_data.get('svr_starting_gamePort') - 2,
+#'svr_proxyPort':self.get_global_by_key('svr_starting_gamePort')+self.id+10000 - 1,
+#'svr_proxyLocalVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
+#'svr_proxyRemoteVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id+10000 - 1,
+        'svr_voicePortStart':hon_data.get('svr_starting_voicePort'),
+        'man_enableProxy':hon_data.get('man_enableProxy'),
+        'svr_location':hon_data.get('svr_location'),
+        'svr_enableBotMatch': hon_data.get('svr_enableBotMatch'),
+#'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
+        'svr_broadcast':True,
+        'upd_checkForUpdates':False,
+        'sv_autosaveReplay':True,
+        'sys_autoSaveDump':False,
+        'sys_dumpOnFatal':False,
+        'svr_chatPort':11032,
+        'svr_maxIncomingPacketsPerSecond':300,
+        'svr_maxIncomingBytesPerSecond':1048576,
+        'con_showNet':False,
+        'http_printDebugInfo':False,
+        'php_printDebugInfo':False,
+        'svr_debugChatServer':False,
+        'svr_submitStats':True,
+        'svr_chatAddress':'96.127.149.202',
+        'http_useCompression':False,
+        'man_resubmitStats':True,
+        'man_uploadReplays':True,
+        'sv_remoteAdmins':'',
+        'sv_logcollection_highping_value':100,
+        'sv_logcollection_highping_reportclientnum':1,
+        'sv_logcollection_highping_interval':120000,
+        #'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core'])),
+        'man_cowServerPort':hon_data.get('svr_starting_gamePort') - 2,
+        'cow_precache':True
+    },
+    'name' : f'{hon_data.get("svr_name")}'
+    })
+    return local
+
 class ConfigManagement():
     def __init__(self,id,gbl):
         self.id = id
@@ -24,7 +79,7 @@ class ConfigManagement():
         return None
     def get_local_by_key(self,k):
         for d in self.local.values():
-            try: 
+            try:
                 if k == 'svr_name':
                     return d[k].replace(' 0','')
                 return d[k]
@@ -85,7 +140,7 @@ class ConfigManagement():
                 'sv_logcollection_highping_value':100,
                 'sv_logcollection_highping_reportclientnum':1,
                 'sv_logcollection_highping_interval':120000,
-                'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core']))
+                'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core'])),
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })

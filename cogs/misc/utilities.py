@@ -31,27 +31,46 @@ class Misc:
         self.public_ip = self.lookup_public_ip()
         self.hon_version = None
 
-    def build_commandline_args(self,config_local, config_global):
-        params = ';'.join(' '.join((f"Set {key}",str(val))) for (key,val) in config_local['params'].items())
+    def build_commandline_args(self, config_local, config_global, cowmaster=False):
+        # Prepare the parameters
+        params = ';'.join(' '.join((f"Set {key}", str(val))) for (key, val) in config_local['params'].items())
+
+        # Base command
+        base_cmd = [
+            config_local['config']['file_path'],
+            "-dedicated",
+            "-noconfig",
+            "-execute",
+            params if self.get_os_platform() == "win32" else f'"{params}"',
+            "-masterserver",
+            config_global['hon_data']['svr_masterServer'],
+            "-register",
+            f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"
+        ]
+
+        # Additional options based on conditions
         if self.get_os_platform() == "win32":
+            base_cmd.insert(2,"-mod")
+            base_cmd.insert(3,"game;KONGOR")
+
             if config_global['hon_data']['svr_noConsole']:
-                return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconsole","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
-            else:
-                return [config_local['config']['file_path'],"-dedicated","-mod","game;KONGOR","-noconfig","-execute",params,"-masterserver",config_global['hon_data']['svr_masterServer'],"-register",f"127.0.0.1:{config_global['hon_data']['svr_managerPort']}"]
+                base_cmd.insert(4, "-noconsole")
+            
+            
+            if cowmaster:
+                base_cmd.insert(1, '-cowmaster')
+                base_cmd.insert(2, '-servicecvars')
+
         elif self.get_os_platform() == "linux":
-            return [
-                config_local['config']['file_path'],
-                '-dedicated',
-                '-noconfig',
-                '-mod game;KONGOR',
-                '-execute',
-                f'"{params}"',
-                '-masterserver',
-                config_global['hon_data']['svr_masterServer'],
-                '-register',
-                f'127.0.0.1:{config_global["hon_data"]["svr_managerPort"]}'
-            ]
-        
+            base_cmd.insert(2, "-mod game;KONGOR")  # Modify the mod parameter
+
+            if cowmaster:
+                base_cmd.insert(1, '-cowmaster')
+                base_cmd.insert(2, '-servicecvars')
+                base_cmd.insert(3, '-noconsole')
+
+        return base_cmd
+
     def parse_linux_procs(self, proc_name, slave_id):
         for proc in psutil.process_iter():
             if proc_name == proc.name():
@@ -68,7 +87,7 @@ class Misc:
                                     if int(item.split(" ")[-1]) == slave_id:
                                         return [ proc ]
         return []
-    
+
     def get_proc(self, proc_name, slave_id=''):
         if sys.platform == "linux":
             return self.parse_linux_procs(proc_name, slave_id)
@@ -91,22 +110,29 @@ class Misc:
             except psutil.NoSuchProcess:
                 pass
         return procs
-    
-    def get_process_by_port(self,port):
-        for conn in psutil.net_connections(kind='inet'):
-            if conn.status == 'LISTEN' and conn.laddr.port == port:
-                try:
-                    process = psutil.Process(conn.pid)
-                    return process
-                except (psutil.NoSuchProcess, psutil.AccessDenied):
-                    pass
+
+    def get_process_by_port(self, port, protocol='udp4'):
+        for connection in psutil.net_connections(kind=protocol):
+            if connection.laddr.port == port:
+                return psutil.Process(connection.pid)
         return None
+
+    def get_client_pid_by_tcp_source_port(self, local_server_port, client_source_port):
+        """
+        Get the Process object of a local client based on its source port and the server port it's connecting to.
+        """
+        for connection in psutil.net_connections(kind='inet'):
+            # Check for a match on both client source port and server port
+            if connection.laddr.port == client_source_port and connection.raddr.port == local_server_port and connection.status == 'ESTABLISHED':
+                return psutil.Process(connection.pid)
+        return None
+
     def check_port(self, port):
         for conn in psutil.net_connections('udp'):
             if conn.laddr.port == port:
                 return True
         return False
-        
+
     def get_process_priority(proc_name):
         pid = False
         for proc in psutil.process_iter():
@@ -125,7 +151,7 @@ class Misc:
 
     def get_cpu_count(self):
         return self.cpu_count
-    
+
     def get_cpu_name(self):
         if self.get_os_platform() == "win32":
             return self.cpu_name
@@ -135,7 +161,7 @@ class Misc:
                 for line in f:
                     if line.startswith('model name'):
                         return line.split(':')[1].strip()
-                    
+
     def format_memory(self,value):
         if value < 1:
             return round(value * 1024)  # Convert to MB and round
@@ -160,7 +186,7 @@ class Misc:
 
     def get_os_platform(self):
         return self.os_platform
-    
+
     def get_num_reserved_cpus(self):
         if self.cpu_count <=4:
             return 1
@@ -168,7 +194,7 @@ class Misc:
             return 2
         elif self.cpu_count >12:
             return 4
-        
+
     def get_total_allowed_servers(self,svr_total_per_core):
         total = svr_total_per_core * self.cpu_count
         if self.cpu_count < 5:
@@ -178,14 +204,14 @@ class Misc:
         elif self.cpu_count >12:
             total -= 4
         return int(total)
-    
+
     def get_server_affinity(self, server_id, svr_total_per_core):
         server_id = int(server_id)
         affinity = []
 
         if svr_total_per_core > 3 or svr_total_per_core < 0.5 or (svr_total_per_core != 0.5 and svr_total_per_core != int(svr_total_per_core)):
             raise Exception("Value must be 0.5, 1, 2, or 3.")
-        
+
         if svr_total_per_core == 0.5:
             cores_per_server = 2
             starting_core = (self.cpu_count) - (server_id * cores_per_server) % self.cpu_count
@@ -202,12 +228,11 @@ class Misc:
 
         return affinity
 
-    
     def get_public_ip(self):
         if self.public_ip:
             return self.public_ip
         return self.lookup_public_ip()
-    
+
     def lookup_public_ip(self):
         try:
             self.public_ip = requests.get('https://4.ident.me').text
@@ -218,7 +243,7 @@ class Misc:
                 LOGGER.error("Failed to fetch public IP")
                 self.public_ip = None
         return self.public_ip
-    
+
     async def lookup_public_ip_async(self):
         providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
         timeout = aiohttp.ClientTimeout(total=5)  # Set the timeout for the request in seconds
@@ -242,10 +267,10 @@ class Misc:
                     LOGGER.warn(f"Error occurred when trying to fetch IP from {provider}: {e}")
                     continue
             LOGGER.critical("Tried all public IP providers and could not determine public IP address. This will most likely cause issues.")
-    
+
     def get_svr_description(self):
         return f"cpu: {self.get_cpu_name()}"
-    
+
     def find_process_by_cmdline_keyword(self, keyword, proc_name=None):
         for process in psutil.process_iter(['cmdline']):
             if process.info['cmdline']:
@@ -256,7 +281,7 @@ class Misc:
                     else:
                         return process
         return None
-    
+
     def get_svr_version(self,hon_exe):
         def validate_version_format(version):
             version_parts = version.split('.')
@@ -290,7 +315,7 @@ class Misc:
         elif self.get_os_platform() == "linux":
             with open(Path(hon_exe).parent / "version.txt", 'r') as f:
                 version = f.readline().rstrip('\n')
-        
+
         self.hon_version = version
         return version
 
@@ -317,7 +342,7 @@ class Misc:
                 LOGGER.debug("HoNfigurator already up to date. No need to relaunch.")
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error updating the code: {e}")
-    
+
     def calculate_crc32(self, file_path):
         crc32_func = crcmod.predefined.mkCrcFun('crc-32')
         crc = 0
@@ -327,7 +352,7 @@ class Misc:
                 crc = crc32_func(chunk, crc)
 
         return binascii.hexlify(crc.to_bytes(4, 'big')).decode()
-    
+
     def calculate_md5(self, file_path):
         with open(file_path, "rb") as file:
             md5_hash = hashlib.md5()
@@ -337,11 +362,11 @@ class Misc:
                 md5_hash.update(chunk)
 
             return md5_hash.hexdigest()
-    
+
     def unzip_file(self, source_zip, dest_unzip):
         with zipfile.ZipFile(source_zip, 'r') as zip_ref:
             zip_ref.extractall(dest_unzip)
-    
+
     def save_last_working_branch(self):
         with open(HOME_PATH / "logs" / ".last_working_branch", "w") as f:
             f.write(self.get_current_branch_name())
@@ -357,7 +382,7 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
-    
+
     def get_git_commit_date(self):
         command = 'git log -1 --format="%cd" --date=format-local:"%Y-%m-%d %H:%M:%S"'
         result = subprocess.run(command, shell=True, capture_output=True, text=True)
