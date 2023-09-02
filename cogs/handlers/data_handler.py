@@ -87,18 +87,10 @@ class ConfigManagement():
                 pass
         return None
     def get_local_configuration(self):
-        if MISC.get_os_platform() == "win32":
-            executable = f"hon_x64"
-            suffix = ".exe"
-            file_name = f'{executable}{suffix}'
-        else:
-            executable = "hon-x86_64-server"
-            file_name = executable
-
         self.local = ({
             'config' : {
-                'file_name':file_name,
-                'file_path' : str(Path(self.get_global_by_key("hon_install_directory")) / f'{file_name}')
+                'file_name':self.gbl['hon_data']['hon_executable_name'],
+                'file_path' : str(Path(self.get_global_by_key("hon_install_directory")) / f"{self.gbl['hon_data']['hon_executable_name']}")
             },
             'params' : {
                 'svr_login':f"{self.get_global_by_key('svr_login')}:{self.id}",
