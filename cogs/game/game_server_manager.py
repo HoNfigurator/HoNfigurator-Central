@@ -1042,7 +1042,6 @@ class GameServerManager:
                 temp_folder = tempfile.TemporaryDirectory()
                 temp_path = temp_folder.name
                 temp_zip_path = Path(temp_path) / launcher_zip
-                temp_update_x64_path = Path(temp_path) / launcher_binary
 
                 download_launcher = urllib.request.urlretrieve(launcher_download_url, temp_zip_path)
                 if not download_launcher:
@@ -1052,20 +1051,22 @@ class GameServerManager:
                 temp_extracted_path = temp_folder.name
                 extracted_file_name = MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
 
+                temp_extracted_launcher_path = Path(temp_path) / extracted_file_name[0]
+
                 launcher_binary_path = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
 
                 LOGGER.debug(f"Downloaded launcher files: {os.listdir(temp_extracted_path)}")
 
                 # Check if the file is in use before moving it
                 try:
-                    shutil.move(temp_update_x64_path, extracted_file_name)
+                    shutil.move(temp_extracted_launcher_path, launcher_binary_path)
                     LOGGER.debug(f"Moved extracted launcher to HoN working directory: {launcher_binary_path}")
                 except PermissionError:
                     LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / launcher_zip} is currently in use. Closing the file..")
                     process = MISC.get_proc(proc_name=launcher_zip)
                     if process: process.terminate()
                     try:
-                        shutil.move(temp_update_x64_path, launcher_binary_path)
+                        shutil.move(temp_extracted_launcher_path, launcher_binary_path)
                     except Exception:
                         LOGGER.error(f"HoN Update - Failed to copy downloaded {launcher_binary} into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {launcher_download_url}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                         return
