@@ -564,7 +564,7 @@ async def configure_filebeat(silent=False,test=False):
             print_or_log('info',f"Scanning for running hon executable.. timeout {i}/30 seconds")
             i+=1
             await asyncio.sleep(1)
-            process = check_process("hon_x64.exe", exclude) if operating_system == "Windows" else check_process("hon-x86_64-server", exclude)
+            process = check_process("hon_x64.exe" if not global_config else global_config['hon_data']['hon_executable_name'], exclude) if operating_system == "Windows" else check_process("hon-x86_64-server" if not global_config else global_config['hon_data']['hon_executable_name'], exclude)
             if process and len(process.cmdline()) > 4:
                 break
             elif process and len(process.cmdline()) < 4 and process not in exclude:

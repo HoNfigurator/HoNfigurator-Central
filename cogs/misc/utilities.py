@@ -11,7 +11,7 @@ from cpuinfo import get_cpu_info
 import requests
 import aiohttp
 from cogs.misc.logger import get_logger, get_home
-from cogs.misc.exceptions import HoNUnexpectedVersionError
+from cogs.misc.exceptions import HoNUnexpectedVersionError, HoNCompatibilityError
 import ipaddress
 import asyncio
 
@@ -301,20 +301,25 @@ class Misc:
 
         if self.get_os_platform() == "win32":
             version_offset = 88544
-            with open(hon_exe, 'rb') as hon_x64:
-                hon_x64.seek(version_offset, 1)
-                version = hon_x64.read(18)
-                # Split the byte array on b'\x00' bytes
-                split_bytes = version.split(b'\x00')
-                # Decode the byte sequences and join them together
-                version = ''.join(part.decode('utf-8') for part in split_bytes if part)
-
-            if not validate_version_format(version):
-                raise HoNUnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
-
+            version_len = 18
         elif self.get_os_platform() == "linux":
-            with open(Path(hon_exe).parent / "version.txt", 'r') as f:
-                version = f.readline().rstrip('\n')
+            version_offset = 0x148b8
+            version_len = 36
+        else:
+            raise HoNCompatibilityError("Unsupported OS")
+        
+        with open(hon_exe, 'rb') as hon_x64:
+            hon_x64.seek(version_offset, 1)
+            version = hon_x64.read(version_len)
+            # Split the byte array on b'\x00' bytes
+            split_bytes = version.split(b'\x00')
+            # Decode the byte sequences and join them together
+            version = ''.join(part.decode('utf-8') for part in split_bytes if part)
+        
+        LOGGER.debug(f"Detected version number: {version}")
+
+        if not validate_version_format(version):
+            raise HoNUnexpectedVersionError("Unexpected game version. Have you merged the wasserver binaries into the HoN install folder?")
 
         self.hon_version = version
         return version
@@ -364,8 +369,12 @@ class Misc:
             return md5_hash.hexdigest()
 
     def unzip_file(self, source_zip, dest_unzip):
+        extracted_files = []
         with zipfile.ZipFile(source_zip, 'r') as zip_ref:
-            zip_ref.extractall(dest_unzip)
+            extracted_files = zip_ref.namelist()  # Get the list of filenames
+            zip_ref.extractall(dest_unzip)  # Extract all files to the destination directory
+
+        return extracted_files
 
     def save_last_working_branch(self):
         with open(HOME_PATH / "logs" / ".last_working_branch", "w") as f:

@@ -31,8 +31,10 @@ LOGGER = get_logger()
 from cogs.handlers.data_handler import get_cowmaster_configuration
 MISC = get_misc()
 HOME_PATH = get_home()
-HON_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
-HON_UPDATE_X64_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
 
 class GameServerManager:
     def __init__(self, global_config, setup):
@@ -111,7 +113,7 @@ class GameServerManager:
 
         # Initialize MasterServerHandler and send requests
         self.chat_server_handler = None
-        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
+        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
@@ -325,6 +327,7 @@ class GameServerManager:
                 return
             parsed_patch_information = phpserialize.loads(patch_information[0].encode('utf-8'))
             parsed_patch_information = {key.decode() if isinstance(key, bytes) else key: (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_patch_information.items()}
+            LOGGER.debug(f"Upstream patch information: {parsed_patch_information}")
             self.latest_available_game_version = parsed_patch_information['latest']
 
             if local_svr_version != self.latest_available_game_version:
@@ -629,6 +632,15 @@ class GameServerManager:
                     await self.cmd_shutdown_server(game_server,disable=False)
                     if self.cowmaster.client_connection:
                         self.cowmaster.stop_cow_master(disable=False)
+                    await asyncio.sleep(0.1)
+                    game_server.enable_server()
+        else:
+            if game_server.params_are_different():
+                await self.cmd_shutdown_server(game_server,disable=False)
+                if self.cowmaster.client_connection:
+                    self.cowmaster.stop_cow_master(disable=False)
+                await asyncio.sleep(0.1)
+                game_server.enable_server()
     
     async def config_change_hook_actions(self):
         if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
@@ -853,10 +865,6 @@ class GameServerManager:
     def update_server_start_semaphore(self):
         max_start_at_once = self.global_config['hon_data']['svr_max_start_at_once']
         self.server_start_semaphore = asyncio.Semaphore(max_start_at_once)
-    
-    async def start_game_servers_task(self, game_servers):
-        coro = self.start_game_servers(game_servers)
-        self.schedule_task(coro, 'gameserver_startup')
 
     async def start_game_servers_task(self, game_servers):
         coro = self.start_game_servers(game_servers)
@@ -883,13 +891,10 @@ class GameServerManager:
                 path_list = os.environ["PATH"].split(os.pathsep)
                 if str(self.global_config['hon_data']['hon_install_directory']  / 'game') not in path_list:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
-            if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
+
+            if launch and await self.check_upstream_patch():
                 if not await self.initialise_patching_procedure(source="startup"):
                     return False
-
-            else:
-                # TODO: Linux patching logic here?
-                pass
 
             async def start_game_server_with_semaphore(game_server, timeout):
                 game_server.game_state.update({'status':GameStatus.QUEUED.value})
@@ -998,60 +1003,91 @@ class GameServerManager:
             return hon_update_exe_crc
 
         except Exception as e:
-            LOGGER.error(f"Error occurred while extracting CRC from file: {e}")
+            LOGGER.error(f"URL: {url} - Error occurred while extracting CRC from file: {e}")
             return None
 
-    async def initialise_patching_procedure(self, timeout=300, source=None):
+    async def initialise_patching_procedure(self, timeout=300, source='startup'):
         if self.patching:
             LOGGER.warn("Patching is already in progress.")
             return
 
         for game_server in self.game_servers.values():
+            LOGGER.debug(f"GameServer #{game_server.id} - Initialising server shutdown for patching")
             if game_server.started and game_server.enabled:
                 await self.cmd_message_server(game_server, "!! ANNOUNCEMENT !! This server will shutdown after the current match for patching.")
             await self.cmd_shutdown_server(game_server)
 
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
+            LOGGER.debug("Some HoN servers are still running. Waiting until they've shut down.")
             return
+        
+        if MISC.get_os_platform() == "win32":
+            launcher_binary = 'hon_update_x64.exe'
+            launcher_zip = 'hon_update_x64.zip'
+            hon_version_url = HON_WAS_VERSION_URL
+            launcher_download_url = HON_WAS_LAUNCHER_DOWNLOAD_URL
+        else:
+            launcher_binary = 'launcher'
+            launcher_zip = 'launcher.zip'
+            hon_version_url = HON_LAS_VERSION_URL
+            launcher_download_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
 
-        hon_update_x64_crc = await self.patch_extract_crc_from_file(HON_VERSION_URL)
-        if (not exists(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe')) or (hon_update_x64_crc and hon_update_x64_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe').lower()):
+        launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
+        if not launcher_crc:
+            LOGGER.error("Patching failed.")
+            return False
+        if (not exists(self.global_config['hon_data']['hon_install_directory'] / launcher_binary)) or (launcher_crc and launcher_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / launcher_binary).lower()):
+            LOGGER.debug(f"Beginning to download new launcher from {launcher_download_url}")
             try:
                 temp_folder = tempfile.TemporaryDirectory()
                 temp_path = temp_folder.name
-                temp_zip_path = Path(temp_path) / 'hon_update_x64.zip'
-                temp_update_x64_path = Path(temp_path) / 'hon_update_x64.exe'
+                temp_zip_path = Path(temp_path) / launcher_zip
 
-                download_hon_update_x64 = urllib.request.urlretrieve(HON_UPDATE_X64_DOWNLOAD_URL, temp_zip_path)
-                if not download_hon_update_x64:
-                    LOGGER.warn(f"Newer hon_update_x64.zip is available, however the download failed.\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                download_launcher = urllib.request.urlretrieve(launcher_download_url, temp_zip_path)
+                if not download_launcher:
+                    LOGGER.warn(f"Newer {launcher_zip} is available, however the download failed.\n\t1. Please download the file manually: {launcher_download_url}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                     return
 
                 temp_extracted_path = temp_folder.name
-                MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
+                extracted_file_name = MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
 
-                hon_update_x64_path = self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'
+                temp_extracted_launcher_path = Path(temp_path) / extracted_file_name[0]
+
+                launcher_binary_path = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
+
+                LOGGER.debug(f"Downloaded launcher files: {os.listdir(temp_extracted_path)}")
 
                 # Check if the file is in use before moving it
                 try:
-                    shutil.move(temp_update_x64_path, hon_update_x64_path)
+                    shutil.move(temp_extracted_launcher_path, launcher_binary_path)
+                    LOGGER.debug(f"Moved extracted launcher to HoN working directory: {launcher_binary_path}")
                 except PermissionError:
-                    LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'} is currently in use. Closing the file..")
-                    process = MISC.get_proc(proc_name='hon_update_x64.exe')
+                    LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / launcher_zip} is currently in use. Closing the file..")
+                    process = MISC.get_proc(proc_name=launcher_zip)
                     if process: process.terminate()
                     try:
-                        shutil.move(temp_update_x64_path, hon_update_x64_path)
+                        shutil.move(temp_extracted_launcher_path, launcher_binary_path)
                     except Exception:
-                        LOGGER.error(f"HoN Update - Failed to copy downloaded hon_update_x64.exe into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                        LOGGER.error(f"HoN Update - Failed to copy downloaded {launcher_binary} into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {launcher_download_url}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                         return
 
             except Exception as e:
                 LOGGER.error(f"Error occurred during file download or extraction: {e}")
 
-        patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
-        # subprocess.run([patcher_exe, "-norun"])
+        patcher_executable = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
         try:
-            subprocess.run([patcher_exe, "-norun"], timeout=timeout)
+            if MISC.get_os_platform() == "win32":
+                subprocess.run([patcher_executable, "-norun"], timeout=timeout)
+            else:
+                os.chmod(patcher_executable, 0o700)
+                subprocess.run([patcher_executable], timeout=timeout)
+
+            if MISC.get_os_platform() == "linux":
+                executable = "hon-x86_64-server_KONGOR"
+                if not os.path.exists(self.global_config['hon_data']['hon_install_directory'] / executable):
+                    executable = "hon-x86_64-server"
+                self.global_config['hon_data']['hon_executable_path'] = self.global_config['hon_data']['hon_install_directory'] / executable
+                self.global_config['hon_data']['hon_executable_name'] = executable
 
             svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
             if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:

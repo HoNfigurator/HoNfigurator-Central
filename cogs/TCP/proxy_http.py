@@ -9,7 +9,7 @@ def get_current_timestamp():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 LOCAL_ADDR = "127.0.0.1"
-LOCAL_PORT = 80
+LOCAL_PORT = 81
 REMOTE_ADDR = "104.21.81.134"  # Replace with the target server's address
 REMOTE_PORT = 80
 
@@ -30,6 +30,8 @@ class CustomHTTPRequestHandler(BaseHTTPRequestHandler):
         self.error_message = message
 
     def handle_request(self):
+        user_agent = self.headers.get('User-Agent')
+        my_print(f"User-Agent: {user_agent}")  # Print User-Agent
         if self.command == "POST":
             content_length = int(self.headers.get("Content-Length", 0))
             content_type = self.headers.get("Content-Type", "")
@@ -55,6 +57,11 @@ async def forward_data(src_reader, dst_writer, parser=None):
 
             if parser:
                 parser(data)
+
+            # new_user_agent = b"S2 Games/Heroes of Newerth/4.10.8.0/las/x86-biarch"
+            # data = data.replace(b"User-Agent: S2 Games/Heroes of Newerth/4.10.9.0/las/x86-biarch", b"User-Agent: " + new_user_agent)
+
+            # my_print("Modified request:", data)
 
             dst_writer.write(data)
             await dst_writer.drain()
