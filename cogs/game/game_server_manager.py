@@ -1042,7 +1042,7 @@ class GameServerManager:
                 temp_folder = tempfile.TemporaryDirectory()
                 temp_path = temp_folder.name
                 temp_zip_path = Path(temp_path) / launcher_zip
-                temp_update_x64_path = Path(temp_path) / launcher_zip
+                temp_update_x64_path = Path(temp_path) / launcher_binary
 
                 download_launcher = urllib.request.urlretrieve(launcher_download_url, temp_zip_path)
                 if not download_launcher:
@@ -1050,7 +1050,7 @@ class GameServerManager:
                     return
 
                 temp_extracted_path = temp_folder.name
-                MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
+                extracted_file_name = MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
 
                 launcher_binary_path = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
 
@@ -1058,7 +1058,7 @@ class GameServerManager:
 
                 # Check if the file is in use before moving it
                 try:
-                    shutil.move(temp_update_x64_path, launcher_binary_path)
+                    shutil.move(temp_update_x64_path, extracted_file_name)
                     LOGGER.debug(f"Moved extracted launcher to HoN working directory: {launcher_binary_path}")
                 except PermissionError:
                     LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / launcher_zip} is currently in use. Closing the file..")

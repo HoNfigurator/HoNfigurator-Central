@@ -369,8 +369,12 @@ class Misc:
             return md5_hash.hexdigest()
 
     def unzip_file(self, source_zip, dest_unzip):
+        extracted_files = []
         with zipfile.ZipFile(source_zip, 'r') as zip_ref:
-            zip_ref.extractall(dest_unzip)
+            extracted_files = zip_ref.namelist()  # Get the list of filenames
+            zip_ref.extractall(dest_unzip)  # Extract all files to the destination directory
+
+        return extracted_files
 
     def save_last_working_branch(self):
         with open(HOME_PATH / "logs" / ".last_working_branch", "w") as f:
