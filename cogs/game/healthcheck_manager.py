@@ -130,8 +130,6 @@ class HealthCheckManager:
                     return
                 await asyncio.sleep(1)
             try:
-                if not MISC.get_os_platform() == "win32": # TODO: not checking patch on linux yet
-                    return
                 if await self.check_upstream_patch():
                     await self.event_bus.emit('patch_server',source='healthcheck')
             except Exception:
