@@ -1082,8 +1082,11 @@ class GameServerManager:
                 os.chmod(patcher_executable, 0o700)
                 subprocess.run([patcher_executable], timeout=timeout)
 
-            if exists(patcher_executable):
-                self.global_config['hon_data']['hon_executable_path'] = patcher_executable
+            if MISC.get_os_platform() == "linux":
+                executable = "hon-x86_64-server_KONGOR"
+                if not os.path.exists(self.global_config['hon_data']['hon_install_directory'] / executable):
+                    executable = "hon-x86_64-server"
+
             svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
             if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:
                 LOGGER.error(f"Server patching failed. Current version: {svr_version}")
