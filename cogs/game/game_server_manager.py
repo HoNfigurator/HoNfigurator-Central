@@ -1054,6 +1054,8 @@ class GameServerManager:
 
                 launcher_binary_path = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
 
+                LOGGER.debug(os.listdir(temp_extracted_path))
+
                 # Check if the file is in use before moving it
                 try:
                     shutil.move(temp_update_x64_path, launcher_binary_path)
