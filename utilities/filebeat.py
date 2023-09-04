@@ -507,7 +507,7 @@ async def configure_filebeat(silent=False,test=False):
             },
             'processors': [
                 {'add_host_metadata': {'when.not.contains.tags': 'forwarded'}},
-                {'add_locale': '~'}
+                {'add_locale': None}
             ],
             'filebeat.registry.flush': '60s'
         }
