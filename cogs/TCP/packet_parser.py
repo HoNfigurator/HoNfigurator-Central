@@ -32,7 +32,8 @@ class GameManagerParser:
             0x44: self.lobby_created,
             0x45: self.lobby_closed,
             0x47: self.server_connection,
-            0x4A: self.replay_update,
+            0x49: self.cow_announce,
+            0x4A: self.replay_update
         }
         self.id = client_id
 
@@ -45,21 +46,21 @@ class GameManagerParser:
     def update_client_id(self, new_id):
         self.id = new_id
 
-    async def handle_packet(self, packet, game_server):
+    async def handle_packet(self, packet, game_server=None, cowmaster=None):
         packet_len, packet_data = packet
         packet_type = packet_data[0]
 
         if packet_len != len(packet_data):
-            self.log("debug",f"LEN DOESNT MATCH PACKET: {len} and {len(packet_data)}")
+            self.log("debug",f"GameServer #{self.id} - LEN DOESNT MATCH PACKET: {len} and {len(packet_data)}")
 
         # Retrieve the packet handler function based on the packet_type
         handler = self.packet_handlers.get(packet_type, self.unhandled_packet)
 
         # Call the handler with the split_packet as an argument
         try:
-            await handler(packet_data,game_server)
+            await handler(packet_data,game_server,cowmaster)
         except Exception as e:
-            self.log("exception",f"GameServer #{self.id}: An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet type: {hex(packet_type)}")
+            self.log("exception",f"GameServer #{self.id} - An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()} with this packet type: {hex(packet_type)}")
 
     async def server_announce_preflight(packet):
         """ 0x40  Server announce
@@ -80,7 +81,7 @@ class GameManagerParser:
         return port
 
 
-    async def server_closed(self,packet, game_server):
+    async def server_closed(self,packet, game_server=None, cowmaster=None):
         """  0x41 Server closed
         when the server is killed / crashes / gracefully stopped.
 
@@ -90,13 +91,17 @@ class GameManagerParser:
             [Mar 13 11:54:25] Sv: [11:54:25] Shutting down server...
 
         """
-        self.log("debug",f"GameServer #{self.id} - Received server closed packet: {packet}")
-        game_server.reset_game_state()
-        # await game_server.save_gamestate_to_file()
-        game_server.reset_skipped_frames()
+        if game_server:
+            self.log("debug",f"GameServer #{self.id} - Received server closed packet: {packet}")
+            game_server.reset_game_state()
+            # await game_server.save_gamestate_to_file()
+            game_server.reset_skipped_frames()
+        else:
+            self.log("debug",f"CowMaster #{self.id} - Received server closed packet: {packet}")
+            cowmaster.reset_cowmaster_state()
 
 
-    async def server_status(self,packet, game_server):
+    async def server_status(self,packet, game_server=None, cowmaster=None):
         """  0x42 Server status update packet.
 
                 The most valuable packet so far, is sent multiple times a second, contains all "live" state including:
@@ -134,12 +139,16 @@ class GameManagerParser:
             'match_started': packet[11],                                # extract match started field from packet
             'game_phase': packet[40],                                   # extract game phase field from packet
         })
-        game_server.game_state.update(temp)
+        if game_server:
+            game_server.game_state.update(temp)
+        if cowmaster:
+            cowmaster.game_state.update(temp)
 
         # If the packet only contains fixed-length fields, print the game info and return
         if len(packet) == 54:
-            if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
-                game_server.game_state._state['players'] = ''
+            if game_server:
+                if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
+                    game_server.game_state._state['players'] = ''
             return
 
         # Otherwise, extract player data sections from the packet
@@ -167,23 +176,24 @@ class GameManagerParser:
                 'ip': data[ip_start:ip_end].decode('utf-8')
             })
         # Update game dictionary with player information and print
-        game_server.game_state.update({'players':clients})
+        if game_server:
+            game_server.game_state.update({'players':clients})
 
-    async def long_frame(self, packet, game_server):
+    async def long_frame(self, packet, game_server=None, cowmaster=None):
         """  0x43 Long Frame
         when there are skipped server frames, this packet contains the time spent skipping frames (msec)
         int 1 msg type
         int 2 skipped frame LE
         """
-        # TODO, event?
         skipped_frames = int.from_bytes(packet[1:3], byteorder='little')
         current_time = datetime.datetime.now().timestamp()  # Get current time in Unix timestamp format
         self.log("debug", f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
-        game_server.increment_skipped_frames(skipped_frames, current_time)
+        if game_server:
+            game_server.increment_skipped_frames(skipped_frames, current_time)
 
 
 
-    async def lobby_created(self,packet, game_server):
+    async def lobby_created(self,packet, game_server=None, cowmaster=None):
         """  0x44 Lobby created
                 int 4 matchid (64 bit for futureproof) # 0-4
                 string date     ? didnt find
@@ -203,7 +213,7 @@ class GameManagerParser:
             try:
                 null_byte_index = packet[current_index:].index(b'\x00')
             except ValueError:
-                self.log("exception", f"GameServer #{self.id}: Failed to find null byte in packet: {packet}")
+                self.log("error", f"GameServer #{self.id} - Failed to find null byte in packet: {packet}")
                 return
 
             string_value = packet[current_index:current_index+null_byte_index].decode('utf-8', errors='replace')
@@ -224,7 +234,7 @@ class GameManagerParser:
 
         self.log("debug", f"GameServer #{self.id} - {lobby_info}")
 
-    async def lobby_closed(self,packet, game_server):
+    async def lobby_closed(self,packet, game_server=None, cowmaster=None):
         """   0x45 Lobby closed
         """
         self.log("debug",f"GameServer #{self.id} - Received lobby closed packet: {packet}")
@@ -236,20 +246,62 @@ class GameManagerParser:
         }
         game_server.game_state.update({'match_info':empty_lobby_info})
         game_server.game_state.update({'players':[]})
-        game_server.reset_game_state()
-        # await game_server.save_gamestate_to_file()
-        game_server.reset_skipped_frames()
+        if game_server:
+            game_server.reset_game_state()
+            # await game_server.save_gamestate_to_file()
+            game_server.reset_skipped_frames()
+        else:
+            cowmaster.reset_cowmaster_state()
+
+    async def cow_being_used(self, packet, game_server=None, cowmaster=None):
+        """ 0x46 Server is being used
+            full packet: \x46\x00\x00
+            this packet arrives right before the lobby created packet and i assume its being used to
+            tell the manager that the server is in use.
+            assumption: byte 3-4 is a status
+        """
 
 
-    async def server_connection(self,packet, game_server):
+    async def server_connection(self,packet, game_server=None, cowmaster=None):
         """ 0x47 Server selected / player joined
 
                 This packet arrives any time someone begins connecting to the server
         """
         self.log("debug",f"GameServer #{self.id} - Received server connection packet: {packet}")
 
+    async def cow_stats_submission(self, packet, game_server=None, cowmaster=None):
+        """ 0x48 state of stats submission
+            full example: \x48\x00\x00
+            \x48\x00\x00 is Stat submission successful
+            \x48\x06\x00 is connected to:
+                [Aug 17 10:59:48] Error: [10:59:48] Stat submission failure
+                [Aug 17 10:59:48] Error: [10:59:48] Stat submission [3485594] request completely failed
+        """
 
-    async def replay_update(self,packet, game_server):
+    async def cow_announce(self, packet, game_server=None, cowmaster=None):
+        """ 0x49 Fork status response (success or fail)
+
+            This packet arrives from the cow master after fork completed or attempted
+            example:
+                Success fork \x49\x11\x27\x86\xae
+                Fail fork (tried on windows): \x49\x11\x27\x00\x00
+                 - Sv: [01:45:45] Received message to fork...
+                 - Error: [01:45:45] Server manager requested a fork, but we're a non linux server build.
+
+            2 bytes - message type
+            4 bytes - port (\x11\x27 = 10001)
+            4 bytes - unknown (translates into 44678 decimal)
+                Best guess on that is the source port. Unsure tho.
+                In some case it probably has to do something with the identification, cause
+                The manager has to know which server is getting ready.
+                Idea: Create a gameserver object based on the port
+                Update: when failed to fork, these 4 bytes are 0000
+        """
+        port = int.from_bytes(packet[1:3],byteorder='little')
+        self.log('debug',f'CowMaster #{self.id} - fork response: {self.format_packet(packet)} (port: {port})')
+
+
+    async def replay_update(self,packet, game_server=None, cowmaster=None):
         """ 0x4A Replay status packet
 
             This is an update from the game server regarding the status of the zipped replay file.
@@ -267,7 +319,7 @@ class GameManagerParser:
                 self.log("debug","Match ID not found")
 
 
-    async def unhandled_packet(self,packet, game_server):
+    async def unhandled_packet(self,packet, game_server=None, cowmaster=None):
             """    Any unhandled packet
 
             Unknowns:
@@ -275,7 +327,16 @@ class GameManagerParser:
                 b'H\x00\x00'
             """
 
-            self.log("debug",f"GameServer #{self.id} - Received unknown packet: {packet}")
+
+            
+
+            #TODO: Python decodes the output of bytes weirdly. We want to prevent that.
+
+
+            self.log("debug",f"GameServer #{self.id} - Received unknown packet: {self.format_packet(packet)}")
+    
+    def format_packet(self,packet):
+        return ''.join(['\\x{:02x}'.format(byte) for byte in packet])
 
 class ManagerChatParser:
     def __init__(self,logger=None):
@@ -550,7 +611,7 @@ class ClientChatParser:
         file_format, offset = read_string(packet_data, offset)
 
         self.log("debug",f"{self.print_prefix}Replay Request\n\tMatch ID: {match_id}\n\tfile format: {file_format}")
-    
+
     async def chat_replay_upload_status(self, packet_data):
         offset = 2
         replay_status = {}
@@ -559,7 +620,7 @@ class ClientChatParser:
         replay_status['status'], offset = read_byte(packet_data, offset)
         if replay_status['status'] == 7:  # "UPLOAD_COMPLETE"
             replay_status['extra_byte'], offset = read_byte(packet_data, offset)
-        
+
         status = None
         if replay_status['status'] == -1: status = 'None'
         if replay_status['status'] == 0: status = 'GENERAL_FAILURE'
@@ -581,7 +642,7 @@ class ClientChatParser:
         offset = 2
         status, offset = read_int(packet_data, offset)
         return status
-    
+
     async def chat_authentication_fail(self,packet_data):
         offset = 2
         status, offset = read_int(packet_data, offset)

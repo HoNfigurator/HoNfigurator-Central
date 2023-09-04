@@ -17,6 +17,7 @@ from cogs.TCP.game_packet_lsnr import handle_clients
 from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
+from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
 from cogs.misc.logger import get_logger, get_misc, get_home, get_filebeat_status, get_filebeat_auth_url
@@ -27,10 +28,13 @@ from os.path import exists
 from utilities.filebeat import main as filebeat, filebeat_status
 
 LOGGER = get_logger()
+from cogs.handlers.data_handler import get_cowmaster_configuration
 MISC = get_misc()
 HOME_PATH = get_home()
-HON_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
-HON_UPDATE_X64_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
 
 class GameServerManager:
     def __init__(self, global_config, setup):
@@ -60,6 +64,9 @@ class GameServerManager:
         self.event_bus.subscribe('cmd_wake_server', self.cmd_wake_server)
         self.event_bus.subscribe('cmd_sleep_server', self.cmd_sleep_server)
         self.event_bus.subscribe('cmd_custom_command', self.cmd_custom_command)
+        self.event_bus.subscribe('fork_server_from_cowmaster', self.fork_server_from_cowmaster),
+        self.event_bus.subscribe('config_change_hook_actions', self.config_change_hook_actions),
+        # self.event_bus.subscribe('start_gameserver_from_cowmaster', self.start_gameserver_from_cowmaster)
         self.event_bus.subscribe('patch_server', self.initialise_patching_procedure)
         self.event_bus.subscribe('update', self.update)
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
@@ -89,8 +96,10 @@ class GameServerManager:
         self.game_servers = {}
         self.client_connections = {}
 
+        self.cowmaster = CowMaster(self.global_config['hon_data']['svr_starting_gamePort'] - 2, self.global_config)
+
         # Initialize a Commands object for sending commands to game servers
-        self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.event_bus)
+        self.commands = Commands(self.game_servers, self.client_connections, self.global_config, self.event_bus, self.cowmaster)
         # Initialise the autoping listener object
         self.auto_ping_listener = AutoPingListener(self.global_config, self.global_config['hon_data']['autoping_responder_port'])
         # Create game server instances
@@ -104,26 +113,26 @@ class GameServerManager:
 
         # Initialize MasterServerHandler and send requests
         self.chat_server_handler = None
-        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], was=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
+        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
         self.schedule_task(coro, 'health_checks')
 
         MISC.save_last_working_branch()
-    
+
     def cleanup_tasks(self, tasks_dict, current_time):
         for task_name, task in list(tasks_dict.items()):  # Use list() to avoid "dictionary changed size during iteration" error
             if task is None:
                 continue
-            
+
             if not isinstance(task, asyncio.Task):
                 LOGGER.error(f"Item '{task_name}' in tasks is not a Task object.")
                 return
 
             if task.done() and task.exception() is None and task.end_time + timedelta(minutes=30) < current_time:
                 del tasks_dict[task_name]
-                
+
     async def cleanup_tasks_every_30_minutes(self):
         while True:
             current_time = datetime.now()
@@ -135,7 +144,7 @@ class GameServerManager:
                 if stop_event.is_set():
                     break
                 await asyncio.sleep(1)
-    
+
     def schedule_task(self, coro, name, override = False):
         existing_task = self.tasks.get(name)  # Get existing task if any
 
@@ -154,7 +163,7 @@ class GameServerManager:
                     if exception:
                         LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
                 else:
-                    LOGGER.info(f"The previous task '{name}' was cancelled.")
+                    LOGGER.debug(f"The previous task '{name}' was cancelled.")
             else:
                 if not override:
                     # Task is still running
@@ -166,8 +175,8 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-                    
-    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True):
+    
+    async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True, kill=False):
         try:
             if game_server is None: return False
             client_connection = self.client_connections.get(game_server.port, None)
@@ -186,7 +195,7 @@ class GameServerManager:
                     return True
             else:
                 # this server hasn't connected to the manager yet
-                await game_server.stop_server_exe(disable=disable, delete=delete)
+                await game_server.stop_server_exe(disable=disable, delete=delete, kill=kill)
                 game_server.reset_game_state()
                 return True
         except Exception as e:
@@ -197,6 +206,7 @@ class GameServerManager:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
 
+            # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
             client_connection.writer.write(GameServerCommands.WAKE_BYTES.value)
             await client_connection.writer.drain()
@@ -210,6 +220,7 @@ class GameServerManager:
             client_connection = self.client_connections.get(game_server.port, None)
             if not client_connection: return
 
+            # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(GameServerCommands.COMMAND_LEN_BYTES.value)
             client_connection.writer.write(GameServerCommands.SLEEP_BYTES.value)
             await client_connection.writer.drain()
@@ -229,6 +240,7 @@ class GameServerManager:
             length = len(message_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
 
+            # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(message_bytes)
             await client_connection.writer.drain()
@@ -248,13 +260,56 @@ class GameServerManager:
             length = len(command_bytes)
             length_bytes = length.to_bytes(2, byteorder='little')
 
+            # TODO: use client_connection.send_packet() ??
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(command_bytes)
             await client_connection.writer.drain()
-            LOGGER.info(f"Command - '{command}' sent to GameServer #{game_server.id}.")
+            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
-        
+
+    async def cmd_cowmaster_fork(self, instance_number, port):
+        try:
+            client_connection = self.client_connections.get(self.cowmaster.get_port(), None)
+
+            if client_connection is None:
+                return
+
+            command_bytes = b'\x28' + instance_number.to_bytes(1, "little") + port.to_bytes(2, "little") + b'\x00'
+
+            #command_bytes = b'\x28\x01\x11\x27\x00'
+            length = len(command_bytes)
+            length_bytes = length.to_bytes(2, byteorder='little')
+
+            client_connection.writer.write(length_bytes)
+            client_connection.writer.write(command_bytes)
+            await client_connection.writer.drain()
+
+            LOGGER.info(f"Command - command sent to CowMaster.")
+        except Exception:
+            LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
+
+    async def fork_server_from_cowmaster(self, game_server):
+        try:
+            await self.cowmaster.fork_new_server(game_server)
+        except Exception:
+            LOGGER.error(traceback.format_exc())
+
+    async def start_gameserver_from_cowmaster(self, num = "all"):
+        try:
+            starting_port = self.global_config.get("hon_data").get("svr_starting_gamePort")
+            if num == "all":
+                number_of_instances = self.global_config.get("hon_data").get("svr_total")
+            else:
+                number_of_instances = num
+
+            for i in range(number_of_instances):
+                print(i)
+                await self.cmd_cowmaster_fork(i+1, starting_port)
+                starting_port += 1
+        except Exception as e:
+            LOGGER.exception(e)
+
     async def check_upstream_patch(self):
         if self.patching:
             LOGGER.info("Server patching is ongoing.. Please wait.")
@@ -272,6 +327,7 @@ class GameServerManager:
                 return
             parsed_patch_information = phpserialize.loads(patch_information[0].encode('utf-8'))
             parsed_patch_information = {key.decode() if isinstance(key, bytes) else key: (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_patch_information.items()}
+            LOGGER.debug(f"Upstream patch information: {parsed_patch_information}")
             self.latest_available_game_version = parsed_patch_information['latest']
 
             if local_svr_version != self.latest_available_game_version:
@@ -417,8 +473,6 @@ class GameServerManager:
     async def resubmit_match_stats_to_masterserver(self, match_id, file_path):
         mserver_stats_response = await self.master_server_handler.send_stats_file(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest(), match_id, file_path)
         if not mserver_stats_response or mserver_stats_response[1] != 200 or mserver_stats_response[0] == '':
-            # .stats submission will not work until KONGOR implements accepting .stats from the custom written manager.
-            # TODO: Update below to .error once upstream is configured to accept our stats.
             LOGGER.error(f"[{mserver_stats_response[1] if mserver_stats_response else 'unknown'}] Stats resubmission failed - {file_path}. Response: {mserver_stats_response[0] if mserver_stats_response else 'unknown'}")
             if mserver_stats_response and mserver_stats_response[1] == 400 and 'title' in mserver_stats_response[0]:
                 if mserver_stats_response[0] == "One or more validation errors occurred.":
@@ -515,7 +569,7 @@ class GameServerManager:
                     LOGGER.warn("No available ports for creating a new game server.")
             coro = self.start_game_servers(start_servers)
             self.schedule_task(coro, 'gameserver_startup', override = True)
-        
+
         async def remove_servers(servers, server_type):
             servers_removed = 0
             servers_to_remove = []
@@ -531,7 +585,7 @@ class GameServerManager:
             #     if port in self.game_servers:
             #         game_server.cancel_tasks()
             #         del self.game_servers[port]
-            
+
             LOGGER.info(f"Removed {servers_removed} {server_type} game servers. {total_num_servers - servers_removed} game servers are now running.")
             return servers_removed
 
@@ -567,7 +621,7 @@ class GameServerManager:
                 LOGGER.info(f"Game server created at game_port: {game_port}")
             else:
                 LOGGER.warn("No available ports for creating a new game server.")
-        
+
         coro = self.start_game_servers(start_servers)
         self.schedule_task(coro, 'gameserver_startup', override = True)
 
@@ -576,14 +630,23 @@ class GameServerManager:
             for game_server in self.game_servers.values():
                 if game_server.params_are_different():
                     await self.cmd_shutdown_server(game_server,disable=False)
+                    if self.cowmaster.client_connection:
+                        self.cowmaster.stop_cow_master(disable=False)
                     await asyncio.sleep(0.1)
                     game_server.enable_server()
         else:
             if game_server.params_are_different():
                 await self.cmd_shutdown_server(game_server,disable=False)
+                if self.cowmaster.client_connection:
+                    self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
-            
+    
+    async def config_change_hook_actions(self):
+        if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
+            self.cowmaster.stop_cow_master()
+        elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
+            await self.cowmaster.start_cow_master()
 
     async def remove_dynamic_game_server(self):
         max_servers = self.global_config['hon_data']['svr_total']
@@ -656,6 +719,9 @@ class GameServerManager:
         Returns:
             GameServer or None: the game server instance, or None if no game server with the specified port exists
         """
+        if game_server_port == self.cowmaster.get_port():
+            return self.cowmaster
+
         return self.game_servers.get(game_server_port, None)
 
     async def add_client_connection(self,client_connection, port):
@@ -671,26 +737,38 @@ class GameServerManager:
         """
         if port not in self.client_connections:
             self.client_connections[port] = client_connection
-            game_server = self.game_servers.get(port, None)
-            # this is in case game server doesn't exist (config change maybe)
-            if game_server:
-                game_server.status_received.set()
-                game_server.set_client_connection(client_connection)
-                await self.check_for_restart_required(game_server)
-            # TODO
-            # Create game server object here?
-            # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
-            # since the game server isn't actually off yet, it will keep creating a connection.
+            if port == self.cowmaster.get_port():
+                await self.cowmaster.set_client_connection(client_connection)
+                self.cowmaster.status_received.set()
 
-            # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-            asyncio.create_task(self.commands.initialise_commands())
-            self.commands.subcommands_changed.set()
+            else:
+                game_server = self.game_servers.get(port, None)
+                # this is in case game server doesn't exist (config change maybe)
+                if game_server:
+                    game_server.status_received.set()
+                    await game_server.set_client_connection(client_connection)
+                    await self.check_for_restart_required(game_server)
+                # TODO
+                # Create game server object here? May be happening already in game_packet_lsnr.py (handle_client_connection)
+                # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
+                # since the game server isn't actually off yet, it will keep creating a connection.
             return True
+          
         else:
             #TODO: raise error or happy with logger?
-            LOGGER.error(f"A connection is already established for port {port}, this is either a dead connection, or something is very wrong.")
+            if port == self.cowmaster.get_port():
+                LOGGER.debug(f"Attempting to locate duplicate CowMaster server. Looking for TCP source port ({client_connection.addr[1]}) and TCP dest port ({self.global_config['hon_data']['svr_managerPort']})")
+                cowmaster_proc = MISC.get_client_pid_by_tcp_source_port(self.global_config['hon_data']['svr_managerPort'], client_connection.addr[1])
+                if cowmaster_proc:
+                    LOGGER.info(f"Found duplicate CowMaster server. Killing process {cowmaster_proc.pid}")
+                    cowmaster_proc.terminate()
+                    return
+                else:
+                    LOGGER.warn("There is a duplicate CowMaster and we're unable to identify it's PID (Process ID). This  won't cause issues, but there may be some wasteful RAM usage.")
+                    return
+            LOGGER.error(f"A GameServer connection is already established for port {port}, this is either a dead connection, or something is very wrong (two servers with the same port).")
             return False
-    
+
     async def find_replay_file(self,replay_file_name):
         replay_file_paths = [Path(self.global_config['hon_data']['hon_replays_directory']) / replay_file_name]
         if self.global_config['application_data']['longterm_storage']['active']:
@@ -710,7 +788,7 @@ class GameServerManager:
         if self.global_config['application_data']['longterm_storage']['active']:
             replay_file_paths.append(Path(self.global_config['application_data']['longterm_storage']['location']) / replay_file_name)
         file_exists,replay_file_path = await self.find_replay_file(replay_file_name)
-        
+
         if not file_exists:
             # Send the "does not exist" packet
             # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.DOES_NOT_EXIST)
@@ -783,16 +861,16 @@ class GameServerManager:
                 self.commands.subcommands_changed.set()
                 return True
         return False
-    
+
     def update_server_start_semaphore(self):
         max_start_at_once = self.global_config['hon_data']['svr_max_start_at_once']
         self.server_start_semaphore = asyncio.Semaphore(max_start_at_once)
-    
+
     async def start_game_servers_task(self, game_servers):
         coro = self.start_game_servers(game_servers)
         self.schedule_task(coro, 'gameserver_startup')
 
-    async def start_game_servers(self, game_servers, timeout=120, launch=False, service_recovery=False):
+    async def start_game_servers(self, game_servers, timeout=120, launch=False, service_recovery=False, config_reload=True):
         try:
             timeout = self.global_config['hon_data']['svr_startup_timeout']
             """
@@ -813,13 +891,10 @@ class GameServerManager:
                 path_list = os.environ["PATH"].split(os.pathsep)
                 if str(self.global_config['hon_data']['hon_install_directory']  / 'game') not in path_list:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
-            if MISC.get_os_platform() == "win32" and launch and await self.check_upstream_patch():
+
+            if launch and await self.check_upstream_patch():
                 if not await self.initialise_patching_procedure(source="startup"):
                     return False
-
-            else:
-                # TODO: Linux patching logic here?
-                pass
 
             async def start_game_server_with_semaphore(game_server, timeout):
                 game_server.game_state.update({'status':GameStatus.QUEUED.value})
@@ -860,33 +935,54 @@ class GameServerManager:
             start_tasks = []
             if game_servers == "all":
                 game_servers = list(self.game_servers.values())
-                
+
             for game_server in game_servers:
                 already_running = await game_server.get_running_server()
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
-            
-            
+
+            if self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
+                await self.cowmaster.start_cow_master()
+
             # setup or verify filebeat configuration for match log submission
             await filebeat_status()
             if launch:
                 await filebeat(self.global_config)
 
-            # Start all game servers using the semaphore
-            if launch and not self.global_config['hon_data']['svr_start_on_launch']:
-                LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
-                return
-            
+                if not self.global_config['hon_data']['svr_start_on_launch']:
+                    LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
+                    return
+
             if not service_recovery and not get_filebeat_status()['running']:
                 msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Status: {get_filebeat_status()['certificate_status']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
                 if get_filebeat_auth_url():
                     print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
-            
+
+            if self.global_config['hon_data']['man_use_cowmaster']:
+                if not self.cowmaster.client_connection:
+                    if launch or config_reload:
+                        i = 0
+                        incr = 5
+                        while not self.cowmaster.client_connection:
+                            if not config_reload: # prevent excessive prints
+                                LOGGER.warn(f"Waiting for CowMaster to connect to manager before starting servers. Waiting {i}/{timeout} seconds")
+                            await asyncio.sleep(incr)
+                            i += incr
+                            if i > timeout:
+                                return False
+                    else:
+                        LOGGER.warn("Cannot start servers. Cowmaster is in use, but not yet connected to the manager. Please wait and try again")
+                        return
+
             for game_server in game_servers:
                 start_tasks.append(start_game_server_with_semaphore(game_server, timeout))
 
             await asyncio.gather(*start_tasks)
+
+            # indicate that the sub commands should be regenerated since the list of connected servers has changed.
+            asyncio.create_task(self.commands.initialise_commands())
+            self.commands.subcommands_changed.set()
 
         except Exception as e:
             LOGGER.error(f"GameServers failed to start\n{traceback.format_exc()}")
@@ -905,62 +1001,93 @@ class GameServerManager:
             filename = components[3]
             hon_update_exe_crc = components[-1]
             return hon_update_exe_crc
-        
+
         except Exception as e:
-            LOGGER.error(f"Error occurred while extracting CRC from file: {e}")
+            LOGGER.error(f"URL: {url} - Error occurred while extracting CRC from file: {e}")
             return None
 
-    async def initialise_patching_procedure(self, timeout=300, source=None):
+    async def initialise_patching_procedure(self, timeout=300, source='startup'):
         if self.patching:
             LOGGER.warn("Patching is already in progress.")
             return
 
         for game_server in self.game_servers.values():
+            LOGGER.debug(f"GameServer #{game_server.id} - Initialising server shutdown for patching")
             if game_server.started and game_server.enabled:
                 await self.cmd_message_server(game_server, "!! ANNOUNCEMENT !! This server will shutdown after the current match for patching.")
             await self.cmd_shutdown_server(game_server)
 
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
+            LOGGER.debug("Some HoN servers are still running. Waiting until they've shut down.")
             return
         
-        hon_update_x64_crc = await self.patch_extract_crc_from_file(HON_VERSION_URL)
-        if (not exists(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe')) or (hon_update_x64_crc and hon_update_x64_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe').lower()):
+        if MISC.get_os_platform() == "win32":
+            launcher_binary = 'hon_update_x64.exe'
+            launcher_zip = 'hon_update_x64.zip'
+            hon_version_url = HON_WAS_VERSION_URL
+            launcher_download_url = HON_WAS_LAUNCHER_DOWNLOAD_URL
+        else:
+            launcher_binary = 'launcher'
+            launcher_zip = 'launcher.zip'
+            hon_version_url = HON_LAS_VERSION_URL
+            launcher_download_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
+
+        launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
+        if not launcher_crc:
+            LOGGER.error("Patching failed.")
+            return False
+        if (not exists(self.global_config['hon_data']['hon_install_directory'] / launcher_binary)) or (launcher_crc and launcher_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / launcher_binary).lower()):
+            LOGGER.debug(f"Beginning to download new launcher from {launcher_download_url}")
             try:
                 temp_folder = tempfile.TemporaryDirectory()
                 temp_path = temp_folder.name
-                temp_zip_path = Path(temp_path) / 'hon_update_x64.zip'
-                temp_update_x64_path = Path(temp_path) / 'hon_update_x64.exe'
-                
-                download_hon_update_x64 = urllib.request.urlretrieve(HON_UPDATE_X64_DOWNLOAD_URL, temp_zip_path)
-                if not download_hon_update_x64:
-                    LOGGER.warn(f"Newer hon_update_x64.zip is available, however the download failed.\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                temp_zip_path = Path(temp_path) / launcher_zip
+
+                download_launcher = urllib.request.urlretrieve(launcher_download_url, temp_zip_path)
+                if not download_launcher:
+                    LOGGER.warn(f"Newer {launcher_zip} is available, however the download failed.\n\t1. Please download the file manually: {launcher_download_url}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                     return
 
                 temp_extracted_path = temp_folder.name
-                MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
+                extracted_file_name = MISC.unzip_file(source_zip=temp_zip_path, dest_unzip=temp_extracted_path)
 
-                hon_update_x64_path = self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'
+                temp_extracted_launcher_path = Path(temp_path) / extracted_file_name[0]
+
+                launcher_binary_path = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
+
+                LOGGER.debug(f"Downloaded launcher files: {os.listdir(temp_extracted_path)}")
 
                 # Check if the file is in use before moving it
                 try:
-                    shutil.move(temp_update_x64_path, hon_update_x64_path)
+                    shutil.move(temp_extracted_launcher_path, launcher_binary_path)
+                    LOGGER.debug(f"Moved extracted launcher to HoN working directory: {launcher_binary_path}")
                 except PermissionError:
-                    LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / 'hon_update_x64.exe'} is currently in use. Closing the file..")
-                    process = MISC.get_proc(proc_name='hon_update_x64.exe')
+                    LOGGER.warn(f"Hon Update - the file {self.global_config['hon_data']['hon_install_directory'] / launcher_zip} is currently in use. Closing the file..")
+                    process = MISC.get_proc(proc_name=launcher_zip)
                     if process: process.terminate()
                     try:
-                        shutil.move(temp_update_x64_path, hon_update_x64_path)
+                        shutil.move(temp_extracted_launcher_path, launcher_binary_path)
                     except Exception:
-                        LOGGER.error(f"HoN Update - Failed to copy downloaded hon_update_x64.exe into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {HON_UPDATE_X64_DOWNLOAD_URL}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
+                        LOGGER.error(f"HoN Update - Failed to copy downloaded {launcher_binary} into {self.global_config['hon_data']['hon_install_directory']}\n\t1. Please download the file manually: {launcher_download_url}\n\t2. Unzip the file into {self.global_config['hon_data']['hon_install_directory']}")
                         return
 
             except Exception as e:
                 LOGGER.error(f"Error occurred during file download or extraction: {e}")
-        
-        patcher_exe = self.global_config['hon_data']['hon_install_directory'] / "hon_update_x64.exe"
-        # subprocess.run([patcher_exe, "-norun"])
+
+        patcher_executable = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
         try:
-            subprocess.run([patcher_exe, "-norun"], timeout=timeout)
+            if MISC.get_os_platform() == "win32":
+                subprocess.run([patcher_executable, "-norun"], timeout=timeout)
+            else:
+                os.chmod(patcher_executable, 0o700)
+                subprocess.run([patcher_executable], timeout=timeout)
+
+            if MISC.get_os_platform() == "linux":
+                executable = "hon-x86_64-server_KONGOR"
+                if not os.path.exists(self.global_config['hon_data']['hon_install_directory'] / executable):
+                    executable = "hon-x86_64-server"
+                self.global_config['hon_data']['hon_executable_path'] = self.global_config['hon_data']['hon_install_directory'] / executable
+                self.global_config['hon_data']['hon_executable_name'] = executable
 
             svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
             if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:

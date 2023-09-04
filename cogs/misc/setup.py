@@ -10,7 +10,7 @@ from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.hide_pass import getpass
 
 ALLOWED_REGIONS = ["AU", "BR", "EU", "RU",
-                   "SEA", "TH", "USE", "USW", "NEWERTH"]
+                   "SEA", "TH", "USE", "USW", "NEWERTH", "TEST"]
 LOGGER = get_logger()
 HOME_PATH = get_home()
 MISC = get_misc()
@@ -31,6 +31,7 @@ class SetupEnvironment:
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
         self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity','man_enableProxy']
+        self.LINUX_SPECIFIC_CONFIG_ITEMS = ['man_use_cowmaster']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()
@@ -99,7 +100,9 @@ class SetupEnvironment:
                 "svr_starting_voicePort": 10061,
                 "svr_managerPort": 1134,
                 "svr_startup_timeout": 180,
-                "svr_api_port": 5000
+                "svr_api_port": 5000,
+                "man_use_cowmaster":False,
+                "svr_restart_between_games": False
             },
             "application_data": {
                 "timers": {
@@ -124,13 +127,10 @@ class SetupEnvironment:
                 "longterm_storage": {
                     "active": False,
                     "location": ""
-                },
-                "advanced" : {
-                    "restart_svrs_between_games": False
                 }
             }
         }
-    
+
     def get_server_region(self):
         try:
             public_ip = MISC.get_public_ip()
@@ -200,7 +200,7 @@ class SetupEnvironment:
                     major_issues.append(f"Invalid path for {key}: {value}")
                     return None
             return value
-        
+
         def is_valid_time_format(time_str):
             try:
                 datetime.strptime(time_str, "%H:%M")
@@ -223,7 +223,7 @@ class SetupEnvironment:
                 return handle_path(key, value)
             else:
                 return value
-            
+
         def handle_float(key, value):
             if not isinstance(value, float):
                 try:
@@ -231,7 +231,7 @@ class SetupEnvironment:
                 except ValueError:
                     return None
             return value
-        
+
         def handle_int(key, value):
             if not isinstance(value, int):
                 try:
@@ -356,6 +356,10 @@ class SetupEnvironment:
             elif default_value_type is type(None):
                 del self.hon_data[key]
                 minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
+            elif key == "man_use_cowmaster" and MISC.get_os_platform() != "linux":
+                if self.hon_data[key]:
+                    self.hon_data[key] = False
+                    minor_issues.append("Resolved: CowMaster is reserved for linux use only. Setting this value to false.")
 
 
         if major_issues:
@@ -413,7 +417,7 @@ class SetupEnvironment:
         with open(str(self.config_file_logging), 'w') as config_file_logging:
             json.dump(self.get_default_logging_configuration(),
                       config_file_logging, indent=4)
-            
+
     def create_hon_configuration_file(self, detected=None):
         print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
         while True:
@@ -534,6 +538,10 @@ class SetupEnvironment:
             for key in self.WINDOWS_SPECIFIC_CONFIG_ITEMS:
                 if key in config['hon_data']:
                     del config['hon_data'][key]
+        # else:
+        #     for key in self.LINUX_SPECIFIC_CONFIG_ITEMS:
+        #         if key in config['hon_data']:
+        #             del config['hon_data'][key]
         return config
 
     def add_runtime_data(self):
@@ -550,7 +558,9 @@ class SetupEnvironment:
             hon_artefacts_directory = Path(self.hon_data["hon_home_directory"])
             hon_replays_directory = hon_artefacts_directory / "KONGOR" / "replays"
             hon_logs_directory = hon_artefacts_directory / "KONGOR" / "logs"
-            executable = "hon-x86_64-server"
+            executable = "hon-x86_64-server_KONGOR"
+            if not os.path.exists(self.hon_data['hon_install_directory'] / executable):
+                executable = "hon-x86_64-server"
             file_name = executable
             architecture = 'las-crIac6LASwoafrl8FrOa'
 

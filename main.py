@@ -90,9 +90,9 @@ async def main():
         LOGGER.exception(f"{traceback.format_exc()}")
         raise HoNConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
     # check for other HoNfigurator instances.
-    check_existing_proc = MISC.get_process_by_port(global_config['hon_data']['svr_managerPort'])
+    check_existing_proc = MISC.get_process_by_port(global_config['hon_data']['svr_managerPort'], protocol='tcp4')
     if check_existing_proc:
-        check_existing_proc.terminate()
+        LOGGER.critical(f"A manager is already running on port {global_config['hon_data']['svr_managerPort']}. This may prevent the manager from operating correctly.")
 
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
@@ -121,7 +121,7 @@ async def main():
         auth_coro = game_server_manager.manage_upstream_connections(udp_ping_responder_port)
         auth_task = game_server_manager.schedule_task(auth_coro, 'authentication_handler')
         tasks.append(auth_task)
-        
+
         start_coro = game_server_manager.start_game_servers("all", launch=True)
         start_task = game_server_manager.schedule_task(start_coro, 'gameserver_startup')
         tasks.append(start_task)
@@ -161,8 +161,3 @@ if __name__ == "__main__":
 
     if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
     sys.exit(0)
-    # except Exception:
-    #     LOGGER.error(traceback.format_exc())
-    # finally:
-    #     if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
-    #     sys.exit(0)

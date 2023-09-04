@@ -31,8 +31,8 @@ This guide provides steps for linking the configured HoNfigurator server to a mo
 1. You must be willing to submit match logs to upstream services. These are logs of occurances during games played on your server.
 	- We want to ensure that trends from games can be analysed in monitoring tools, and that a fair experienced is had by all players.
  	- How it works: [Monitoring](docs/monitoring.md)
-1. You must be onboarded as a HOST in the Project Kongor [Discord channel](https://discord.gg/kongor). Only whitelisted accounts can host.
-  - Use the #hosting channel to express your interest
+1. You must be onboarded as a HOST in the Project Kongor Discord channel. Only whitelisted accounts can host.
+   - Use the [hosting channel](https://discord.com/channels/991034716360687637/1018466634408673340) to express your interest
 
 ## Installation
 <details>
@@ -135,3 +135,4 @@ When you are all done, your server should appear here after it's first match: ht
 Please submit any feature requests, or issues, via the [Issues](https://github.com/frankthetank001/HoNfigurator-Central/issues) page for this repository.  
 Reach out and [Contact me](https://discordapp.com/users/197967989964800000) if there are any concerns, or ping me in the Project Kongor discord channel.  
 The code is fully open source, so any improvements you want to make to the code, please submit a pull request and I will review.
+](https://github.com/HoNfigurator/HoNfigurator-Central/tree/main)
