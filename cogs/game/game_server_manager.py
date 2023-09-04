@@ -1037,7 +1037,7 @@ class GameServerManager:
             LOGGER.error("Patching failed.")
             return False
         if (not exists(self.global_config['hon_data']['hon_install_directory'] / launcher_binary)) or (launcher_crc and launcher_crc.lower() != MISC.calculate_crc32(self.global_config['hon_data']['hon_install_directory'] / launcher_binary).lower()):
-            LOGGER.debug(f"Beginning to download new launcher from {hon_version_url}")
+            LOGGER.debug(f"Beginning to download new launcher from {launcher_download_url}")
             try:
                 temp_folder = tempfile.TemporaryDirectory()
                 temp_path = temp_folder.name
