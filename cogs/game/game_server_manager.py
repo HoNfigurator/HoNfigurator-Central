@@ -1086,6 +1086,7 @@ class GameServerManager:
                 executable = "hon-x86_64-server_KONGOR"
                 if not os.path.exists(self.global_config['hon_data']['hon_install_directory'] / executable):
                     executable = "hon-x86_64-server"
+                self.global_config['hon_data']['hon_executable_path'] = executable
 
             svr_version = MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path'])
             if MISC.get_svr_version(self.global_config['hon_data']['hon_executable_path']) != self.latest_available_game_version:
