@@ -398,6 +398,7 @@ async def configure_filebeat(silent=False,test=False):
             'Affinity_Override': global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None,
             'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch'],
             'GitHub_Branch': MISC.github_branch,
+            'HoN_Server_Version': MISC.get_svr_version(global_config['hon_data']['hon_executable_path']),
             'HoNfigurator_API_Port': global_config['hon_data']['svr_api_port']
         }
         filebeat_inputs = {}
@@ -506,7 +507,7 @@ async def configure_filebeat(silent=False,test=False):
             },
             'processors': [
                 {'add_host_metadata': {'when.not.contains.tags': 'forwarded'}},
-                {'add_locale': None}
+                {'add_locale': '~'}
             ],
             'filebeat.registry.flush': '60s'
         }
