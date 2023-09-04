@@ -1042,7 +1042,7 @@ class GameServerManager:
                 temp_folder = tempfile.TemporaryDirectory()
                 temp_path = temp_folder.name
                 temp_zip_path = Path(temp_path) / launcher_zip
-                temp_update_x64_path = Path(temp_path) / launcher_binary
+                temp_update_x64_path = Path(temp_path) / launcher_zip
 
                 download_launcher = urllib.request.urlretrieve(launcher_download_url, temp_zip_path)
                 if not download_launcher:
@@ -1054,7 +1054,7 @@ class GameServerManager:
 
                 launcher_binary_path = self.global_config['hon_data']['hon_install_directory'] / launcher_binary
 
-                LOGGER.debug(os.listdir(temp_extracted_path))
+                LOGGER.debug(f"Downloaded launcher files: {os.listdir(temp_extracted_path)}")
 
                 # Check if the file is in use before moving it
                 try:
