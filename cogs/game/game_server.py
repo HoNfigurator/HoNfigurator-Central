@@ -791,9 +791,9 @@ region=naeu
         - subprocess object: The created subprocess object for the proxy.
         """
         if proxy_type == "game":
-            cmd = self.config['config']['proxy_game_cmdline']
+            cmd = self.config.local['config']['proxy_game_cmdline']
         elif proxy_type == "voice":
-            cmd = self.config['config']['proxy_voice_cmdline']
+            cmd = self.config.local['config']['proxy_voice_cmdline']
         else:
             raise ValueError(f"Unknown proxy type: {proxy_type}")
 
