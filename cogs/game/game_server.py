@@ -790,12 +790,22 @@ region=naeu
         Returns:
         - subprocess object: The created subprocess object for the proxy.
         """
+        cmd = None
         if proxy_type == "game":
-            cmd = self.config.local['config']['proxy_game_cmdline']
+            try:
+                cmd = self.config.local['config']['proxy_game_cmdline']
+            except KeyError:
+                pass # no third party proxy selected
         elif proxy_type == "voice":
-            cmd = self.config.local['config']['proxy_voice_cmdline']
+            try:
+                cmd = self.config.local['config']['proxy_voice_cmdline']
+            except KeyError:
+                pass # no third party proxy selected
         else:
             raise ValueError(f"Unknown proxy type: {proxy_type}")
+        
+        if not cmd:
+            return
 
         return await asyncio.create_subprocess_exec(
             *cmd,
