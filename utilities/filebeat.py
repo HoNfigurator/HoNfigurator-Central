@@ -399,7 +399,8 @@ async def configure_filebeat(silent=False,test=False):
             'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch'],
             'GitHub_Branch': MISC.github_branch,
             'HoN_Server_Version': MISC.get_svr_version(global_config['hon_data']['hon_executable_path']),
-            'HoNfigurator_API_Port': global_config['hon_data']['svr_api_port']
+            'HoNfigurator_API_Port': global_config['hon_data']['svr_api_port'],
+            'Total_Servers': global_config['hon_data']['svr_total']
         }
         filebeat_inputs = {}
         filebeat_inputs['slave_logs'] = \
@@ -755,23 +756,6 @@ async def main(config=None, from_main=True):
         filebeat_changed = False
         if await configure_filebeat(silent=args.silent, test=args.test):
             filebeat_changed = True
-            # Delete scheduled task on Windows
-            if operating_system == "Windows":
-                task_name = "Filebeat Task"
-
-                # Check if the task already exists
-                task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
-                if "ERROR: The system cannot find the file specified." not in task_query.stderr:
-                    # Delete the scheduled task
-                    subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
-                    print_or_log('info',"Scheduled task deleted successfully.")
-
-            # Delete cron job on Linux
-            if operating_system == "Linux":
-                script_path = os.path.abspath(__file__)
-                command = f"python3 {script_path} -silent"
-                remove_cron_job(command)
-                print_or_log('info',"Cron job deleted successfully.")
 
         # if filebeat_changed:
         certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())

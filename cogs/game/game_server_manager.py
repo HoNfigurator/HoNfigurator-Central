@@ -1006,7 +1006,7 @@ class GameServerManager:
             LOGGER.error(f"URL: {url} - Error occurred while extracting CRC from file: {e}")
             return None
 
-    async def initialise_patching_procedure(self, timeout=300, source='startup'):
+    async def initialise_patching_procedure(self, timeout=1000, source='startup'):
         if self.patching:
             LOGGER.warn("Patching is already in progress.")
             return
