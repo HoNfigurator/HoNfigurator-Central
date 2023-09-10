@@ -887,7 +887,8 @@ region=naeu
     def stop_proxy(self):
         if self._proxy_process:
             try:
-                self._proxy_process.terminate()
+                for p in self._proxy_process:
+                    p.terminate()
             except psutil.NoSuchProcess: # it doesn't exist, that's fine
                 pass
 
