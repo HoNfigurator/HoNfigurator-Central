@@ -857,12 +857,12 @@ region=naeu
                             if MISC.get_os_platform() == "linux":
                                 try:
                                     if i == 0:
-                                        proxy_config_path[i] = self.config.get_local_by_key('proxy_cmdline_game')
+                                        proxy_config_path[i] = " ".join(self.config.get_local_by_key('proxy_cmdline_game'))
                                     else:
-                                        proxy_config_path[i] = self.config.get_local_by_key('proxy_cmdline_voice')         
+                                        proxy_config_path[i] = " ".join(self.config.get_local_by_key('proxy_cmdline_voice')) 
                                 except KeyError:
                                     pass # cmdline not found, that's OK
-                                
+
                             if proxy_config_path[i] in " ".join(process.cmdline()):
                                 self._proxy_process[i] = process
                                 LOGGER.debug(f"GameServer #{self.id} Proxy process found: {self._proxy_process}")
@@ -876,13 +876,17 @@ region=naeu
                             self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
                         else:
                             try:
-                                self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), self.config.get_local_by_key('proxy_cmdline_game')[0])
+                                self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(proxy_config_path[i], self.config.get_local_by_key('proxy_cmdline_game')[0])
                             except KeyError:
                                 pass # cmdline is not defined, that's ok
                         if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
                     except Exception:
                         LOGGER.error(f"An error occurred while loading the PID from the last saved value: {proxy_pid}. {traceback.format_exc()}")
-                        self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
+                        if MISC.get_os_platform() == "win32":
+                            self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
+                        else:
+                            self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(proxy_config_path[i], self.config.get_local_by_key('proxy_cmdline_game')[0])
+                        
                         if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
 
             while not stop_event.is_set() and self.enabled and self.config.local['params']['man_enableProxy']:
