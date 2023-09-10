@@ -104,7 +104,7 @@ class SetupEnvironment:
                 "svr_location": self.get_server_region(),
                 "man_use_cowmaster":False,
                 "svr_restart_between_games": False,
-                "man_thirdPartyProxy": False,
+                "man_thirdPartyProxy": "",
                 "man_proxyPortIncrement": 10000
             },
             "application_data": {
