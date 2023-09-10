@@ -807,6 +807,7 @@ region=naeu
         if not cmd:
             return
 
+        LOGGER.debug(f"GameServer #{self.id} - Proxy commandline: {cmd}")
         return await asyncio.create_subprocess_exec(
             *cmd,
             stdout=asyncio.subprocess.PIPE,
