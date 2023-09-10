@@ -144,8 +144,8 @@ class ConfigManagement():
 
             else:
                 if self.gbl['hon_data']['man_thirdPartyProxy'] == "quilkin":
-                    self.local['config']['proxy_game_cmdline'] = ["quilkin","--no-admin","proxy","-p",self.local['params']['svr_proxyPort'],"--to",f"127.0.0.1:{self.local['params']['svr_port']}"]
-                    self.local['config']['proxy_voice_cmdline'] = ["quilkin","--no-admin","proxy","-p",self.local['params']['svr_proxyRemoteVoicePort'],"--to",f"127.0.0.1:{self.local['params']['svr_proxyLocalVoicePort']}"]
+                    self.local['config']['proxy_game_cmdline'] = ["quilkin","--no-admin","proxy","-p",f"{self.local['params']['svr_proxyPort']}","--to",f"127.0.0.1:{self.local['params']['svr_port']}"]
+                    self.local['config']['proxy_voice_cmdline'] = ["quilkin","--no-admin","proxy","-p",f"{self.local['params']['svr_proxyRemoteVoicePort']}","--to",f"127.0.0.1:{self.local['params']['svr_proxyLocalVoicePort']}"]
 
         if self.get_global_by_key('svr_override_affinity'):
             self.local['params'].pop('host_affinity', None)  # Remove 'host_affinity' key if svr_override_affinity is True
