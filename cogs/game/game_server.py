@@ -876,7 +876,7 @@ region=naeu
                             self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
                         else:
                             try:
-                                self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(proxy_config_path[i], self.config.get_local_by_key('proxy_cmdline_game')[0])
+                                self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(proxy_config_path[i], self.config.local['config']['proxy_cmdline_game'][0])
                             except KeyError:
                                 pass # cmdline is not defined, that's ok
                         if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
@@ -885,7 +885,7 @@ region=naeu
                         if MISC.get_os_platform() == "win32":
                             self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
                         else:
-                            self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(proxy_config_path[i], self.config.get_local_by_key('proxy_cmdline_game')[0])
+                            self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(proxy_config_path[i], self.config.local['config']['proxy_cmdline_game'][0])
                         
                         if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
 
