@@ -849,15 +849,16 @@ region=naeu
                     async with aiofiles.open(f"{proxy_config_path[i]}.pid", 'r') as proxy_pid_file:
                         proxy_pid = await proxy_pid_file.read()
                     try:
-                        proxy_pid = int(proxy_pid)
-                        process = psutil.Process(proxy_pid)
-                        # Check if the process command line matches the one you're using to start the proxy
-                        if proxy_config_path[i] in " ".join(process.cmdline()):
-                            self._proxy_process[i] = process
-                            LOGGER.debug(f"GameServer #{self.id} Proxy process found: {self._proxy_process}")
-                        else:
-                            LOGGER.debug(f"GameServer #{self.id} Proxy pid found however the process description didn't match. Not the right PID, just a collision.")
-                            self._proxy_process[i] = None
+                        if proxy_pid:
+                            proxy_pid = int(proxy_pid)
+                            process = psutil.Process(proxy_pid)
+                            # Check if the process command line matches the one you're using to start the proxy
+                            if proxy_config_path[i] in " ".join(process.cmdline()):
+                                self._proxy_process[i] = process
+                                LOGGER.debug(f"GameServer #{self.id} Proxy process found: {self._proxy_process}")
+                            else:
+                                LOGGER.debug(f"GameServer #{self.id} Proxy pid found however the process description didn't match. Not the right PID, just a collision.")
+                                self._proxy_process[i] = None
                     except psutil.NoSuchProcess:
                         LOGGER.debug(f"GameServer #{self.id} Previous proxy process with PID {proxy_pid} was not found.")
                         self._proxy_process[i] = None
