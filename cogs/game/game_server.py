@@ -877,12 +877,13 @@ region=naeu
                         else:
                             proxy_type = "game" if i == 0 else "voice"
                             self._proxy_process[i] = await self.execute_linux_proxy(proxy_type)
-
-                        async with aiofiles.open(f"{config_path}.pid", 'w') as proxy_pid_file:
-                            await proxy_pid_file.write(str(self._proxy_process[i].pid))
                         
-                        await asyncio.sleep(0.1)
-                        self._proxy_process[i] = psutil.Process(self._proxy_process[i].pid)
+                        if self._proxy_process[i]:
+                            async with aiofiles.open(f"{config_path}.pid", 'w') as proxy_pid_file:
+                                await proxy_pid_file.write(str(self._proxy_process[i].pid))
+                            
+                            await asyncio.sleep(0.1)
+                            self._proxy_process[i] = psutil.Process(self._proxy_process[i].pid)
 
                 # Monitor the processes with psutil
                 all_processes_running = all([process and process.is_running() for process in self._proxy_process if process])
