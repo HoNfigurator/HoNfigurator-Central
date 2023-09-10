@@ -30,8 +30,8 @@ class SetupEnvironment:
             self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
-        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity','man_enableProxy']
-        self.LINUX_SPECIFIC_CONFIG_ITEMS = ['man_use_cowmaster']
+        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity']
+        self.LINUX_SPECIFIC_CONFIG_ITEMS = ['man_use_cowmaster','man_thirdPartyProxy']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
         self.default_configuration = self.get_default_hon_configuration()
@@ -86,7 +86,6 @@ class SetupEnvironment:
                 "svr_login": "",
                 "svr_password": "",
                 "svr_name": "",
-                "svr_location": self.get_server_region(),
                 "svr_priority": "HIGH",
                 "svr_total": int(MISC.get_cpu_count() / 2),
                 "svr_total_per_core": 1.0,
@@ -101,8 +100,12 @@ class SetupEnvironment:
                 "svr_managerPort": 1134,
                 "svr_startup_timeout": 180,
                 "svr_api_port": 5000,
+                "static_svr_ip": "0.0.0.0",
+                "svr_location": self.get_server_region(),
                 "man_use_cowmaster":False,
-                "svr_restart_between_games": False
+                "svr_restart_between_games": False,
+                "man_thirdPartyProxy": False,
+                "man_proxyPortIncrement": 10000
             },
             "application_data": {
                 "timers": {
@@ -567,7 +570,7 @@ class SetupEnvironment:
         self.hon_data['hon_artefacts_directory'] = hon_artefacts_directory
         self.hon_data['hon_replays_directory'] = hon_replays_directory
         self.hon_data['hon_logs_directory'] = hon_logs_directory
-        self.hon_data['svr_ip'] = MISC.get_public_ip()
+        self.hon_data['svr_ip'] = MISC.get_public_ip() if self.hon_data['static_svr_ip'] == '0.0.0.0' else self.hon_data['static_svr_ip']
         self.hon_data['hon_executable_path'] = self.hon_data['hon_install_directory'] / file_name
         self.hon_data['hon_executable_name'] = file_name
         self.hon_data['svr_version'] = MISC.get_svr_version(

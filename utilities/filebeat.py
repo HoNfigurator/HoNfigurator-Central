@@ -516,7 +516,11 @@ async def configure_filebeat(silent=False,test=False):
         yaml_config = yaml.dump(filebeat_config)
         return yaml_config.encode('utf-8')
 
-    external_ip = await get_public_ip()
+    if global_config and global_config['hon_data']['static_svr_ip'] != "0.0.0.0":
+        external_ip = global_config['hon_data']['static_svr_ip']
+    else:
+        external_ip = await get_public_ip()
+
     if not external_ip:
         print_or_log('error','Obtaining public IP address failed.')
 

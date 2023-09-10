@@ -30,6 +30,7 @@ class Misc:
         self.github_branch = self.get_current_branch_name()
         self.public_ip = self.lookup_public_ip()
         self.hon_version = None
+        self.supported_thirdparty_proxies = ['quilkin']
 
     def build_commandline_args(self, config_local, config_global, cowmaster=False):
         # Prepare the parameters
@@ -87,7 +88,10 @@ class Misc:
                                     if int(item.split(" ")[-1]) == slave_id:
                                         return [ proc ]
         return []
-
+    
+    def get_supported_thirdparty_proxies(self):
+        return self.supported_thirdparty_proxies
+    
     def get_proc(self, proc_name, slave_id=''):
         if sys.platform == "linux":
             return self.parse_linux_procs(proc_name, slave_id)
