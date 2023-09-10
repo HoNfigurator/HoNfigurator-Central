@@ -804,85 +804,88 @@ region=naeu
         )
 
     async def start_proxy(self):
-        if not self.config.local['params']['man_enableProxy']:
-            return # proxy isn't enabled
+        try:
+            if not self.config.local['params']['man_enableProxy']:
+                return # proxy isn't enabled
 
-        platform = MISC.get_os_platform()
-        if platform == "win32":
-            proxy_check_path = self.global_config['hon_data']['hon_install_directory'] / "proxy.exe"
-            if not exists(proxy_check_path):
-                raise HoNInvalidServerBinaries(f"Missing proxy.exe. Please obtain proxy.exe from the wasserver package and copy it into {self.global_config['hon_data']['hon_install_directory']}. https://github.com/wasserver/wasserver")
-        elif platform != "linux":
-            raise HoNCompatibilityError(f"Unknown OS: {platform}. We cannot run the proxy.")
-        
-        proxy_config_path = []
-        if platform == "win32":
-            if not exists(self.global_config['hon_data']['hon_install_directory'] / "proxy.exe"):
-                raise HoNInvalidServerBinaries(f"Missing proxy.exe. Please obtain proxy.exe from the wasserver package and copy it into {self.global_config['hon_data']['hon_install_directory']}. https://github.com/wasserver/wasserver")
-            windows_proxy_config_path, matches_existing = await self.create_proxy_config()
-            proxy_config_path.append(windows_proxy_config_path)
+            platform = MISC.get_os_platform()
+            if platform == "win32":
+                proxy_check_path = self.global_config['hon_data']['hon_install_directory'] / "proxy.exe"
+                if not exists(proxy_check_path):
+                    raise HoNInvalidServerBinaries(f"Missing proxy.exe. Please obtain proxy.exe from the wasserver package and copy it into {self.global_config['hon_data']['hon_install_directory']}. https://github.com/wasserver/wasserver")
+            elif platform != "linux":
+                raise HoNCompatibilityError(f"Unknown OS: {platform}. We cannot run the proxy.")
+            
+            proxy_config_path = []
+            if platform == "win32":
+                if not exists(self.global_config['hon_data']['hon_install_directory'] / "proxy.exe"):
+                    raise HoNInvalidServerBinaries(f"Missing proxy.exe. Please obtain proxy.exe from the wasserver package and copy it into {self.global_config['hon_data']['hon_install_directory']}. https://github.com/wasserver/wasserver")
+                windows_proxy_config_path, matches_existing = await self.create_proxy_config()
+                proxy_config_path.append(windows_proxy_config_path)
 
-            if not matches_existing:
-                # the config file has changed.
-                if self._proxy_process[-1]:
-                    if self._proxy_process[-1].is_running(): self._proxy_process[-1].terminate()
-                    self._proxy_process[-1] = None
-        elif platform == "linux":
-            linux_game_proxy_config_path = os.path.join(self.global_config['hon_data']['hon_artefacts_directory'] / f'linuxProxy-game-{self.id}')
-            linux_voice_proxy_config_path = os.path.join(self.global_config['hon_data']['hon_artefacts_directory'] / f'linuxProxy-voice-{self.id}')
-            proxy_config_path.append(linux_game_proxy_config_path)
-            proxy_config_path.append(linux_voice_proxy_config_path)
+                if not matches_existing:
+                    # the config file has changed.
+                    if self._proxy_process[0]:
+                        if self._proxy_process[0].is_running(): self._proxy_process[0].terminate()
+                        self._proxy_process[0] = None
+            elif platform == "linux":
+                linux_game_proxy_config_path = os.path.join(self.global_config['hon_data']['hon_artefacts_directory'] / f'linuxProxy-game-{self.id}')
+                linux_voice_proxy_config_path = os.path.join(self.global_config['hon_data']['hon_artefacts_directory'] / f'linuxProxy-voice-{self.id}')
+                proxy_config_path.append(linux_game_proxy_config_path)
+                proxy_config_path.append(linux_voice_proxy_config_path)
 
-        for i in range(len(proxy_config_path)):
-            if exists(f"{proxy_config_path[i]}.pid"):
-                async with aiofiles.open(f"{proxy_config_path[i]}.pid", 'r') as proxy_pid_file:
-                    proxy_pid = await proxy_pid_file.read()
-                try:
-                    proxy_pid = int(proxy_pid)
-                    process = psutil.Process(proxy_pid)
-                    # Check if the process command line matches the one you're using to start the proxy
-                    if proxy_config_path[i] in " ".join(process.cmdline()):
-                        self._proxy_process.insert(i, process)
-                        LOGGER.debug(f"GameServer #{self.id} Proxy process found: {self._proxy_process}")
-                    else:
-                        LOGGER.debug(f"GameServer #{self.id} Proxy pid found however the process description didn't match. Not the right PID, just a collision.")
+            for i in range(len(proxy_config_path)):
+                if exists(f"{proxy_config_path[i]}.pid"):
+                    async with aiofiles.open(f"{proxy_config_path[i]}.pid", 'r') as proxy_pid_file:
+                        proxy_pid = await proxy_pid_file.read()
+                    try:
+                        proxy_pid = int(proxy_pid)
+                        process = psutil.Process(proxy_pid)
+                        # Check if the process command line matches the one you're using to start the proxy
+                        if proxy_config_path[i] in " ".join(process.cmdline()):
+                            self._proxy_process[i] = process
+                            LOGGER.debug(f"GameServer #{self.id} Proxy process found: {self._proxy_process}")
+                        else:
+                            LOGGER.debug(f"GameServer #{self.id} Proxy pid found however the process description didn't match. Not the right PID, just a collision.")
+                            self._proxy_process[i] = None
+                    except psutil.NoSuchProcess:
+                        LOGGER.debug(f"GameServer #{self.id} Previous proxy process with PID {proxy_pid} was not found.")
                         self._proxy_process[i] = None
-                except psutil.NoSuchProcess:
-                    LOGGER.debug(f"GameServer #{self.id} Previous proxy process with PID {proxy_pid} was not found.")
-                    self._proxy_process[i] = None
-                    self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
-                    if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
-                except Exception:
-                    LOGGER.error(f"An error occurred while loading the PID from the last saved value: {proxy_pid}. {traceback.format_exc()}")
-                    self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
-                    if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
+                        self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
+                        if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
+                    except Exception:
+                        LOGGER.error(f"An error occurred while loading the PID from the last saved value: {proxy_pid}. {traceback.format_exc()}")
+                        self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(os.path.normpath(proxy_config_path[i]), 'proxy.exe')
+                        if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
 
-        while not stop_event.is_set() and self.enabled and self.config.local['params']['man_enableProxy']:
-            for i, config_path in enumerate(proxy_config_path):
-                if not self._proxy_process[i]:
-                    if platform == "win32":
-                        self._proxy_process[i] = await self.execute_windows_proxy(config_path)
-                    else:
-                        proxy_type = "game" if i == 0 else "voice"
-                        self._proxy_process[i] = await self.execute_linux_proxy(proxy_type)
+            while not stop_event.is_set() and self.enabled and self.config.local['params']['man_enableProxy']:
+                for i, config_path in enumerate(proxy_config_path):
+                    if not self._proxy_process[i]:
+                        if platform == "win32":
+                            self._proxy_process[i] = await self.execute_windows_proxy(config_path)
+                        else:
+                            proxy_type = "game" if i == 0 else "voice"
+                            self._proxy_process[i] = await self.execute_linux_proxy(proxy_type)
 
-                    async with aiofiles.open(f"{config_path}.pid", 'w') as proxy_pid_file:
-                        await proxy_pid_file.write(str(self._proxy_process[i].pid))
-                    
-                    await asyncio.sleep(0.1)
-                    self._proxy_process[i] = psutil.Process(self._proxy_process[i].pid)
+                        async with aiofiles.open(f"{config_path}.pid", 'w') as proxy_pid_file:
+                            await proxy_pid_file.write(str(self._proxy_process[i].pid))
+                        
+                        await asyncio.sleep(0.1)
+                        self._proxy_process[i] = psutil.Process(self._proxy_process[i].pid)
 
-            # Monitor the processes with psutil
-            all_processes_running = all([process and process.is_running() for process in self._proxy_process if process])
-            while not stop_event.is_set() and all_processes_running and self.enabled:
-                await asyncio.sleep(1)  # Check every second
+                # Monitor the processes with psutil
                 all_processes_running = all([process and process.is_running() for process in self._proxy_process if process])
+                while not stop_event.is_set() and all_processes_running and self.enabled:
+                    await asyncio.sleep(1)  # Check every second
+                    all_processes_running = all([process and process.is_running() for process in self._proxy_process if process])
 
-            if self.enabled:
-                LOGGER.warn(f"Proxy (GameServer #{self.id}) crashed. Restarting...")
-                for i, process in enumerate(self._proxy_process):
-                    if not process or not process.is_running():
-                        self._proxy_process[i] = None
+                if self.enabled:
+                    LOGGER.warn(f"Proxy (GameServer #{self.id}) crashed. Restarting...")
+                    for i, process in enumerate(self._proxy_process):
+                        if not process or not process.is_running():
+                            self._proxy_process[i] = None
+        except Exception:
+            LOGGER.error(traceback.format_exc())
 
     def stop_proxy(self):
         if self._proxy_process:
