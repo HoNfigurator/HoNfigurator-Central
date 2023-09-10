@@ -862,7 +862,8 @@ region=naeu
                                         proxy_config_path[i] = " ".join(self.config.local['config']['proxy_cmdline_voice']) 
                                 except KeyError:
                                     pass # cmdline not found, that's OK
-
+                            LOGGER.debug(f"GameServer #{self.id} - Proxy commandline search: {proxy_config_path[i]}")
+                            LOGGER.debug(f"GameServer #{self.id} - Proxy commandline found: {' '.join(process.cmdline())}")
                             if proxy_config_path[i] in " ".join(process.cmdline()):
                                 self._proxy_process[i] = process
                                 LOGGER.debug(f"GameServer #{self.id} Proxy process found: {self._proxy_process}")
@@ -889,7 +890,7 @@ region=naeu
                                 self._proxy_process[i] = MISC.find_process_by_cmdline_keyword(proxy_config_path[i], self.config.local['config']['proxy_cmdline_game'][0])
                             except KeyError:
                                 pass
-                            
+
                         if self._proxy_process[i]: LOGGER.debug(f"GameServer #{self.id} Found existing proxy PID via a proxy process with a matching description.")
 
             while not stop_event.is_set() and self.enabled and self.config.local['params']['man_enableProxy']:
