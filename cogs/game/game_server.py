@@ -888,7 +888,8 @@ region=naeu
         if self._proxy_process:
             try:
                 for p in self._proxy_process:
-                    p.terminate()
+                    if p:
+                        p.terminate()
             except psutil.NoSuchProcess: # it doesn't exist, that's fine
                 pass
 
