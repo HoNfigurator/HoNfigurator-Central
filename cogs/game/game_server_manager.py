@@ -643,9 +643,9 @@ class GameServerManager:
                 game_server.enable_server()
     
     async def config_change_hook_actions(self):
-        if not self.global_config['hon_data']['man_use_cowmaster'] and self.cowmaster.client_connection:
+        if not self.global_config['hon_data'].get('man_use_cowmaster') and self.cowmaster.client_connection:
             self.cowmaster.stop_cow_master()
-        elif self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
+        elif self.global_config['hon_data'].get('man_use_cowmaster') and not self.cowmaster.client_connection:
             await self.cowmaster.start_cow_master()
 
     async def remove_dynamic_game_server(self):
@@ -941,7 +941,7 @@ class GameServerManager:
                 if already_running:
                     LOGGER.info(f"GameServer #{game_server.id} with public ports {game_server.get_public_game_port()}/{game_server.get_public_voice_port()} already running.")
 
-            if self.global_config['hon_data']['man_use_cowmaster'] and not self.cowmaster.client_connection:
+            if self.global_config['hon_data'].get('man_use_cowmaster') and not self.cowmaster.client_connection:
                 await self.cowmaster.start_cow_master()
 
             # setup or verify filebeat configuration for match log submission
@@ -959,7 +959,7 @@ class GameServerManager:
                     print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
                 raise RuntimeError(msg)
 
-            if self.global_config['hon_data']['man_use_cowmaster']:
+            if self.global_config['hon_data'].get('man_use_cowmaster'):
                 if not self.cowmaster.client_connection:
                     if launch or config_reload:
                         i = 0

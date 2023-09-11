@@ -137,7 +137,7 @@ class GameServer:
         except psutil.NoSuchProcess:
             return False
         self.set_configuration()
-        if self.global_config['hon_data']['man_use_cowmaster']:
+        if self.global_config['hon_data'].get('man_use_cowmaster'):
             new_params = MISC.build_commandline_args(data_handler.get_cowmaster_configuration(self.global_config['hon_data']), self.global_config, cowmaster=True)
         else:
             new_params = MISC.build_commandline_args(self.config.local, self.global_config)
@@ -515,7 +515,7 @@ class GameServer:
         coro = self.start_proxy
         self.schedule_task(coro,'proxy_task', coro_bracket=True)
 
-        if self.global_config['hon_data']['man_use_cowmaster']:
+        if self.global_config['hon_data'].get('man_use_cowmaster'):
             await self.manager_event_bus.emit('fork_server_from_cowmaster', self)
 
         else:
@@ -697,7 +697,7 @@ class GameServer:
                 if status:
                     last_good_proc = proc
                 else:
-                    if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']) and not self.global_config['hon_data']['man_use_cowmaster']:
+                    if not MISC.check_port(self.config.get_local_configuration()['params']['svr_proxyLocalVoicePort']) and not self.global_config['hon_data'].get('man_use_cowmaster'):
                         proc.terminate()
                         LOGGER.debug(f"Terminated GameServer #{self.id} as it has not started up correctly.")
                         running_procs.remove(proc)
