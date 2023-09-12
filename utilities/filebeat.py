@@ -364,11 +364,13 @@ async def configure_filebeat(silent=False,test=False):
         if operating_system == "Windows":
             slave_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "*.clog"
             match_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "M*.log"
+            diagnostic_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "diagnostics" / "M*.log"
         else:
             slave_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "*.clog"
             match_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "M*.log"
+            diagnostic_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "diagnostics" / "M*.log"
         
-        return slave_log, match_log
+        return slave_log, match_log, diagnostic_log
     
     def resolve_filestream_indentation(text, target):
         count = 0
@@ -381,7 +383,7 @@ async def configure_filebeat(silent=False,test=False):
             new_text += line + '\n'
         return new_text
     
-    def perform_config_replacements(svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
+    def perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         server_values = {
             'Name': svr_name,
             'Launcher': launcher,
@@ -434,6 +436,22 @@ async def configure_filebeat(silent=False,test=False):
                 'Log_Type': 'match'
             }
         }
+
+        filebeat_inputs['diagnostic_logs'] = \
+        {
+            'type': 'filestream',
+            'id': 'diagnostic_logs',
+            'enabled': True,
+            'paths': [str(Path(diagnostic_log))],
+            'ignore_older': '92h',
+            'scan_frequency': '60s',
+            'exclude_files': '[".gz$"]',
+            'fields_under_root': True,
+            'fields': {
+                'Server': server_values,
+                'Log_Type': 'diagnostic'
+            }
+        }
         
         if global_config:
             if operating_system == "Windows" and global_config['hon_data']['man_enableProxy']:
@@ -482,11 +500,13 @@ async def configure_filebeat(silent=False,test=False):
         if operating_system == "Windows":
             filebeat_inputs['slave_logs']['encoding'] = 'utf-16le'
             filebeat_inputs['match_logs']['encoding'] = 'utf-16le'
+            filebeat_inputs['diagnostic_logs']['encoding'] = 'utf-16le'
             if 'proxy_logs' in filebeat_inputs:
                 filebeat_inputs['proxy_logs']['encoding'] = 'utf-8' 
         else:
             filebeat_inputs['slave_logs']['charset'] = 'BINARY'
             filebeat_inputs['match_logs']['charset'] = 'BINARY'
+            filebeat_inputs['diagnostic_logs']['charset'] = 'BINARY'
         if 'honfigurator_logs' in filebeat_inputs:
             filebeat_inputs['honfigurator_logs']['encoding'] = 'utf-8'
 
@@ -503,7 +523,8 @@ async def configure_filebeat(silent=False,test=False):
                 'hosts': 'hon-elk.honfigurator.app:5044',
                 'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
                 'ssl.certificate': str(Path(destination_folder) / "client.crt"),
-                'ssl.key': str(Path(destination_folder) / "client.key")
+                'ssl.key': str(Path(destination_folder) / "client.key"),
+                'compression_level': 3
             },
             'processors': [
                 {'add_host_metadata': {'when.not.contains.tags': 'forwarded'}},
@@ -550,6 +571,7 @@ async def configure_filebeat(silent=False,test=False):
     svr_desc = None
     slave_log = None
     match_log = None
+    diagnostic_log = None
 
     if global_config is not None and 'hon_data' in global_config:
         svr_name = global_config['hon_data'].get('svr_name')
@@ -558,6 +580,7 @@ async def configure_filebeat(silent=False,test=False):
         
         slave_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "*.clog")
         match_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "*.log")
+        diagnostic_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "diagnostics" / "*.log")
 
     if svr_name is None or svr_location is None:
     
@@ -582,7 +605,7 @@ async def configure_filebeat(silent=False,test=False):
     svr_name = svr_name.rsplit(' ', 2)[0] if space_count >= 2 else svr_name
     if not svr_location: svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
 
-    if not slave_log: slave_log, match_log = get_log_paths(process)
+    if not slave_log: slave_log, match_log, diagnostic_log = get_log_paths(process)
     if not svr_desc: svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
 
@@ -603,7 +626,7 @@ async def configure_filebeat(silent=False,test=False):
         print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
         return
         
-    filebeat_config = perform_config_replacements(svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
+    filebeat_config = perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
 
     temp_dir = tempfile.TemporaryDirectory()
     temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
