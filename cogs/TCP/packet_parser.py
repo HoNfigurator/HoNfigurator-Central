@@ -197,7 +197,6 @@ class GameManagerParser:
                 'maxping': maxping
             })
         # Update game dictionary with player information and print
-        print(clients)
         if game_server:
             game_server.game_state.update({'players':clients})
 
