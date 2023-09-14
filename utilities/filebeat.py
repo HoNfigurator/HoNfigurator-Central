@@ -443,7 +443,7 @@ async def configure_filebeat(silent=False,test=False):
             'id': 'diagnostic_logs',
             'enabled': True,
             'paths': [str(Path(diagnostic_log))],
-            'ignore_older': '92h',
+            'ignore_older': '24h',
             'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
