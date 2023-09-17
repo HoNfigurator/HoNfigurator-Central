@@ -333,7 +333,7 @@ async def get_discord_user_id_from_api(discord_id):
         return None
 
 async def get_public_ip():
-    providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
+    providers = ['http://4.ident.me', 'https://4.ident.me', 'https://api.ipify.org', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
     timeout = aiohttp.ClientTimeout(total=5)  # Set the timeout for the request in seconds
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
