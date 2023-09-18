@@ -87,7 +87,7 @@ class AutoPingListener(asyncio.DatagramProtocol):
             self.transport.sendto(response, addr)
 
         except Exception:
-            LOGGER.exception(traceback.format_exc())
+            LOGGER.error(traceback.format_exc())
 
     async def start_listener(self):
         """
