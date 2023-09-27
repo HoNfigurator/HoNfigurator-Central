@@ -402,7 +402,8 @@ async def configure_filebeat(silent=False,test=False):
             'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch'],
             'GitHub_Branch': MISC.github_branch,
             'HoN_Server_Version': MISC.get_svr_version(global_config['hon_data']['hon_executable_path']),
-            'HoNfigurator_API_Port': global_config['hon_data']['svr_api_port']
+            'HoNfigurator_API_Port': global_config['hon_data']['svr_api_port'],
+            'Proxy_Enabled': global_config['hon_data']['man_enableProxy'] if 'man_enableProxy' in global_config else False
         }
         filebeat_inputs = {}
         filebeat_inputs['slave_logs'] = \
