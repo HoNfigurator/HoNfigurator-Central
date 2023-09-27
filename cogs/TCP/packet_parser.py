@@ -155,25 +155,46 @@ class GameManagerParser:
         data = packet[53:]                                              # slice the packet to get player data section
         ip_pattern = re.compile(rb'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')    # define regex pattern for matching IP addresses
 
-        # Parse the player data sections
+        cursor = 1
+        num_players = data[0]
+
         clients = []
         for idx, ip_match in enumerate(ip_pattern.finditer(data)):
             # Extract IP address, username, account ID, and location from the player data section
-            ip_start, ip_end = ip_match.span()
-            name_start = data[ip_end:].find(b'\x00') + ip_end
-            name_end = data[name_start+1:].find(b'\x00') + name_start + 1
-            name = data[name_start:name_end].decode('utf-8').replace('\x00', '')
-            account_id = int.from_bytes(data[ip_start-4:ip_start], byteorder='little')
-            location_start = data[name_end+1:].find(b'\x00') + name_end + 1
-            location_end = data[location_start+1:].find(b'\x00') + location_start + 1
-            location = data[location_start:location_end-1].decode('utf-8') if location_start > name_end+1 else ''
+            cursor, ip_end = ip_match.span()
+
+            account_id = int.from_bytes(data[cursor-4:cursor], byteorder='little')
+            
+            # Extract IP address
+            ip_end = data[cursor:].find(b'\x00') + cursor
+            ip = data[cursor:ip_end].decode('utf-8')
+            cursor = ip_end + 1
+            
+            # Extract name
+            name_end = data[cursor:].find(b'\x00') + cursor
+            name = data[cursor:name_end].decode('utf-8')
+            cursor = name_end + 1
+            
+            # Extract possible location
+            location_end = data[cursor:].find(b'\x00') + cursor
+            location = data[cursor:location_end].decode('utf-8')
+            cursor = location_end + 1
+            
+            # Extract shorts for statistics
+            minping = int.from_bytes(data[cursor:cursor+2], byteorder='little')
+            avgping = int.from_bytes(data[cursor+2:cursor+4], byteorder='little')
+            maxping = int.from_bytes(data[cursor+4:cursor+6], byteorder='little')
+            cursor += 6  # Move cursor ahead by 6 bytes (3 shorts)
 
             # Append extracted data to the clients list as a dictionary
             clients.append({
                 'account_id': account_id,
                 'name': name,
                 'location': location,
-                'ip': data[ip_start:ip_end].decode('utf-8')
+                'ip': ip,
+                'minping': minping,
+                'avgping': avgping,
+                'maxping': maxping
             })
         # Update game dictionary with player information and print
         if game_server:
