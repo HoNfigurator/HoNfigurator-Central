@@ -293,6 +293,7 @@ async def request_client_certificate(svr_name, filebeat_path):
                 # Construct the command for certificate renewal
                 result = step_certificate.renew_certificate(crt_file_path,key_file_path)
                 if (isinstance(result,bool) and result) or result.returncode == 0:
+                    restart_filebeat(filebeat_changed=True,silent=False)
                     return True
                 else:
                     # Certificate request failed
@@ -665,7 +666,7 @@ async def run_command(command_list, success_message=None):
         print(f"Error: {stderr.decode()}")
         return process
 
-async def restart_filebeat(filebeat_changed, silent):
+async def restart_filebeat(filebeat_changed, silent=False):
     async def restart():
         if operating_system == "Windows":
             process_name = "filebeat.exe"
