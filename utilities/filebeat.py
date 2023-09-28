@@ -327,10 +327,10 @@ async def get_discord_user_id_from_api(discord_id):
                     data = await response.json()
                     return data.get('username')
                 else:
-                    print(f"Failed to get Discord username for ID: {discord_id}")
+                    print_or_log("error","Failed to get Discord username for ID: {discord_id}")
                     return None
     except aiohttp.ClientError as e:
-        print(f"Error occurred while making the API request: {e}")
+        print_or_log("error","Error occurred while making the API request: {e}")
         return None
 
 async def get_public_ip():
@@ -511,6 +511,9 @@ async def configure_filebeat(silent=False,test=False):
             filebeat_inputs['diagnostic_logs']['charset'] = 'BINARY'
         if 'honfigurator_logs' in filebeat_inputs:
             filebeat_inputs['honfigurator_logs']['encoding'] = 'utf-8'
+        
+        if global_config and not global_config['application_data']['filebeat']['send_diagnostics_data']:
+            del filebeat_inputs['diagnostic_logs']
 
         filebeat_config = {
             'filebeat.inputs': list(filebeat_inputs.values()),
@@ -659,12 +662,10 @@ async def run_command(command_list, success_message=None):
     process = await asyncio.create_subprocess_shell(' '.join(command_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     stdout, stderr = await process.communicate()
     if process.returncode == 0:
-        if success_message: print(success_message)
+        if success_message: print_or_log(success_message)
         return process
     else:
-        print(f"Command: {' '.join(command_list)}")
-        print(f"Return code: {process.returncode}")
-        print(f"Error: {stderr.decode()}")
+        print_or_log('error',f"Command: {' '.join(command_list)}\nReturn code: {process.returncode}\nError: {stderr.decode()}")
         return process
 
 async def restart_filebeat(filebeat_changed, silent=False):

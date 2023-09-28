@@ -127,6 +127,9 @@ class SetupEnvironment:
                 "longterm_storage": {
                     "active": False,
                     "location": ""
+                },
+                "filebeat": {
+                    "send_diagnostics_data" : True
                 }
             }
         }
