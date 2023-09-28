@@ -337,6 +337,17 @@ class Misc:
             if result.stderr and result.returncode != 0:
                 LOGGER.error(f"Error encountered while updating: {result.stderr}")
 
+                # If the error is due to divergent branches, reset the branch
+                if "hint: You have divergent branches" in result.stderr:
+                    current_branch = self.get_current_branch_name()
+                    LOGGER.warning(f"Detected divergent branches. Resetting {current_branch} to match remote...")
+                    reset_result = subprocess.run(["git", "reset", "--hard", f"origin/{current_branch}"], text=True, capture_output=True)
+
+                    if reset_result.stderr:
+                        LOGGER.error(f"Error resetting branch {current_branch}: {reset_result.stderr}")
+                    else:
+                        LOGGER.info(f"Successfully reset {current_branch} to match remote.")
+
             # Check if the update was successful
             if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
                 LOGGER.info("Update successful. Relaunching the code...")
