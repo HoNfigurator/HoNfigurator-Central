@@ -4,6 +4,7 @@ import time
 from os.path import isfile
 from pathlib import Path
 import subprocess
+from cogs.handlers.mqtt import MQTTHandler
 
 os.system('')
 
@@ -48,7 +49,7 @@ import asyncio
 import argparse
 
 #   This must be first, to initialise logging which all other classes rely on.
-from cogs.misc.logger import get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
+from cogs.misc.logger import get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup,set_mqtt,get_mqtt
 set_home(HOME_PATH)
 set_logger()
 
@@ -97,7 +98,11 @@ async def main():
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
     jobs.setup_tasks()
-    # run_continuously()
+    
+    # initialise MQTT
+    mqtt = MQTTHandler(global_config = global_config)
+    mqtt.connect()
+    set_mqtt(mqtt)
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
@@ -158,6 +163,9 @@ if __name__ == "__main__":
         stop_event.set()
     except asyncio.CancelledError:
         pass
+    
+    if get_mqtt():
+        get_mqtt().disconnect()
 
     if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
     sys.exit(0)

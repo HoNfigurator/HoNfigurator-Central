@@ -3,7 +3,7 @@ import psutil
 import asyncio
 import os
 
-from cogs.handlers.data_handler import get_cowmaster_configuration
+from cogs.handlers.data_handler import get_cowmaster_configuration, ConfigManagement
 from cogs.misc.logger import get_logger, get_misc
 from cogs.handlers.events import stop_event
 from cogs.game.game_server import GameState
@@ -16,8 +16,10 @@ class CowMaster:
     def __init__(self, port, global_config):
         self.port = port
         self.id = 0
+        self.name = f"{global_config['hon_data']['svr_name']}-cowmaster"
         self.global_config = global_config
         self.enabled = False
+        self.set_configuration()
 
         self.client_connection = None
         self.cowmaster_cmdline = get_cowmaster_configuration(self.global_config.get("hon_data"))
@@ -30,7 +32,7 @@ class CowMaster:
         self._proc_hook = None
         self.status_received = asyncio.Event()
 
-        self.game_state = GameState()
+        self.game_state = GameState(self.id, self.config.local)
         self.reset_cowmaster_state()
         self.game_state.add_listener(self.on_game_state_change)
 
@@ -41,6 +43,9 @@ class CowMaster:
             LOGGER.warn("CowMaster - Not yet established connection to manager.")
             return
         await self.client_connection.send_packet(game_server.get_fork_bytes(), send_len=True)
+
+    def set_configuration(self):
+        self.config = ConfigManagement(self.id,self.global_config)
 
     async def start_cow_master(self):
         """

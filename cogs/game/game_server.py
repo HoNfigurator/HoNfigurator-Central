@@ -10,7 +10,7 @@ import sys
 import os
 from datetime import datetime, timedelta
 from os.path import exists
-from cogs.misc.logger import get_logger, get_home, get_misc
+from cogs.misc.logger import get_logger, get_home, get_misc, get_mqtt
 from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, GamePhase
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
@@ -47,7 +47,7 @@ class GameServer:
         self.enabled = True # used to determine if the server should run
         self.delete_me = False # used to mark a server for deletion after it's been shutdown
         self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
-        self.game_manager_parser = GameManagerParser(self.id,LOGGER)
+        self.game_manager_parser = GameManagerParser(self.id,LOGGER,mqtt=get_mqtt())
         self.client_connection = None
         self.idle_disconnect_timer = 0
         self.game_in_progress = False
@@ -56,9 +56,11 @@ class GameServer:
         """
         self.status_received = asyncio.Event()
         self.server_closed = asyncio.Event()
-        self.game_state = GameState()
+        self.game_state = GameState(self.id, self.config.local)
         self.reset_game_state()
         self.game_state.add_listener(self.on_game_state_change)
+        self.game_state._state.update({'instance_id': self.id})
+        self.game_state._state.update({'instance_name': self.id})
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
         asyncio.create_task(self.load_gamestate_from_file(match_only=False))
         # Start the monitor_process method as a background task
@@ -239,16 +241,16 @@ class GameServer:
     def get_dict_value(self, attribute, default=None):
         if attribute in self.game_state._state:
             return self.game_state._state[attribute]
-        elif attribute in self.game_state._state['performance']:
-            return self.game_state._state['performance'][attribute]
+        elif attribute in self.game_state._performance:
+            return self.game_state._performance[attribute]
         else:
             return default
 
     def update_dict_value(self, attribute, value):
         if attribute in self.game_state._state:
             self.game_state._state[attribute] = value
-        elif attribute in self.game_state._state['performance']:
-            self.game_state._state['performance'][attribute] = value
+        elif attribute in self.game_state._performance:
+            return self.game_state._performance[attribute]
         else:
             raise KeyError(f"Attribute '{attribute}' not found in game_state or performance dictionary.")
 
@@ -264,16 +266,20 @@ class GameServer:
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
+
     async def load_gamestate_from_file(self,match_only):
+        # TODO: this function needs re-writing if we choose to continue to use it. It isn't used at the moment
         if exists(self.data_file):
             # Reading JSON
             async with aiofiles.open(self.data_file, "r") as f:
                 performance_data = json.loads(await f.read())
             if not match_only:
-                self.game_state._state['performance']['total_ingame_skipped_frames'] = performance_data['total_ingame_skipped_frames']
+                self.game_state._performance['total_ingame_skipped_frames'] = performance_data['total_ingame_skipped_frames']
             if self.game_state._state['current_match_id'] in performance_data:
-                self.game_state._state.update({'now_ingame_skipped_frames':self.game_state._state['now_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
+                self.game_state._performance.update({'now_ingame_skipped_frames':self.game_state._performance['total_ingame_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
+    
     async def save_gamestate_to_file(self):
+        # TODO: this function needs re-writing if we choose to continue to use it. It isn't used at the moment
         current_match_id = str(self.game_state._state['current_match_id'])
 
         if exists(self.data_file):
@@ -282,9 +288,9 @@ class GameServer:
                 performance_data = json.loads(await f.read())
 
             performance_data = {
-                'total_ingame_skipped_frames':self.game_state._state['performance']['total_ingame_skipped_frames'],
+                'total_ingame_skipped_frames':self.game_state._performance['total_ingame_skipped_frames'],
                 current_match_id: {
-                    'now_ingame_skipped_frames': self.game_state._state['performance'].get('now_ingame_skipped_frames', 0)
+                    'now_ingame_skipped_frames': self.game_state._performance.get('now_ingame_skipped_frames', 0)
                 }
             }
 
@@ -306,17 +312,24 @@ class GameServer:
         return getattr(self, attribute, default)
 
     def reset_skipped_frames(self):
-        self.game_state._state['performance']['now_ingame_skipped_frames'] = 0
+        self.game_state._performance['now_ingame_skipped_frames'] = 0
 
     def increment_skipped_frames(self, frames, time):
-        if self.get_dict_value('game_phase') == 6:  # Only log skipped frames when we're actually in a match.
-            self.game_state._state['performance']['total_ingame_skipped_frames'] += frames
-            self.game_state._state['performance']['now_ingame_skipped_frames'] += frames
-            self.game_state._state['skipped_frames_detailed'][time] = frames
+        # if self.get_dict_value('game_phase') == 6:  # Only log skipped frames when we're actually in a match.
+            self.game_state._performance['total_ingame_skipped_frames'] += frames
+            self.game_state._performance['now_ingame_skipped_frames'] += frames
+            self.game_state._performance['skipped_frames_detailed'][time] = frames
 
             # Remove entries older than one day
             one_day_ago = time - timedelta(days=1).total_seconds()
-            self.game_state._state['skipped_frames_detailed'] = {key: value for key, value in self.game_state._state['skipped_frames_detailed'].items() if key >= one_day_ago}
+            self.game_state._performance['skipped_frames_detailed'] = {key: value for key, value in self.game_state._performance['skipped_frames_detailed'].items() if key >= one_day_ago}
+            test = ({
+                    "skipped_frames":frames,
+                    "type":"skipped_frame",
+                    **self.game_state._state
+                })
+            get_mqtt().publish_json("game_server/lag",{"type": "skipped_frame", **self.game_state._state})
+
 
     def get_pretty_status(self):
         def format_time(seconds):
@@ -904,22 +917,30 @@ region=naeu
     def unschedule_shutdown(self):
         self.scheduled_shutdown = False
         # self.delete_me = False
+import asyncio
 
 class GameState:
-    def __init__(self):
+    def __init__(self, id, local_config):
         self._state = {}
+        self._performance = {}
         self._listeners = []
+        self.id = id
+        self.local_config = local_config
 
-    def __getitem__(self, key):
-        return self._state[key]
+    def __getitem__(self, key, dict_to_check="state"):
+        target_dict = self._state if dict_to_check == "state" else self._performance
+        return target_dict[key]
 
-    def __setitem__(self, key, value):
-        self._state[key] = value
+    def __setitem__(self, key, value, dict_to_check="state"):
+        if dict_to_check == "state":
+            self._state[key] = value
+        else:
+            self._performance[key] = value
         self._emit_event(key, value)
 
-    def get_full_key(self, key, current_level, level=None, path=None):
+    def get_full_key(self, key, current_level, level=None, path=None, dict_to_check="state"):
         if level is None:
-            level = self._state
+            level = self._state if dict_to_check == "state" else self._performance
 
         if path is None:
             path = []
@@ -932,31 +953,29 @@ class GameState:
             if isinstance(v, dict):
                 new_path = path.copy()
                 new_path.append(k)
-                result = self.get_full_key(key, current_level, v, new_path)
+                result = self.get_full_key(key, current_level, v, new_path, dict_to_check)
                 if result:
                     return result
 
         return None
 
+    def update(self, data, current_level=None, dict_to_check="state"):
+        monitored_keys = ["match_started", "match_info.mode", "game_phase"]
 
-    def update(self, data, current_level=None):
-        monitored_keys = ["match_started", "match_info.mode", "game_phase"]  # Put the list of items you want to monitor here
-
-        # If we are at the root level, set the current level to the main dictionary
         if current_level is None:
-            current_level = self._state
+            current_level = self._state if dict_to_check == "state" else self._performance
+
+        target_dict = self._state if dict_to_check == "state" else self._performance
 
         for key, value in data.items():
             if isinstance(value, dict):
-                # If the key does not exist in the current level, create an empty dictionary
                 if key not in current_level:
                     current_level[key] = {}
-                self.update(value, current_level[key])
+                self.update(value, current_level[key], dict_to_check)
             else:
-                # Check if the full key is in the monitored_keys list
-                full_key = self.get_full_key(key, current_level)
-                if full_key in monitored_keys and (full_key not in self._state or self[full_key] != value):
-                    self.__setitem__(full_key, value)
+                full_key = self.get_full_key(key, current_level, dict_to_check=dict_to_check)
+                if full_key in monitored_keys and (full_key not in target_dict or self.__getitem__(full_key, dict_to_check) != value):
+                    self.__setitem__(full_key, value, dict_to_check)
                 else:
                     current_level[key] = value
 
@@ -967,26 +986,35 @@ class GameState:
         for listener in self._listeners:
             asyncio.create_task(listener(key, value))
 
-    def clear(self):
-        self.update({
-            'status': None,
-            'uptime': None,
-            'num_clients': None,
-            'match_started': None,
-            'game_phase': None,
-            'current_match_id': None,
-            'players': [],
-            'performance': {
-                'total_ingame_skipped_frames': 0,
-                'now_ingame_skipped_frames': 0
-            },
-            'skipped_frames_detailed': {},
-            'match_info':{
-                'map':None,
-                'mode':None,
-                'name':None,
-                'match_id':None,
-                'start_time': 0,
-                'duration':0
-            }
-        })
+    def clear(self, dict_to_check=None):
+        if dict_to_check is None or dict_to_check == "state":
+            self.update({
+                'instance_id':self.id,
+                'instance_name': self.local_config['name'],
+                'local_game_port': self.local_config['params']['svr_port'],
+                'remote_game_port': self.local_config['params']['svr_proxyPort'],
+                'local_voice_port': self.local_config['params']['svr_proxyLocalVoicePort'],
+                'remote_voice_port': self.local_config['params']['svr_proxyRemoteVoicePort'],
+                'proxy_enabled': self.local_config['params']['man_enableProxy'],
+                'status': None,
+                'uptime': None,
+                'num_clients': None,
+                'match_started': None,
+                'game_phase': None,
+                'current_match_id': None,
+                'players': [],
+                'match_info':{
+                    'map':None,
+                    'mode':None,
+                    'name':None,
+                    'match_id':None,
+                    'start_time': 0,
+                    'duration':0
+                }
+            }, dict_to_check="state")
+        if dict_to_check is None or dict_to_check == "performance":
+            self.update({
+                "now_ingame_skipped_frames": 0,
+                "total_ingame_skipped_frames": 0,
+                'skipped_frames_detailed': {}
+            }, dict_to_check="performance")

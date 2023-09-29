@@ -1,4 +1,3 @@
-#from cogs.misc.logging import get_logger
 import traceback
 import inspect
 import re
@@ -22,8 +21,9 @@ def read_string(data, offset):
     return str.decode('utf-8'), offset
 
 class GameManagerParser:
-    def __init__(self, client_id,logger=None):
+    def __init__(self, client_id,logger=None,mqtt=None):
         self.logger = logger
+        self.mqtt = mqtt
         self.packet_handlers = {
             0x40: self.server_announce,
             0x41: self.server_closed,
@@ -36,6 +36,10 @@ class GameManagerParser:
             0x4A: self.replay_update
         }
         self.id = client_id
+    
+    def publish_event(self, topic, data):
+        if self.mqtt:
+            self.mqtt.publish_json(topic, data)
 
     def log(self,level,message):
         if self.logger:
@@ -96,6 +100,7 @@ class GameManagerParser:
             game_server.reset_game_state()
             # await game_server.save_gamestate_to_file()
             game_server.reset_skipped_frames()
+            self.publish_event(topic="game_server/status", data={ "type":"server_closed", **game_server.game_state._state})  
         else:
             self.log("debug",f"CowMaster #{self.id} - Received server closed packet: {packet}")
             cowmaster.reset_cowmaster_state()
@@ -254,6 +259,8 @@ class GameManagerParser:
             game_server.reset_skipped_frames()
 
         self.log("debug", f"GameServer #{self.id} - {lobby_info}")
+        self.publish_event(topic="game_server/match", data={ "type":"lobby_created", **game_server.game_state._state})
+        
 
     async def lobby_closed(self,packet, game_server=None, cowmaster=None):
         """   0x45 Lobby closed
@@ -271,6 +278,7 @@ class GameManagerParser:
             game_server.reset_game_state()
             # await game_server.save_gamestate_to_file()
             game_server.reset_skipped_frames()
+            self.publish_event(topic="game_server/match", data={ "type":"lobby_closed", **game_server.game_state._state})
         else:
             cowmaster.reset_cowmaster_state()
 
@@ -289,6 +297,7 @@ class GameManagerParser:
                 This packet arrives any time someone begins connecting to the server
         """
         self.log("debug",f"GameServer #{self.id} - Received server connection packet: {packet}")
+        self.publish_event(topic="game_server/match", data={ "type":"player_connection", **game_server.game_state._state})
 
     async def cow_stats_submission(self, packet, game_server=None, cowmaster=None):
         """ 0x48 state of stats submission

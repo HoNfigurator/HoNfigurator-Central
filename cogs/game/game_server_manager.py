@@ -20,7 +20,7 @@ from cogs.game.game_server import GameServer
 from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
-from cogs.misc.logger import get_logger, get_misc, get_home, get_filebeat_status, get_filebeat_auth_url
+from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
@@ -87,6 +87,9 @@ class GameServerManager:
 
         # set the current state of patching
         self.patching = False
+
+        # get the MQTT client
+        self.mqtt = get_mqtt()
 
         # preserve the current system path. We need it for a silly fix.
         self.preserved_path = os.environ["PATH"]
@@ -187,11 +190,13 @@ class GameServerManager:
                     client_connection.writer.write(GameServerCommands.SHUTDOWN_BYTES.value)
                     await client_connection.writer.drain()
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
+                    self.mqtt.publish_json("manager/command", {"type":"server_shutdown_force"})
                     return True
                 else:
                     game_server.schedule_task(game_server.schedule_shutdown_server(delete=delete, disable=disable),'scheduled_shutdown')
                     # await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
+                    self.mqtt.publish_json("manager/command", {"type":"server_shutdown_scheduled"})
                     return True
             else:
                 # this server hasn't connected to the manager yet
@@ -264,6 +269,7 @@ class GameServerManager:
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(command_bytes)
             await client_connection.writer.drain()
+            self.mqtt.publish_json("manager/command", {"type":"custom_command","command":command})
             LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -342,9 +348,11 @@ class GameServerManager:
     async def start_autoping_listener(self):
         LOGGER.debug("Starting AutoPingListener...")
         await self.auto_ping_listener.start_listener()
+        self.mqtt.publish_json("manager/admin", {"type":"autoping_started"})
 
     async def start_api_server(self):
         await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
+        self.mqtt.publish_json("manager/admin", {"type":"api_started"})
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
@@ -364,6 +372,8 @@ class GameServerManager:
             host, game_server_to_mgr_port
         )
         LOGGER.highlight(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
+        
+        self.mqtt.publish_json("manager/admin", {"type":"gameserver_listener_started"})
 
         await stop_event.wait()
 
@@ -405,6 +415,7 @@ class GameServerManager:
                 LOGGER.error(f"{prefix}The issue is most likely server side.")
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
         LOGGER.highlight("Authenticated to MasterServer.")
+        self.mqtt.publish_json("manager/admin", {"type":"mserver_authenticated"})
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
         self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
@@ -437,6 +448,7 @@ class GameServerManager:
 
             except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
+                self.mqtt.publish_json("manager/admin", {"type":"chatsv_disconnected"})
                 for _ in range(retry):
                     if stop_event.is_set():
                         break
@@ -466,6 +478,7 @@ class GameServerManager:
             raise HoNAuthenticationError(f"Chatserver authentication failure")
 
         LOGGER.highlight("Authenticated to ChatServer.")
+        self.mqtt.publish_json("manager/admin", {"type":"chatsv_connected"})
 
         # Start handling packets from the chat server
         await self.chat_server_handler.handle_packets()
@@ -945,19 +958,19 @@ class GameServerManager:
                 await self.cowmaster.start_cow_master()
 
             # setup or verify filebeat configuration for match log submission
-            await filebeat_status()
+            # await filebeat_status()
             if launch:
-                await filebeat(self.global_config)
+                # await filebeat(self.global_config)
 
                 if not self.global_config['hon_data']['svr_start_on_launch']:
                     LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
                     return
 
-            if not service_recovery and not get_filebeat_status()['running']:
-                msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Status: {get_filebeat_status()['certificate_status']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
-                if get_filebeat_auth_url():
-                    print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
-                raise RuntimeError(msg)
+            # if not service_recovery and not get_filebeat_status()['running']:
+            #     msg = f"Filebeat is not running, you may not start any game servers until you finalise the setup of filebeat.\nStatus\n\tInstalled: {get_filebeat_status()['installed']}\n\tRunning: {get_filebeat_status()['running']}\n\tCertificate Status: {get_filebeat_status()['certificate_status']}\n\tPending Auth: {True if get_filebeat_auth_url() else False}"
+            #     if get_filebeat_auth_url():
+            #         print(f"Please authorise match log submissions to continue: {get_filebeat_auth_url()}")
+            #     raise RuntimeError(msg)
 
             if self.global_config['hon_data'].get('man_use_cowmaster'):
                 if not self.cowmaster.client_connection:
