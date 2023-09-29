@@ -198,7 +198,7 @@ class HealthCheckManager:
         self.tasks['honfigurator_update_check'] = self.schedule_task(self.honfigurator_version_healthcheck(), 'honfigurator_update_check')
         self.tasks['game_stats_resubmission'] = self.schedule_task(self.poll_for_game_stats(), 'game_stats_resubmission')
         self.tasks['public_ip_changed_check'] = self.schedule_task(self.public_ip_healthcheck(), 'public_ip_changed_check')
-        self.tasks['filebeat_verification'] = self.schedule_task(self.filebeat_verification(), 'filebeat_verification')
+        # self.tasks['filebeat_verification'] = self.schedule_task(self.filebeat_verification(), 'filebeat_verification')
         self.tasks['general_healthcheck'] = self.schedule_task(self.general_healthcheck(), 'general_healthcheck')
 
         while not stop_event.is_set():
@@ -218,8 +218,8 @@ class HealthCheckManager:
                         self.tasks[task_name] = self.schedule_task(self.poll_for_game_stats(), task_name)
                     elif task_name == 'public_ip_changed_check':
                         self.tasks[task_name] = self.schedule_task(self.public_ip_healthcheck(), task_name)
-                    elif task_name == 'filebeat_verification':
-                        self.tasks[task_name] = self.schedule_task(self.filebeat_verification(), task_name)
+                    # elif task_name == 'filebeat_verification':
+                    #     self.tasks[task_name] = self.schedule_task(self.filebeat_verification(), task_name)
                     elif task_name == 'general_healthcheck':
                         self.tasks[task_name] = self.schedule_task(self.general_healthcheck(), task_name)
 
