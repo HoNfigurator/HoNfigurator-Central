@@ -662,7 +662,7 @@ async def run_command(command_list, success_message=None):
     process = await asyncio.create_subprocess_shell(' '.join(command_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     stdout, stderr = await process.communicate()
     if process.returncode == 0:
-        if success_message: print_or_log(success_message)
+        if success_message: print_or_log('info', success_message)
         return process
     else:
         print_or_log('error',f"Command: {' '.join(command_list)}\nReturn code: {process.returncode}\nError: {stderr.decode()}")
