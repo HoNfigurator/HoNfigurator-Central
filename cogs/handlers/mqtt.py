@@ -31,7 +31,6 @@ class MQTTHandler:
 
         # Set the credentials and certificates
         self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt",
-                            tls_version=ssl.PROTOCOL_TLSv1_2,
                certfile=get_filebeat_crt_path(),
                keyfile=get_filebeat_key_path())
 
