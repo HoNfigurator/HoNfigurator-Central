@@ -4,7 +4,6 @@ import time
 from os.path import isfile
 from pathlib import Path
 import subprocess
-from cogs.handlers.mqtt import MQTTHandler
 
 os.system('')
 
@@ -69,6 +68,7 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule
+from cogs.handlers.mqtt import MQTTHandler
 
 LOGGER = get_logger()
 
@@ -165,6 +165,7 @@ if __name__ == "__main__":
         pass
     
     if get_mqtt():
+        get_mqtt().publish_json("manager/admin",{"event_type":"shutdown", "message": "Manager shutting down"})
         get_mqtt().disconnect()
 
     if MISC.get_os_platform() == "linux": subprocess.run(["reset"])

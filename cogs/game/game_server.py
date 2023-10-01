@@ -263,6 +263,7 @@ class GameServer:
 
     def unset_client_connection(self):
         self.client_connection = None
+        get_mqtt().publish_json("game_server/status",{"event_type":"server_disconnected"})
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
@@ -328,7 +329,7 @@ class GameServer:
                     "type":"skipped_frame",
                     **self.game_state._state
                 })
-            get_mqtt().publish_json("game_server/lag",{"type": "skipped_frame", **self.game_state._state})
+            get_mqtt().publish_json("game_server/lag",{"event_type": "skipped_frame", **self.game_state._state})
 
 
     def get_pretty_status(self):
@@ -577,6 +578,7 @@ class GameServer:
             if self.status_received.is_set():
                 elapsed_time = time.perf_counter() - start_time
                 LOGGER.interest(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
+                get_mqtt().publish_json("game_server/status", {"event_type":"server_started"})
                 return True
             elif self.server_closed.is_set():
                 LOGGER.warn(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
@@ -885,6 +887,7 @@ region=naeu
                         self._proc_owner = None
                         self.started = False
                         self.server_closed.set()  # Set the server_closed event
+                        get_mqtt().publish_json("game_server/status",{"event_type":"server_crashed"})
                         self.reset_game_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
                         asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self], service_recovery=False))  # restart the server
@@ -996,6 +999,7 @@ class GameState:
                 'local_voice_port': self.local_config['params']['svr_proxyLocalVoicePort'],
                 'remote_voice_port': self.local_config['params']['svr_proxyRemoteVoicePort'],
                 'proxy_enabled': self.local_config['params']['man_enableProxy'],
+                'svr_affinity': self.local_config['params']['host_affinity'],
                 'status': None,
                 'uptime': None,
                 'num_clients': None,

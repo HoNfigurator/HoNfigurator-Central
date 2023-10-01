@@ -402,6 +402,12 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
+    
+    def get_github_branch(self):
+        if self.github_branch:
+            return self.github_branch
+        else:
+            return self.get_current_branch_name()
 
     def get_git_commit_date(self):
         command = 'git log -1 --format="%cd" --date=format-local:"%Y-%m-%d %H:%M:%S"'

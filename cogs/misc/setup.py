@@ -584,6 +584,7 @@ class SetupEnvironment:
                 "cpu_name": MISC.get_cpu_name(),
                 "total_ram": MISC.get_total_ram(),
                 "server_total_allowed": MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core']),
+                "github_branch": MISC.get_github_branch()
             }
         )
 
