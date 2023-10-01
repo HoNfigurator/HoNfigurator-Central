@@ -20,12 +20,12 @@ from cogs.game.game_server import GameServer
 from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
-from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt, get_filebeat_status
+from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt, get_filebeat_status, get_filebeat_auth_url
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
-from utilities.filebeat import main as filebeat_status, get_filebeat_auth_url
+from utilities.filebeat import main as filebeat, filebeat_status, get_filebeat_auth_url
 
 LOGGER = get_logger()
 from cogs.handlers.data_handler import get_cowmaster_configuration
@@ -961,7 +961,7 @@ class GameServerManager:
             # setup or verify filebeat configuration for match log submission
             await filebeat_status()
             if launch:
-                # await filebeat(self.global_config)
+                await filebeat(self.global_config)
 
                 if not self.global_config['hon_data']['svr_start_on_launch']:
                     LOGGER.info("Waiting for manual server start up. svr_start_on_launch setting is disabled.")
