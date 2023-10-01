@@ -92,7 +92,7 @@ class SetupEnvironment:
                 "svr_total_per_core": 1.0,
                 "man_enableProxy": True if MISC.get_os_platform() == "win32" else False,
                 "svr_noConsole": False,
-                "svr_enableBotMatch": False,
+                "svr_enableBotMatch": True,
                 "svr_start_on_launch": True,
 		        "svr_override_affinity": False,
                 "svr_max_start_at_once": 5,
