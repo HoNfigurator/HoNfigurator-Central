@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 import json
 import datetime
-from utilities.filebeat import get_filebeat_crt_path, get_filebeat_key_path, get_filebeat_ca_path
+from utilities.filebeat import get_filebeat_crt_path, get_filebeat_key_path
 from cogs.misc.logger import get_logger, get_misc, get_home
 from os.path import exists
 import shutil
