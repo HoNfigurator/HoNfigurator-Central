@@ -98,9 +98,9 @@ async def main():
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
     jobs.setup_tasks()
-    
+
     # initialise MQTT
-    mqtt = MQTTHandler(server="mqtt-ssl.kongor.eu", port=80, global_config = global_config)
+    mqtt = MQTTHandler(server="mqtt-ssl.kongor.eu", port=8883, global_config = global_config)
     mqtt.connect()
     set_mqtt(mqtt)
 
@@ -163,7 +163,7 @@ if __name__ == "__main__":
         stop_event.set()
     except asyncio.CancelledError:
         pass
-    
+
     if get_mqtt():
         get_mqtt().publish_json("manager/admin",{"event_type":"shutdown", "message": "Manager shutting down"})
         get_mqtt().disconnect()

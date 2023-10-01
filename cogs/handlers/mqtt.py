@@ -13,7 +13,7 @@ LOGGER = get_logger()
 
 class MQTTHandler:
 
-    def __init__(self, server="mqtt-ssl.kongor.eu", port=443, keepalive=60, username=None, password=None, global_config=None):
+    def __init__(self, server="45.132.247.12", port=8883, keepalive=60, username=None, password=None, global_config=None):
         self.server = server
         self.port = port
         self.keepalive = keepalive
@@ -30,9 +30,9 @@ class MQTTHandler:
 
 
         # Set the credentials and certificates
-        #self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt",
-        #       certfile=get_filebeat_crt_path(),
-        #       keyfile=get_filebeat_key_path())
+        self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt",
+               certfile=get_filebeat_crt_path(),
+               keyfile=get_filebeat_key_path())
 
         # Set up callbacks
         self.client.on_connect = self._on_connect
