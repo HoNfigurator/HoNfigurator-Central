@@ -2,18 +2,15 @@ import paho.mqtt.client as mqtt
 import json
 import datetime
 from utilities.filebeat import get_filebeat_crt_path, get_filebeat_key_path
-from cogs.misc.logger import get_logger, get_misc, get_home
-from os.path import exists
-import ssl
+from cogs.misc.logger import get_logger, get_misc
 import os
 from pathlib import Path
-import utilities.step_certificate as step_certificate
 
 LOGGER = get_logger()
 
 class MQTTHandler:
 
-    def __init__(self, server="45.132.247.12", port=8883, keepalive=60, username=None, password=None, global_config=None):
+    def __init__(self, server="mqtt-ssl.kongor.eu", port=8883, keepalive=60, username=None, password=None, global_config=None):
         self.server = server
         self.port = port
         self.keepalive = keepalive

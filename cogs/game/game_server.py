@@ -324,12 +324,7 @@ class GameServer:
             # Remove entries older than one day
             one_day_ago = time - timedelta(days=1).total_seconds()
             self.game_state._performance['skipped_frames_detailed'] = {key: value for key, value in self.game_state._performance['skipped_frames_detailed'].items() if key >= one_day_ago}
-            test = ({
-                    "skipped_frames":frames,
-                    "type":"skipped_frame",
-                    **self.game_state._state
-                })
-            get_mqtt().publish_json("game_server/lag",{"event_type": "skipped_frame", **self.game_state._state})
+            get_mqtt().publish_json("game_server/lag",{"event_type": "skipped_frame", "skipped_frames": frames, **self.game_state._state})
 
 
     def get_pretty_status(self):
