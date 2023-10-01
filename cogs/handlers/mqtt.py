@@ -13,7 +13,7 @@ LOGGER = get_logger()
 
 class MQTTHandler:
 
-    def __init__(self, server="doormat.honfigurator.app", port=8883, keepalive=60, username=None, password=None, global_config=None):
+    def __init__(self, server="mqtt-ssl.kongor.eu", port=80, keepalive=60, username=None, password=None, global_config=None):
         self.server = server
         self.port = port
         self.keepalive = keepalive
@@ -24,7 +24,11 @@ class MQTTHandler:
         # Create a new MQTT client instance
         self.client = mqtt.Client()
 
-        step_ca_dir = Path(os.environ["HOMEPATH"]) / ".step" / "certs"
+        if get_misc().os_platform == "windows":
+            step_ca_dir = Path(os.environ["HOMEPATH"]) / ".step" / "certs"
+        else:
+            step_ca_dir = Path(os.environ["HOME"]) / ".step" / "certs"
+
 
         # Set the credentials and certificates
         self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt", 
