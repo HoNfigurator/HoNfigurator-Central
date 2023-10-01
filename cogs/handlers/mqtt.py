@@ -24,7 +24,11 @@ class MQTTHandler:
         # Create a new MQTT client instance
         self.client = mqtt.Client()
 
-        step_ca_dir = Path(os.environ["HOMEPATH"]) / ".step" / "certs"
+        if get_misc().os_platform == "windows":
+            step_ca_dir = Path(os.environ["HOMEPATH"]) / ".step" / "certs"
+        else:
+            step_ca_dir = Path(os.environ["HOME"]) / ".step" / "certs"
+
 
         # Set the credentials and certificates
         self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt",

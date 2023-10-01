@@ -100,7 +100,7 @@ async def main():
     jobs.setup_tasks()
     
     # initialise MQTT
-    mqtt = MQTTHandler(global_config = global_config)
+    mqtt = MQTTHandler(server="mqtt-ssl.kongor.eu", port=80, global_config = global_config)
     mqtt.connect()
     set_mqtt(mqtt)
 
