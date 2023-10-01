@@ -4,7 +4,7 @@ import datetime
 from utilities.filebeat import get_filebeat_crt_path, get_filebeat_key_path
 from cogs.misc.logger import get_logger, get_misc, get_home
 from os.path import exists
-import shutil
+import ssl
 import os
 from pathlib import Path
 import utilities.step_certificate as step_certificate
@@ -13,7 +13,7 @@ LOGGER = get_logger()
 
 class MQTTHandler:
 
-    def __init__(self, server="mqtt-ssl.kongor.eu", port=80, keepalive=60, username=None, password=None, global_config=None):
+    def __init__(self, server="45.132.247.12", port=8883, keepalive=60, username=None, password=None, global_config=None):
         self.server = server
         self.port = port
         self.keepalive = keepalive
@@ -30,7 +30,8 @@ class MQTTHandler:
 
 
         # Set the credentials and certificates
-        self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt", 
+        self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt",
+                            tls_version=ssl.PROTOCOL_TLSv1_2,
                certfile=get_filebeat_crt_path(),
                keyfile=get_filebeat_key_path())
 
@@ -52,7 +53,7 @@ class MQTTHandler:
         print(f"Message Published with MID: {mid}")
 
     def connect(self):
-        self.client.connect(self.server, self.port, self.keepalive, )
+        self.client.connect(self.server, self.port, self.keepalive)
         self.client.loop_start()
 
     def disconnect(self):
