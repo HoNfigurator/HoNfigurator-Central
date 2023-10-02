@@ -644,7 +644,7 @@ async def configure_filebeat(silent=False,test=False):
     if old_config_hash != new_config_hash:
         shutil.move(temp_file_path, config_file_path)
         print_or_log('info',f"Filebeat configuration file downloaded and placed at: {config_file_path}")
-        return True
+        return looked_up_discord_username
     else:
         print_or_log('debug',"No configuration changes required")
         return False
@@ -780,7 +780,8 @@ async def main(config=None, from_main=True):
         else: await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
 
         filebeat_changed = False
-        if await configure_filebeat(silent=args.silent, test=args.test):
+        discord_username = await configure_filebeat(silent=args.silent, test=args.test)
+        if discord_username:
             filebeat_changed = True
             # Delete scheduled task on Windows
             if operating_system == "Windows":
@@ -811,6 +812,7 @@ async def main(config=None, from_main=True):
             # initialise MQTT
             mqtt = MQTTHandler(global_config = global_config, certificate_path=get_filebeat_crt_path(), key_path=get_filebeat_key_path())
             mqtt.connect()
+            mqtt.set_discord_id(discord_username)
             set_mqtt(mqtt)
             get_mqtt().publish_json("manager/admin", {"event_type":"initialisation_complete"})
         

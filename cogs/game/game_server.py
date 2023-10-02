@@ -919,7 +919,8 @@ region=naeu
                 if stop_event.is_set():
                     return
                 await asyncio.sleep(1)
-            get_mqtt().publish_json("game_server/status", {"event_type":"heartbeat", **self.game_state._state})
+            if get_mqtt():
+                get_mqtt().publish_json("game_server/status", {"event_type":"heartbeat", **self.game_state._state})
 
 
     def enable_server(self):

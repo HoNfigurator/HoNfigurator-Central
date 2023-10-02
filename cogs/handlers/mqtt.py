@@ -15,6 +15,7 @@ class MQTTHandler:
         self.keepalive = keepalive
         self.certificate_path = certificate_path
         self.key_path = key_path
+        self.discord_id = None
 
         # Create a new MQTT client instance
         self.client = mqtt.Client()
@@ -53,9 +54,12 @@ class MQTTHandler:
     def disconnect(self):
         self.client.loop_stop()
         self.client.disconnect()
+    
+    def set_discord_id(self, discord_id):
+        self.discord_id = discord_id
 
     def add_metadata(self):
-        return {
+        metadata = {
             'svr_ip' : self.global_config['hon_data']['svr_ip'],
             'svr_name' : self.global_config['hon_data']['svr_name'],
             'svr_version' : self.global_config['hon_data']['svr_version'],
@@ -66,6 +70,10 @@ class MQTTHandler:
             'cpu_name': self.global_config['system_data']['cpu_name'],
             'cpu_count': self.global_config['system_data']['cpu_count']
         }
+        if self.discord_id:
+            metadata.update({'discord_id':self.discord_id})
+            
+        return metadata
 
     def publish_json(self, topic, data, qos=1):
         data.update(self.add_metadata())
