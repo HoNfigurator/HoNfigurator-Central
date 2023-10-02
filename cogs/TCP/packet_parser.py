@@ -139,7 +139,7 @@ class GameManagerParser:
         temp = ({
             'status': packet[1],                                        # extract status field from packet
             'uptime': int.from_bytes(packet[2:6], byteorder='little'),  # extract uptime field from packet
-            'cpu_core_util': f"{int.from_bytes(packet[6:10], byteorder='little') / 100}%",   # extract the server load value
+            'cpu_core_util': int.from_bytes(packet[6:10], byteorder='little') / 100,   # extract the server load value
             'num_clients': packet[10],                                  # extract number of clients field from packet
             'match_started': packet[11],                                # extract match started field from packet
             'game_phase': packet[40],                                   # extract game phase field from packet
