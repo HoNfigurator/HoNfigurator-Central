@@ -483,6 +483,7 @@ async def configure_filebeat(silent=False,test=False):
                 'ignore_older': '24h',
                 'scan_frequency': '60s',
                 'exclude_files': '[".gz$"]',
+                'include_lines': ['DEBUG'],
                 'fields_under_root': True,
                 'fields': {
                     'Server': server_values,
@@ -515,6 +516,9 @@ async def configure_filebeat(silent=False,test=False):
         
         if global_config and not global_config['application_data']['filebeat']['send_diagnostics_data']:
             del filebeat_inputs['diagnostic_logs']
+        
+        # disabling slave logs, given the MQTT implementation
+        del filebeat_inputs['slave_logs']
 
         filebeat_config = {
             'filebeat.inputs': list(filebeat_inputs.values()),
