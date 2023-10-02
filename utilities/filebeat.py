@@ -530,7 +530,7 @@ async def configure_filebeat(silent=False,test=False):
                 'index.number_of_shards': '1'
             },
             'output.logstash': {
-                'hosts': 'hon-elk.honfigurator.app:5044',
+                'hosts': 'elastic-node2.honfigurator.app:5044',
                 'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
                 'ssl.certificate': str(Path(destination_folder) / "client.crt"),
                 'ssl.key': str(Path(destination_folder) / "client.key"),
