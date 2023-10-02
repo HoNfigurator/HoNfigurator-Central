@@ -17,6 +17,7 @@ from cogs.TCP.packet_parser import GameManagerParser
 import aiofiles
 import glob
 import re
+import random
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
@@ -66,6 +67,9 @@ class GameServer:
         # Start the monitor_process method as a background task
         coro = self.monitor_process
         self.schedule_task(coro,'process_monitor', coro_bracket=True)
+        # Start the heartbeat task. This sends a status update to MQTT
+        coro = self.heartbeat
+        self.schedule_task(coro, 'heartbeat', coro_bracket=True)
 
     def schedule_task(self, coro, name, coro_bracket = False):
         existing_task = self.tasks.get(name)  # Get existing task if any
@@ -904,6 +908,19 @@ region=naeu
             raise
         except Exception as e:
             LOGGER.error(f"GameServer #{self.id} Unexpected error in monitor_process: {e}")
+
+    async def heartbeat(self):
+        while not stop_event.is_set():
+            # Introduce jitter: sleep for a random duration between 0 to 10 seconds
+            jitter = random.uniform(0, 10)
+            await asyncio.sleep(jitter)
+            
+            for _ in range(60):
+                if stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
+            get_mqtt().publish_json("game_server/status", {"event_type":"heartbeat", **self.game_state._state})
+
 
     def enable_server(self):
         self.enabled = True
