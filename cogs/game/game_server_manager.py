@@ -342,7 +342,8 @@ class GameServerManager:
         return {
             "total_free_servers": total_free_servers,
             "total_occupied_servers": total_occupied_servers,
-            "total_players_online": total_players_online
+            "total_players_online": total_players_online,
+            "total_configured_servers": len(self.game_servers)
         }
 
 
