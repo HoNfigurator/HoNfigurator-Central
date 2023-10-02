@@ -199,6 +199,7 @@ class GameServer:
         if key == "match_started":
             if value == 0:
                 LOGGER.debug(f"GameServer #{self.id} - Game Ended: {self.game_state['current_match_id']}")
+                get_mqtt().publish_json("game_server/match", {"event_type":"match_ended", **self.game_state._state})
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
@@ -209,12 +210,14 @@ class GameServer:
                     self.game_in_progress = False
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
+                get_mqtt().publish_json("game_server/match", {"event_type":"match_started", **self.game_state._state})
                 self.game_in_progress = True
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
             # Add more phases as needed
         elif key == "game_phase":
             LOGGER.debug(f"GameServer #{self.id} - Game phase {value}")
+            get_mqtt().publish_json("game_server/match", {"event_type":"phase_change", **self.game_state._state})
             if value == GamePhase.IDLE.value and self.scheduled_shutdown:
                 await self.stop_server_network()
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
@@ -995,12 +998,12 @@ class GameState:
                 'remote_voice_port': self.local_config['params']['svr_proxyRemoteVoicePort'],
                 'proxy_enabled': self.local_config['params']['man_enableProxy'],
                 'svr_affinity': self.local_config['params']['host_affinity'],
-                'status': None,
-                'uptime': None,
-                'num_clients': None,
-                'match_started': None,
-                'game_phase': None,
-                'current_match_id': None,
+                'status': 0,
+                'uptime': 0,
+                'num_clients': 0,
+                'match_started': 0,
+                'game_phase': 0,
+                'current_match_id': 0,
                 'players': [],
                 'match_info':{
                     'map':None,
