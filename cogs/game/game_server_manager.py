@@ -26,6 +26,7 @@ from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
 from utilities.filebeat import main as filebeat, filebeat_status, get_filebeat_auth_url
+import random
 
 LOGGER = get_logger()
 from cogs.handlers.data_handler import get_cowmaster_configuration
@@ -82,6 +83,7 @@ class GameServerManager:
             'task_cleanup': None
         }
         self.schedule_task(self.cleanup_tasks_every_30_minutes(), 'task_cleanup')
+        self.schedule_task(self.heartbeat(), 'heartbeat')
         # initialise the config validator in case we need it
         self.setup = setup
 
@@ -318,6 +320,31 @@ class GameServerManager:
                 starting_port += 1
         except Exception as e:
             LOGGER.exception(e)
+    
+    async def heartbeat(self):
+        while not stop_event.is_set():
+            # Introduce jitter: sleep for a random duration between 0 to 10 seconds
+            jitter = random.uniform(0, 10)
+            await asyncio.sleep(jitter)
+            
+            for _ in range(60):
+                if stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
+            if get_mqtt():
+                get_mqtt().publish_json("manager/status", {"event_type":"heartbeat", **self.manager_status()})
+    
+    def manager_status(self):
+        total_free_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == 0])
+        total_occupied_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] != 0])
+        total_players_online = sum(game_server.game_state._state['num_clients'] for game_server in self.game_servers.values())
+        
+        return {
+            "total_free_servers": total_free_servers,
+            "total_occupied_servers": total_occupied_servers,
+            "total_players_online": total_players_online
+        }
+
 
     async def check_upstream_patch(self):
         if self.patching:
