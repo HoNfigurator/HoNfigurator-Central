@@ -16,6 +16,7 @@ import re
 import hashlib
 from tempfile import NamedTemporaryFile
 import yaml
+from cogs.handlers.mqtt import MQTTHandler
 
 # if code is launched independtly
 if __name__ == "__main__":
@@ -26,7 +27,7 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home, set_mqtt, get_mqtt
 
     from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
@@ -806,6 +807,12 @@ async def main(config=None, from_main=True):
 
         if not __name__ == "__main__":
             await filebeat_status()    # sets the overall status of filebeat for retreival by other components
+
+            # initialise MQTT
+            mqtt = MQTTHandler(global_config = global_config, certificate_path=get_filebeat_crt_path(), key_path=get_filebeat_key_path())
+            mqtt.connect()
+            set_mqtt(mqtt)
+            get_mqtt().publish_json("manager/admin", {"event_type":"initialisation_complete"})
         
         return True
 

@@ -68,7 +68,7 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule
-from cogs.handlers.mqtt import MQTTHandler
+# from cogs.handlers.mqtt import MQTTHandler
 
 LOGGER = get_logger()
 
@@ -98,11 +98,6 @@ async def main():
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
     jobs.setup_tasks()
-
-    # initialise MQTT
-    mqtt = MQTTHandler(global_config = global_config)
-    mqtt.connect()
-    set_mqtt(mqtt)
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']

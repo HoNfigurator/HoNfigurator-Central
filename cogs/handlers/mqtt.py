@@ -1,7 +1,6 @@
 import paho.mqtt.client as mqtt
 import json
 import datetime
-from utilities.filebeat import get_filebeat_crt_path, get_filebeat_key_path
 from cogs.misc.logger import get_logger, get_misc
 import os
 from pathlib import Path
@@ -10,13 +9,12 @@ LOGGER = get_logger()
 
 class MQTTHandler:
 
-    def __init__(self, server="doormat.honfigurator.app", port=8883, keepalive=60, username=None, password=None, global_config=None):
+    def __init__(self, server="doormat.honfigurator.app", port=8883, keepalive=60, username=None, password=None, global_config=None, certificate_path=None, key_path=None):
         self.server = server
         self.port = port
         self.keepalive = keepalive
-
-        self.certificate_path = get_filebeat_crt_path()
-        self.key_path = get_filebeat_key_path()
+        self.certificate_path = certificate_path
+        self.key_path = key_path
 
         # Create a new MQTT client instance
         self.client = mqtt.Client()
@@ -25,28 +23,28 @@ class MQTTHandler:
         else:
             step_ca_dir = Path(os.environ["HOME"]) / ".step" / "certs"
 
-
-        # Set the credentials and certificates
-        self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt",
-               certfile=get_filebeat_crt_path(),
-               keyfile=get_filebeat_key_path())
-
         # Set up callbacks
         self.client.on_connect = self._on_connect
         self.client.on_publish = self._on_publish
+        
+        # Set the credentials and certificates
         if username and password:
             self.client.username_pw_set(username,password)
+        else:
+            self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt",
+                certfile=certificate_path,
+                keyfile=key_path)
 
         self.global_config = global_config
 
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
-            print("Connected successfully to broker")
+            LOGGER.highlight("Connected successfully to MQTT broker")
         else:
-            print(f"Connection failed with code {rc}")
+            LOGGER.error(f"Connection failed with code {rc}")
 
     def _on_publish(self, client, userdata, mid):
-        print(f"Message Published with MID: {mid}")
+        LOGGER.debug(f"Message Published with MID: {mid}")
 
     def connect(self):
         self.client.connect(self.server, self.port, self.keepalive)

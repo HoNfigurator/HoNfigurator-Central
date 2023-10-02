@@ -190,13 +190,15 @@ class GameServerManager:
                     client_connection.writer.write(GameServerCommands.SHUTDOWN_BYTES.value)
                     await client_connection.writer.drain()
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
-                    self.mqtt.publish_json("manager/command", {"event_type":"server_shutdown_force"})
+                    if self.mqtt:
+                        self.mqtt.publish_json("manager/command", {"event_type":"server_shutdown_force"})
                     return True
                 else:
                     game_server.schedule_task(game_server.schedule_shutdown_server(delete=delete, disable=disable),'scheduled_shutdown')
                     # await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
-                    self.mqtt.publish_json("manager/command", {"event_type":"server_shutdown_scheduled"})
+                    if self.mqtt:
+                        self.mqtt.publish_json("manager/command", {"event_type":"server_shutdown_scheduled"})
                     return True
             else:
                 # this server hasn't connected to the manager yet
@@ -269,7 +271,8 @@ class GameServerManager:
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(command_bytes)
             await client_connection.writer.drain()
-            self.mqtt.publish_json("manager/command", {"event_type":"custom_command","command":command})
+            if self.mqtt:
+                self.mqtt.publish_json("manager/command", {"event_type":"custom_command","command":command})
             LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
@@ -348,11 +351,13 @@ class GameServerManager:
     async def start_autoping_listener(self):
         LOGGER.debug("Starting AutoPingListener...")
         await self.auto_ping_listener.start_listener()
-        self.mqtt.publish_json("manager/admin", {"event_type":"autoping_started"})
+        if self.mqtt:
+            self.mqtt.publish_json("manager/admin", {"event_type":"autoping_started"})
 
     async def start_api_server(self):
+        if self.mqtt:
+            self.mqtt.publish_json("manager/admin", {"event_type":"api_started"})
         await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
-        self.mqtt.publish_json("manager/admin", {"event_type":"api_started"})
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
         """
@@ -373,7 +378,8 @@ class GameServerManager:
         )
         LOGGER.highlight(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
         
-        self.mqtt.publish_json("manager/admin", {"event_type":"gameserver_listener_started"})
+        if self.mqtt:
+            self.mqtt.publish_json("manager/admin", {"event_type":"gameserver_listener_started"})
 
         await stop_event.wait()
 
@@ -415,7 +421,9 @@ class GameServerManager:
                 LOGGER.error(f"{prefix}The issue is most likely server side.")
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
         LOGGER.highlight("Authenticated to MasterServer.")
-        self.mqtt.publish_json("manager/admin", {"event_type":"mserver_authenticated"})
+        
+        if self.mqtt:
+            self.mqtt.publish_json("manager/admin", {"event_type":"mserver_authenticated"})
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
         self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
@@ -448,7 +456,10 @@ class GameServerManager:
 
             except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
-                self.mqtt.publish_json("manager/admin", {"event_type":"chatsv_disconnected"})
+                
+                if self.mqtt:
+                    self.mqtt.publish_json("manager/admin", {"event_type":"chatsv_disconnected"})
+
                 for _ in range(retry):
                     if stop_event.is_set():
                         break
@@ -478,7 +489,9 @@ class GameServerManager:
             raise HoNAuthenticationError(f"Chatserver authentication failure")
 
         LOGGER.highlight("Authenticated to ChatServer.")
-        self.mqtt.publish_json("manager/admin", {"event_type":"chatsv_connected"})
+        
+        if self.mqtt:
+            self.mqtt.publish_json("manager/admin", {"event_type":"chatsv_connected"})
 
         # Start handling packets from the chat server
         await self.chat_server_handler.handle_packets()
@@ -836,18 +849,21 @@ class GameServerManager:
         except Exception:
             LOGGER.error(f"Error uploading replay file {replay_file_path}")
             LOGGER.error(f"Undefined Exception: {traceback.format_exc()}")
-            self.mqtt.publish_json("manager/admin", {"event_type":"replay_upload_failure","message":f"failed. Premature failure."})
+            if self.mqtt:
+                self.mqtt.publish_json("manager/admin", {"event_type":"replay_upload_failure","message":f"failed. Premature failure."})
 
         if upload_result[1] not in [204,200]:
             # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             LOGGER.error(f"Replay upload failed! HTTP Upload Response ({upload_result[1]})\n\t{upload_result[0]}")
-            self.mqtt.publish_json("manager/admin", {"event_type":"replay_upload_failure","message":f"failed. HTTP response code: {upload_result[1]}"})
+            if self.mqtt:
+                self.mqtt.publish_json("manager/admin", {"event_type":"replay_upload_failure","message":f"failed. HTTP response code: {upload_result[1]}"})
             return
         # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
         res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
         LOGGER.debug("Replay upload completed successfully.")
-        self.mqtt.publish_json("manager/admin", {"event_type":"replay_upload_success","message":"successful"})
+        if self.mqtt:
+            self.mqtt.publish_json("manager/admin", {"event_type":"replay_upload_success","message":"successful"})
 
 
     async def remove_client_connection(self,client_connection):
