@@ -19,7 +19,7 @@ from cogs.connectors.api_server import start_api_server
 from cogs.game.game_server import GameServer
 from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
-from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
+from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GamePhase, GameServerCommands, EventBus as ManagerEventBus
 from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt, get_filebeat_status, get_filebeat_auth_url
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
@@ -29,7 +29,6 @@ from utilities.filebeat import main as filebeat, filebeat_status, get_filebeat_a
 import random
 
 LOGGER = get_logger()
-from cogs.handlers.data_handler import get_cowmaster_configuration
 MISC = get_misc()
 HOME_PATH = get_home()
 HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
@@ -335,17 +334,30 @@ class GameServerManager:
                 get_mqtt().publish_json("manager/status", {"event_type":"heartbeat", **self.manager_status()})
     
     def manager_status(self):
-        total_free_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == 0])
-        total_occupied_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] != 0])
+        total_free_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.IDLE.value])
+        total_occupied_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] != GamePhase.IDLE.value])
+        total_servers_in_lobby = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.IN_LOBBY.value])
+        total_servers_in_picking_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.PICKING_PHASE.value])
+        total_servers_in_banning_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.BANNING_PHASE.value])
+        total_servers_in_game_ended_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.GAME_ENDED.value])
+        total_servers_in_game_ending_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.GAME_ENDING.value])
+        total_servers_in_match_started_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.MATCH_STARTED.value])
+        total_servers_in_preparation_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.PREPERATION_PHASE.value])
         total_players_online = sum(game_server.game_state._state['num_clients'] for game_server in self.game_servers.values())
         
         return {
             "total_free_servers": total_free_servers,
             "total_occupied_servers": total_occupied_servers,
+            "total_servers_in_lobby": total_servers_in_lobby,
+            "total_servers_in_picking_phase": total_servers_in_picking_phase,
+            "total_servers_in_banning_phase": total_servers_in_banning_phase,
+            "total_servers_in_game_ended_phase": total_servers_in_game_ended_phase,
+            "total_servers_in_game_ending_phase": total_servers_in_game_ending_phase,
+            "total_servers_in_match_started_phase": total_servers_in_match_started_phase,
+            "total_servers_in_preparation_phase": total_servers_in_preparation_phase,
             "total_players_online": total_players_online,
             "total_configured_servers": len(self.game_servers)
         }
-
 
     async def check_upstream_patch(self):
         if self.patching:
