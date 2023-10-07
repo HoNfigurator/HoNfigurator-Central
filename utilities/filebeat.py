@@ -406,6 +406,7 @@ async def configure_filebeat(silent=False,test=False):
             'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
+            'include_lines': ['Error: \[\d{2}:\d{2}:\d{2}\] CPacket::Write\(\) - Exceeded MAX_PACKET_SIZE while writing data: "0x[0-9a-fA-F]+", length: \d+', 'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding', 'Sv: \[\d{2}:\d{2}:\d{2}\] Name: .+', 'Sv: \[\d{2}:\d{2}:\d{2}\] IP: \d+\.\d+\.\d+\.\d+'],
             'fields': {
                 'Server': server_values,
                 'Log_Type': 'console'
@@ -429,8 +430,7 @@ async def configure_filebeat(silent=False,test=False):
             }
         }
 
-        filebeat_inputs['diagnostic_logs'] = \
-        {
+        filebeat_inputs['diagnostic_logs'] = {
             'type': 'filestream',
             'id': 'diagnostic_logs',
             'enabled': True,
@@ -442,7 +442,22 @@ async def configure_filebeat(silent=False,test=False):
             'fields': {
                 'Server': server_values,
                 'Log_Type': 'diagnostic'
-            }
+            },
+            'processors': [
+                {
+                    'drop_event': {
+                        'when': {
+                            'not': {
+                                'or': [
+                                    {'regexp': {'message': '.*:.*:0[0-5].*'}},
+                                    {'regexp': {'message': '.*:.*:2[0-5].*'}},
+                                    {'regexp': {'message': '.*:.*:4[0-5].*'}}
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]
         }
         
         if global_config:
@@ -507,7 +522,7 @@ async def configure_filebeat(silent=False,test=False):
             del filebeat_inputs['diagnostic_logs']
         
         # disabling slave logs, given the MQTT implementation
-        del filebeat_inputs['slave_logs']
+        # del filebeat_inputs['slave_logs']
 
         filebeat_config = {
             'filebeat.inputs': list(filebeat_inputs.values()),
