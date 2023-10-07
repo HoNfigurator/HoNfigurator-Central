@@ -257,9 +257,9 @@ class GameServer:
             joined_players = [json.loads(player) for player in joined_players]
 
             if len(joined_players) > 0:
-                get_mqtt().publish_json("game_server/match", {"event_type":"player_connection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip']})
+                get_mqtt().publish_json("game_server/match", {"event_type":"player_connection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip'], **self.game_state._state})
             elif len(left_players) >0:
-                get_mqtt().publish_json("game_server/match", {"event_type":"player_disconnection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip']})
+                get_mqtt().publish_json("game_server/match", {"event_type":"player_disconnection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip'], **self.game_state._state})
 
             pass
 
