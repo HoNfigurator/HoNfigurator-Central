@@ -203,7 +203,8 @@ class GameServer:
         if key == "match_started":
             if value == 0:
                 LOGGER.debug(f"GameServer #{self.id} - Game Ended: {self.game_state['current_match_id']}")
-                get_mqtt().publish_json("game_server/match", {"event_type":"match_ended", **self.game_state._state})
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/match", {"event_type":"match_ended", **self.game_state._state})
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
@@ -214,14 +215,16 @@ class GameServer:
                     self.game_in_progress = False
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
-                get_mqtt().publish_json("game_server/match", {"event_type":"match_started", **self.game_state._state})
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/match", {"event_type":"match_started", **self.game_state._state})
                 self.game_in_progress = True
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
             # Add more phases as needed
         elif key == "game_phase":
             LOGGER.debug(f"GameServer #{self.id} - Game phase {value}")
-            get_mqtt().publish_json("game_server/match", {"event_type":"phase_change", **self.game_state._state})
+            if get_mqtt():
+                get_mqtt().publish_json("game_server/match", {"event_type":"phase_change", **self.game_state._state})
             if value == GamePhase.IDLE.value and self.scheduled_shutdown:
                 await self.stop_server_network()
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
@@ -257,9 +260,11 @@ class GameServer:
             joined_players = [json.loads(player) for player in joined_players]
 
             if len(joined_players) > 0:
-                get_mqtt().publish_json("game_server/match", {"event_type":"player_connection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip'], **self.game_state._state})
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/match", {"event_type":"player_connection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip'], **self.game_state._state})
             elif len(left_players) >0:
-                get_mqtt().publish_json("game_server/match", {"event_type":"player_disconnection", "player_name":left_players[0]['name'], "player_ip":left_players[0]['ip'], **self.game_state._state})
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/match", {"event_type":"player_disconnection", "player_name":left_players[0]['name'], "player_ip":left_players[0]['ip'], **self.game_state._state})
 
     def unlink_client_connection(self):
         del self.client_connection
@@ -288,7 +293,8 @@ class GameServer:
 
     def unset_client_connection(self):
         self.client_connection = None
-        get_mqtt().publish_json("game_server/status",{"event_type":"server_disconnected", **self.game_state._state})
+        if get_mqtt():
+            get_mqtt().publish_json("game_server/status",{"event_type":"server_disconnected", **self.game_state._state})
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
@@ -349,7 +355,8 @@ class GameServer:
             # Remove entries older than one day
             one_day_ago = time - timedelta(days=1).total_seconds()
             self.game_state._performance['skipped_frames_detailed'] = {key: value for key, value in self.game_state._performance['skipped_frames_detailed'].items() if key >= one_day_ago}
-            get_mqtt().publish_json("game_server/lag",{"event_type": "skipped_frame", "skipped_frames": frames, **self.game_state._state})
+            if get_mqtt():
+                get_mqtt().publish_json("game_server/lag",{"event_type": "skipped_frame", "skipped_frames": frames, **self.game_state._state})
 
 
     def get_pretty_status(self):
@@ -598,7 +605,8 @@ class GameServer:
             if self.status_received.is_set():
                 elapsed_time = time.perf_counter() - start_time
                 LOGGER.interest(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
-                get_mqtt().publish_json("game_server/status", {"event_type":"server_started", **self.game_state._state})
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/status", {"event_type":"server_started", **self.game_state._state})
                 return True
             elif self.server_closed.is_set():
                 LOGGER.warn(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
@@ -907,7 +915,8 @@ region=naeu
                         self._proc_owner = None
                         self.started = False
                         self.server_closed.set()  # Set the server_closed event
-                        get_mqtt().publish_json("game_server/status",{"event_type":"server_crashed", **self.game_state._state})
+                        if get_mqtt():
+                            get_mqtt().publish_json("game_server/status",{"event_type":"server_crashed", **self.game_state._state})
                         self.reset_game_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
                         asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self], service_recovery=False))  # restart the server
