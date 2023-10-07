@@ -297,7 +297,6 @@ class GameManagerParser:
                 This packet arrives any time someone begins connecting to the server
         """
         self.log("debug",f"GameServer #{self.id} - Received server connection packet: {packet}")
-        self.publish_event(topic="game_server/match", data={ "type":"player_connection", **game_server.game_state._state})
 
     async def cow_stats_submission(self, packet, game_server=None, cowmaster=None):
         """ 0x48 state of stats submission
