@@ -374,17 +374,6 @@ async def configure_filebeat(silent=False,test=False):
         
         return slave_log, match_log, diagnostic_log
     
-    def resolve_filestream_indentation(text, target):
-        count = 0
-        new_text = ''
-        for line in text.split('\n'):
-            if target in line:
-                count += 1
-                if count == 2:
-                    line = '  ' + line
-            new_text += line + '\n'
-        return new_text
-    
     def perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         server_values = {
             'Name': svr_name,
@@ -784,8 +773,7 @@ async def main(config=None, from_main=True):
         else: await step_certificate.main(stop_event, LOGGER, set_filebeat_auth_token, set_filebeat_auth_url)
 
         filebeat_changed = False
-        discord_username = await configure_filebeat(silent=args.silent, test=args.test)
-        if discord_username:
+        if await configure_filebeat(silent=args.silent, test=args.test):
             filebeat_changed = True
             # Delete scheduled task on Windows
             if operating_system == "Windows":
@@ -816,7 +804,9 @@ async def main(config=None, from_main=True):
             # initialise MQTT
             mqtt = MQTTHandler(global_config = global_config, certificate_path=get_filebeat_crt_path(), key_path=get_filebeat_key_path())
             mqtt.connect()
-            mqtt.set_discord_id(discord_username)
+            if roles_database:
+                discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
+                mqtt.set_discord_id(discord_username)
             set_mqtt(mqtt)
             get_mqtt().publish_json("manager/admin", {"event_type":"initialisation_complete"})
         

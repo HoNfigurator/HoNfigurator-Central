@@ -199,7 +199,7 @@ class GameServer:
         self.stop_task(self.tasks['idle_disconnect_timer'])
         self.idle_disconnect_timer = 0
 
-    async def on_game_state_change(self, key, value):
+    async def on_game_state_change(self, key, value, old_value):
         if key == "match_started":
             if value == 0:
                 LOGGER.debug(f"GameServer #{self.id} - Game Ended: {self.game_state['current_match_id']}")
@@ -242,6 +242,26 @@ class GameServer:
                     if msg_count > 10:
                         break
                     await asyncio.sleep(5)
+        elif key == "players":
+            # Convert the dictionaries to JSON strings and create sets
+            old_value_set = set(json.dumps(player) for player in old_value)
+            value_set = set(json.dumps(player) for player in value)
+
+            # Find players who left
+            left_players = old_value_set - value_set
+            # Find players who joined
+            joined_players = value_set - old_value_set
+
+            # Convert the JSON strings back to dictionaries for easy reading
+            left_players = [json.loads(player) for player in left_players]
+            joined_players = [json.loads(player) for player in joined_players]
+
+            if len(joined_players) > 0:
+                get_mqtt().publish_json("game_server/match", {"event_type":"player_connection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip']})
+            elif len(left_players) >0:
+                get_mqtt().publish_json("game_server/match", {"event_type":"player_disconnection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip']})
+
+            pass
 
     def unlink_client_connection(self):
         del self.client_connection
@@ -922,7 +942,6 @@ region=naeu
             if get_mqtt():
                 get_mqtt().publish_json("game_server/status", {"event_type":"heartbeat", **self.game_state._state})
 
-
     def enable_server(self):
         self.enabled = True
 
@@ -951,11 +970,16 @@ class GameState:
         return target_dict[key]
 
     def __setitem__(self, key, value, dict_to_check="state"):
+        old_value = None
+        try:
+            old_value = self._state[key]
+        except KeyError: # most likely, the game state is just being initialised, so there is no old value
+            pass
         if dict_to_check == "state":
             self._state[key] = value
         else:
             self._performance[key] = value
-        self._emit_event(key, value)
+        self._emit_event(key, value, old_value)
 
     def get_full_key(self, key, current_level, level=None, path=None, dict_to_check="state"):
         if level is None:
@@ -979,7 +1003,7 @@ class GameState:
         return None
 
     def update(self, data, current_level=None, dict_to_check="state"):
-        monitored_keys = ["match_started", "match_info.mode", "game_phase"]
+        monitored_keys = ["match_started", "match_info.mode", "game_phase", "players"]
 
         if current_level is None:
             current_level = self._state if dict_to_check == "state" else self._performance
@@ -1001,9 +1025,9 @@ class GameState:
     def add_listener(self, callback):
         self._listeners.append(callback)
 
-    def _emit_event(self, key, value):
+    def _emit_event(self, key, value, old_value):
         for listener in self._listeners:
-            asyncio.create_task(listener(key, value))
+            asyncio.create_task(listener(key, value, old_value))
 
     def clear(self, dict_to_check=None):
         if dict_to_check is None or dict_to_check == "state":
