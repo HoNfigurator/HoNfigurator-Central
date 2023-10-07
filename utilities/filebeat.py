@@ -487,7 +487,7 @@ async def configure_filebeat(silent=False,test=False):
                 'ignore_older': '24h',
                 'scan_frequency': '60s',
                 'exclude_files': '[".gz$"]',
-                'include_lines': ['DEBUG'],
+                'exclude_lines': ['DEBUG'],
                 'fields_under_root': True,
                 'fields': {
                     'Server': server_values,
