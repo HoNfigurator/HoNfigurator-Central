@@ -259,9 +259,7 @@ class GameServer:
             if len(joined_players) > 0:
                 get_mqtt().publish_json("game_server/match", {"event_type":"player_connection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip'], **self.game_state._state})
             elif len(left_players) >0:
-                get_mqtt().publish_json("game_server/match", {"event_type":"player_disconnection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip'], **self.game_state._state})
-
-            pass
+                get_mqtt().publish_json("game_server/match", {"event_type":"player_disconnection", "player_name":left_players[0]['name'], "player_ip":left_players[0]['ip'], **self.game_state._state})
 
     def unlink_client_connection(self):
         del self.client_connection
@@ -275,7 +273,7 @@ class GameServer:
 
     def update_dict_value(self, attribute, value):
         if attribute in self.game_state._state:
-            self.game_state._state[attribute] = value
+            self.game_state.update({attribute:value})
         elif attribute in self.game_state._performance:
             return self.game_state._performance[attribute]
         else:

@@ -153,7 +153,7 @@ class GameManagerParser:
         if len(packet) == 54:
             if game_server:
                 if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
-                    game_server.game_state._state['players'] = []
+                    game_server.game_state.update({'players':[]})
             return
 
         # Otherwise, extract player data sections from the packet
