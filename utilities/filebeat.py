@@ -406,7 +406,13 @@ async def configure_filebeat(silent=False,test=False):
             'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
-            'include_lines': ['Error: \[\d{2}:\d{2}:\d{2}\] CPacket::Write\(\) - Exceeded MAX_PACKET_SIZE while writing data: "0x[0-9a-fA-F]+", length: \d+', 'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding', 'Sv: \[\d{2}:\d{2}:\d{2}\] Name: .+', 'Sv: \[\d{2}:\d{2}:\d{2}\] IP: \d+\.\d+\.\d+\.\d+'],
+            'include_lines': [
+                r'Error: \[\d{2}:\d{2}:\d{2}\] CPacket::Write\(\) - Exceeded MAX_PACKET_SIZE while writing data: "0x[0-9a-fA-F]+", length: \d+', 
+                r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding', 
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Name: .+', 
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] IP: \d+\.\d+\.\d+\.\d+',
+                r'\[.*\] \[\d{2}:\d{2}:\d{2}\] >.*'
+            ],
             'fields': {
                 'Server': server_values,
                 'Log_Type': 'console'

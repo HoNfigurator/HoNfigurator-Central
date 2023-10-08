@@ -191,6 +191,8 @@ class GameServer:
                 if len(self.game_state['players']) > 0:
                     LOGGER.info(f"GameServer #{self.id} - Waited 1 minute. Players still connected. Resetting server.")
                     await self.manager_event_bus.emit('cmd_custom_command', self, "serverreset", delay=5)
+                    if get_mqtt():
+                        get_mqtt().publish_json("game_server/match",{"event_type":"server_reset", "reason": "players still connected after 60 seconds when game is ended.", **self.game_state._state})
 
                 break
             await asyncio.sleep(1)
@@ -231,6 +233,11 @@ class GameServer:
                 LOGGER.debug(f"GameServer #{self.id} - Game in final stages, game ending.")
                 await self.schedule_task(self.start_disconnect_timer,'idle_disconnect_timer', coro_bracket=True)
             # add more phases as needed
+
+        elif key == "status":
+            if value == GameStatus.OCCUPIED.value and self.game_state._state['current_match_id'] == 0:
+                await self.find_match_id_post_launch()
+
         elif key == "match_info.mode":
             if value == "botmatch" and not self.global_config['hon_data']['svr_enableBotMatch']:
 
@@ -281,6 +288,76 @@ class GameServer:
             return self.game_state._performance[attribute]
         else:
             return default
+    
+    async def find_match_id_post_launch(self):
+        file_pattern = re.compile(rf'Slave{self.id}_M(\d+)_console.clog')
+        # Ensure the directory exists
+        if not self.global_config['hon_data']['hon_logs_directory'].is_dir():
+            LOGGER.warning(f"GameServer #{self.id} - Directory {self.global_config['hon_data']['hon_logs_directory']} does not exist.")
+            return
+        
+        # Get all matching files and their creation times
+        files_and_times = [
+            (f, f.stat().st_ctime)
+            for f in self.global_config['hon_data']['hon_logs_directory'].glob(f'Slave{self.id}_M*_console.clog')
+        ]
+
+        # If no files found, return None
+        if not files_and_times:
+            LOGGER.debug(f"GameServer #{self.id} - No matching files found when looking for match ID.")
+            return
+        
+        # Find the newest file
+        newest_file = max(files_and_times, key=lambda x: x[1])[0]
+        
+        # Extract the Match ID
+        match = file_pattern.match(newest_file.name)
+        if match:
+            match_id = match.group(1)  # Return the Match ID
+            self.game_state.update({'current_match_id':match_id, 'match_info':{'match_id':match_id}})
+            await self.find_game_info_post_launch()
+        else:
+            LOGGER.warning(f"GameServer #{self.id} - Unexpected filename format: {newest_file.name}")
+            return
+    
+    async def find_game_info_post_launch(self):
+        await self.manager_event_bus.emit('cmd_custom_command', self, 'FlushServerLogs')
+
+        file_path = self.global_config['hon_data']['hon_logs_directory'] / f"M{self.game_state._state['current_match_id']}.log"
+        loop = asyncio.get_running_loop()
+        
+        encoding = 'utf-16-le' if MISC.get_os_platform() == "win32" else 'utf-8'
+        try:
+            with open(file_path, 'r', encoding=encoding) as file:
+                # Run the blocking file read operation in the default thread pool
+                text = await loop.run_in_executor(None, file.read)
+        except FileNotFoundError:
+            LOGGER.warning(f"GameServer #{self.id} - File not found: {file_path}")
+            return
+        except PermissionError:
+            LOGGER.warning(f"GameServer #{self.id} - Permission denied: {file_path}")
+            return
+        except UnicodeDecodeError:
+            LOGGER.warning(f"GameServer #{self.id} - Error decoding file: {file_path}")
+            return
+        
+        # Regular expressions for extracting the necessary information
+        match_name_re = re.compile(r'INFO_MATCH name:"([^"]+)"')
+        map_name_re = re.compile(r'INFO_MAP name:"([^"]+)"')
+        map_mode_re = re.compile(r'INFO_SETTINGS mode:"([^"]+)"')
+        
+        # Extract information using the regular expressions
+        match_name = match_name_re.search(text)
+        map_name = map_name_re.search(text)
+        map_mode = map_mode_re.search(text)
+
+        # Extracting the matched groups or None if not found
+        info = {
+            'map': match_name.group(1) if match_name else None,
+            'name': map_name.group(1) if map_name else None,
+            'mode': map_mode.group(1) if map_mode else None
+        }
+        self.game_state.update({'match_info':info})
 
     def update_dict_value(self, attribute, value):
         if attribute in self.game_state._state:
@@ -1021,7 +1098,7 @@ class GameState:
         return None
 
     def update(self, data, current_level=None, dict_to_check="state"):
-        monitored_keys = ["match_started", "match_info.mode", "game_phase", "players"]
+        monitored_keys = ["match_started", "match_info.mode", "game_phase", "players", "status"]
 
         if current_level is None:
             current_level = self._state if dict_to_check == "state" else self._performance
