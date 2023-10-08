@@ -423,11 +423,11 @@ async def configure_filebeat(silent=False,test=False):
             'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
-            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_SWAP','INFO_SETTINGS'],
             'fields': {
                 'Server': server_values,
                 'Log_Type': 'match'
-            }
+            },
+            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_SWAP','INFO_SETTINGS', 'PLAYER_CALL_VOTE', 'HERO_DEATH', 'GAME_CONCEDE', 'GAME_END']
         }
 
         filebeat_inputs['diagnostic_logs'] = {

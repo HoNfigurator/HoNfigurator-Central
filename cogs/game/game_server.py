@@ -246,9 +246,15 @@ class GameServer:
                         break
                     await asyncio.sleep(5)
         elif key == "players":
+            stable_keys = ['name', 'ip', 'location', 'account_id']
+
+            # Extract the relevant keys and values from the player dictionaries
+            old_players = [{k: player[k] for k in stable_keys} for player in old_value]
+            new_players = [{k: player[k] for k in stable_keys} for player in value]
+
             # Convert the dictionaries to JSON strings and create sets
-            old_value_set = set(json.dumps(player) for player in old_value)
-            value_set = set(json.dumps(player) for player in value)
+            old_value_set = set(json.dumps(player) for player in old_players)
+            value_set = set(json.dumps(player) for player in new_players)
 
             # Find players who left
             left_players = old_value_set - value_set
