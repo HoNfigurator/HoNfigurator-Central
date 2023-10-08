@@ -529,6 +529,10 @@ async def configure_filebeat(silent=False,test=False):
         
         # disabling slave logs, given the MQTT implementation
         # del filebeat_inputs['slave_logs']
+        
+        # disabling proxy logs for now, dont want extra noise yet
+        if 'proxy_logs' in filebeat_inputs:
+            del filebeat_inputs['proxy_logs']
 
         filebeat_config = {
             'filebeat.inputs': list(filebeat_inputs.values()),
