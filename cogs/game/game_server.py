@@ -10,13 +10,14 @@ import sys
 import os
 from datetime import datetime, timedelta
 from os.path import exists
-from cogs.misc.logger import get_logger, get_home, get_misc
+from cogs.misc.logger import get_logger, get_home, get_misc, get_mqtt
 from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, GamePhase
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.TCP.packet_parser import GameManagerParser
 import aiofiles
 import glob
 import re
+import random
 
 LOGGER = get_logger()
 HOME_PATH = get_home()
@@ -47,7 +48,7 @@ class GameServer:
         self.enabled = True # used to determine if the server should run
         self.delete_me = False # used to mark a server for deletion after it's been shutdown
         self.scheduled_shutdown = False # used to determine if currently scheduled for shutdown
-        self.game_manager_parser = GameManagerParser(self.id,LOGGER)
+        self.game_manager_parser = GameManagerParser(self.id,LOGGER,mqtt=get_mqtt())
         self.client_connection = None
         self.idle_disconnect_timer = 0
         self.game_in_progress = False
@@ -56,14 +57,19 @@ class GameServer:
         """
         self.status_received = asyncio.Event()
         self.server_closed = asyncio.Event()
-        self.game_state = GameState()
+        self.game_state = GameState(self.id, self.config.local)
         self.reset_game_state()
         self.game_state.add_listener(self.on_game_state_change)
+        self.game_state._state.update({'instance_id': self.id})
+        self.game_state._state.update({'instance_name': self.id})
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
         asyncio.create_task(self.load_gamestate_from_file(match_only=False))
         # Start the monitor_process method as a background task
         coro = self.monitor_process
         self.schedule_task(coro,'process_monitor', coro_bracket=True)
+        # Start the heartbeat task. This sends a status update to MQTT
+        coro = self.heartbeat
+        self.schedule_task(coro, 'heartbeat', coro_bracket=True)
 
     def schedule_task(self, coro, name, coro_bracket = False):
         existing_task = self.tasks.get(name)  # Get existing task if any
@@ -185,6 +191,8 @@ class GameServer:
                 if len(self.game_state['players']) > 0:
                     LOGGER.info(f"GameServer #{self.id} - Waited 1 minute. Players still connected. Resetting server.")
                     await self.manager_event_bus.emit('cmd_custom_command', self, "serverreset", delay=5)
+                    if get_mqtt():
+                        get_mqtt().publish_json("game_server/match",{"event_type":"server_reset", "reason": "players still connected after 60 seconds when game is ended.", **self.game_state._state})
 
                 break
             await asyncio.sleep(1)
@@ -193,10 +201,12 @@ class GameServer:
         self.stop_task(self.tasks['idle_disconnect_timer'])
         self.idle_disconnect_timer = 0
 
-    async def on_game_state_change(self, key, value):
+    async def on_game_state_change(self, key, value, old_value):
         if key == "match_started":
             if value == 0:
                 LOGGER.debug(f"GameServer #{self.id} - Game Ended: {self.game_state['current_match_id']}")
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/match", {"event_type":"match_ended", **self.game_state._state})
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
@@ -207,18 +217,27 @@ class GameServer:
                     self.game_in_progress = False
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/match", {"event_type":"match_started", **self.game_state._state})
                 self.game_in_progress = True
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
             # Add more phases as needed
         elif key == "game_phase":
             LOGGER.debug(f"GameServer #{self.id} - Game phase {value}")
+            if get_mqtt():
+                get_mqtt().publish_json("game_server/match", {"event_type":"phase_change", **self.game_state._state})
             if value == GamePhase.IDLE.value and self.scheduled_shutdown:
                 await self.stop_server_network()
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
                 LOGGER.debug(f"GameServer #{self.id} - Game in final stages, game ending.")
                 await self.schedule_task(self.start_disconnect_timer,'idle_disconnect_timer', coro_bracket=True)
             # add more phases as needed
+
+        elif key == "status":
+            if value == GameStatus.OCCUPIED.value and self.game_state._state['current_match_id'] == 0:
+                await self.find_match_id_post_launch()
+
         elif key == "match_info.mode":
             if value == "botmatch" and not self.global_config['hon_data']['svr_enableBotMatch']:
 
@@ -233,22 +252,118 @@ class GameServer:
                     if msg_count > 10:
                         break
                     await asyncio.sleep(5)
+        elif key == "players":
+            stable_keys = ['name', 'ip', 'location', 'account_id']
+
+            # Extract the relevant keys and values from the player dictionaries
+            old_players = [{k: player[k] for k in stable_keys} for player in old_value]
+            new_players = [{k: player[k] for k in stable_keys} for player in value]
+
+            # Convert the dictionaries to JSON strings and create sets
+            old_value_set = set(json.dumps(player) for player in old_players)
+            value_set = set(json.dumps(player) for player in new_players)
+
+            # Find players who left
+            left_players = old_value_set - value_set
+            # Find players who joined
+            joined_players = value_set - old_value_set
+
+            # Convert the JSON strings back to dictionaries for easy reading
+            left_players = [json.loads(player) for player in left_players]
+            joined_players = [json.loads(player) for player in joined_players]
+
+            if len(joined_players) > 0:
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/match", {"event_type":"player_connection", "player_name":joined_players[0]['name'], "player_ip":joined_players[0]['ip'], **self.game_state._state})
+            elif len(left_players) >0:
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/match", {"event_type":"player_disconnection", "player_name":left_players[0]['name'], "player_ip":left_players[0]['ip'], **self.game_state._state})
 
     def unlink_client_connection(self):
         del self.client_connection
     def get_dict_value(self, attribute, default=None):
         if attribute in self.game_state._state:
             return self.game_state._state[attribute]
-        elif attribute in self.game_state._state['performance']:
-            return self.game_state._state['performance'][attribute]
+        elif attribute in self.game_state._performance:
+            return self.game_state._performance[attribute]
         else:
             return default
+    
+    async def find_match_id_post_launch(self):
+        file_pattern = re.compile(rf'Slave{self.id}_M(\d+)_console.clog')
+        # Ensure the directory exists
+        if not self.global_config['hon_data']['hon_logs_directory'].is_dir():
+            LOGGER.warning(f"GameServer #{self.id} - Directory {self.global_config['hon_data']['hon_logs_directory']} does not exist.")
+            return
+        
+        # Get all matching files and their creation times
+        files_and_times = [
+            (f, f.stat().st_ctime)
+            for f in self.global_config['hon_data']['hon_logs_directory'].glob(f'Slave{self.id}_M*_console.clog')
+        ]
+
+        # If no files found, return None
+        if not files_and_times:
+            LOGGER.debug(f"GameServer #{self.id} - No matching files found when looking for match ID.")
+            return
+        
+        # Find the newest file
+        newest_file = max(files_and_times, key=lambda x: x[1])[0]
+        
+        # Extract the Match ID
+        match = file_pattern.match(newest_file.name)
+        if match:
+            match_id = match.group(1)  # Return the Match ID
+            self.game_state.update({'current_match_id':match_id, 'match_info':{'match_id':match_id}})
+            await self.find_game_info_post_launch()
+        else:
+            LOGGER.warning(f"GameServer #{self.id} - Unexpected filename format: {newest_file.name}")
+            return
+    
+    async def find_game_info_post_launch(self):
+        await self.manager_event_bus.emit('cmd_custom_command', self, 'FlushServerLogs')
+
+        file_path = self.global_config['hon_data']['hon_logs_directory'] / f"M{self.game_state._state['current_match_id']}.log"
+        loop = asyncio.get_running_loop()
+        
+        encoding = 'utf-16-le' if MISC.get_os_platform() == "win32" else 'utf-8'
+        try:
+            with open(file_path, 'r', encoding=encoding) as file:
+                # Run the blocking file read operation in the default thread pool
+                text = await loop.run_in_executor(None, file.read)
+        except FileNotFoundError:
+            LOGGER.warning(f"GameServer #{self.id} - File not found: {file_path}")
+            return
+        except PermissionError:
+            LOGGER.warning(f"GameServer #{self.id} - Permission denied: {file_path}")
+            return
+        except UnicodeDecodeError:
+            LOGGER.warning(f"GameServer #{self.id} - Error decoding file: {file_path}")
+            return
+        
+        # Regular expressions for extracting the necessary information
+        match_name_re = re.compile(r'INFO_MATCH name:"([^"]+)"')
+        map_name_re = re.compile(r'INFO_MAP name:"([^"]+)"')
+        map_mode_re = re.compile(r'INFO_SETTINGS mode:"([^"]+)"')
+        
+        # Extract information using the regular expressions
+        match_name = match_name_re.search(text)
+        map_name = map_name_re.search(text)
+        map_mode = map_mode_re.search(text)
+
+        # Extracting the matched groups or None if not found
+        info = {
+            'map': match_name.group(1).lower() if match_name else None,
+            'name': map_name.group(1).lower() if map_name else None,
+            'mode': map_mode.group(1).replace('Mode_','').lower() if map_mode else None
+        }
+        self.game_state.update({'match_info':info})
 
     def update_dict_value(self, attribute, value):
         if attribute in self.game_state._state:
-            self.game_state._state[attribute] = value
-        elif attribute in self.game_state._state['performance']:
-            self.game_state._state['performance'][attribute] = value
+            self.game_state.update({attribute:value})
+        elif attribute in self.game_state._performance:
+            return self.game_state._performance[attribute]
         else:
             raise KeyError(f"Attribute '{attribute}' not found in game_state or performance dictionary.")
 
@@ -261,19 +376,25 @@ class GameServer:
 
     def unset_client_connection(self):
         self.client_connection = None
+        if get_mqtt():
+            get_mqtt().publish_json("game_server/status",{"event_type":"server_disconnected", **self.game_state._state})
 
     def set_configuration(self):
         self.config = data_handler.ConfigManagement(self.id,self.global_config)
+
     async def load_gamestate_from_file(self,match_only):
+        # TODO: this function needs re-writing if we choose to continue to use it. It isn't used at the moment
         if exists(self.data_file):
             # Reading JSON
             async with aiofiles.open(self.data_file, "r") as f:
                 performance_data = json.loads(await f.read())
             if not match_only:
-                self.game_state._state['performance']['total_ingame_skipped_frames'] = performance_data['total_ingame_skipped_frames']
+                self.game_state._performance['total_ingame_skipped_frames'] = performance_data['total_ingame_skipped_frames']
             if self.game_state._state['current_match_id'] in performance_data:
-                self.game_state._state.update({'now_ingame_skipped_frames':self.game_state._state['now_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
+                self.game_state._performance.update({'now_ingame_skipped_frames':self.game_state._performance['total_ingame_skipped_frames'] + performance_data[self.game_state._state['current_match_id']]['now_ingame_skipped_frames']})
+    
     async def save_gamestate_to_file(self):
+        # TODO: this function needs re-writing if we choose to continue to use it. It isn't used at the moment
         current_match_id = str(self.game_state._state['current_match_id'])
 
         if exists(self.data_file):
@@ -282,9 +403,9 @@ class GameServer:
                 performance_data = json.loads(await f.read())
 
             performance_data = {
-                'total_ingame_skipped_frames':self.game_state._state['performance']['total_ingame_skipped_frames'],
+                'total_ingame_skipped_frames':self.game_state._performance['total_ingame_skipped_frames'],
                 current_match_id: {
-                    'now_ingame_skipped_frames': self.game_state._state['performance'].get('now_ingame_skipped_frames', 0)
+                    'now_ingame_skipped_frames': self.game_state._performance.get('now_ingame_skipped_frames', 0)
                 }
             }
 
@@ -306,17 +427,20 @@ class GameServer:
         return getattr(self, attribute, default)
 
     def reset_skipped_frames(self):
-        self.game_state._state['performance']['now_ingame_skipped_frames'] = 0
+        self.game_state._performance['now_ingame_skipped_frames'] = 0
 
     def increment_skipped_frames(self, frames, time):
-        if self.get_dict_value('game_phase') == 6:  # Only log skipped frames when we're actually in a match.
-            self.game_state._state['performance']['total_ingame_skipped_frames'] += frames
-            self.game_state._state['performance']['now_ingame_skipped_frames'] += frames
-            self.game_state._state['skipped_frames_detailed'][time] = frames
+        # if self.get_dict_value('game_phase') == 6:  # Only log skipped frames when we're actually in a match.
+            self.game_state._performance['total_ingame_skipped_frames'] += frames
+            self.game_state._performance['now_ingame_skipped_frames'] += frames
+            self.game_state._performance['skipped_frames_detailed'][time] = frames
 
             # Remove entries older than one day
             one_day_ago = time - timedelta(days=1).total_seconds()
-            self.game_state._state['skipped_frames_detailed'] = {key: value for key, value in self.game_state._state['skipped_frames_detailed'].items() if key >= one_day_ago}
+            self.game_state._performance['skipped_frames_detailed'] = {key: value for key, value in self.game_state._performance['skipped_frames_detailed'].items() if key >= one_day_ago}
+            if get_mqtt():
+                get_mqtt().publish_json("game_server/lag",{"event_type": "skipped_frame", "skipped_frames": frames, **self.game_state._state})
+
 
     def get_pretty_status(self):
         def format_time(seconds):
@@ -564,6 +688,8 @@ class GameServer:
             if self.status_received.is_set():
                 elapsed_time = time.perf_counter() - start_time
                 LOGGER.interest(f"GameServer #{self.id} with public ports {self.get_public_game_port()}/{self.get_public_voice_port()} started successfully in {elapsed_time:.2f} seconds.")
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/status", {"event_type":"server_started", **self.game_state._state})
                 return True
             elif self.server_closed.is_set():
                 LOGGER.warn(f"GameServer #{self.id} closed prematurely. Stopped waiting for it.")
@@ -872,6 +998,8 @@ region=naeu
                         self._proc_owner = None
                         self.started = False
                         self.server_closed.set()  # Set the server_closed event
+                        if get_mqtt():
+                            get_mqtt().publish_json("game_server/status",{"event_type":"server_crashed", **self.game_state._state})
                         self.reset_game_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
                         asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self], service_recovery=False))  # restart the server
@@ -891,6 +1019,24 @@ region=naeu
         except Exception as e:
             LOGGER.error(f"GameServer #{self.id} Unexpected error in monitor_process: {e}")
 
+    async def heartbeat(self):
+        while not stop_event.is_set():
+            if self.game_state._state['match_started'] == 0:
+                sleep = 60
+            else:
+                sleep = 20
+
+            # Introduce jitter: sleep for a random duration between 0 to 10 seconds
+            jitter = random.uniform(0, 10)
+            await asyncio.sleep(jitter)
+            
+            for _ in range(sleep):
+                if stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
+            if get_mqtt():
+                get_mqtt().publish_json("game_server/status", {"event_type":"heartbeat", **self.game_state._state})
+
     def enable_server(self):
         self.enabled = True
 
@@ -904,22 +1050,35 @@ region=naeu
     def unschedule_shutdown(self):
         self.scheduled_shutdown = False
         # self.delete_me = False
+import asyncio
 
 class GameState:
-    def __init__(self):
+    def __init__(self, id, local_config):
         self._state = {}
+        self._performance = {}
         self._listeners = []
+        self.id = id
+        self.local_config = local_config
 
-    def __getitem__(self, key):
-        return self._state[key]
+    def __getitem__(self, key, dict_to_check="state"):
+        target_dict = self._state if dict_to_check == "state" else self._performance
+        return target_dict[key]
 
-    def __setitem__(self, key, value):
-        self._state[key] = value
-        self._emit_event(key, value)
+    def __setitem__(self, key, value, dict_to_check="state"):
+        old_value = None
+        try:
+            old_value = self._state[key]
+        except KeyError: # most likely, the game state is just being initialised, so there is no old value
+            pass
+        if dict_to_check == "state":
+            self._state[key] = value
+        else:
+            self._performance[key] = value
+        self._emit_event(key, value, old_value)
 
-    def get_full_key(self, key, current_level, level=None, path=None):
+    def get_full_key(self, key, current_level, level=None, path=None, dict_to_check="state"):
         if level is None:
-            level = self._state
+            level = self._state if dict_to_check == "state" else self._performance
 
         if path is None:
             path = []
@@ -932,61 +1091,69 @@ class GameState:
             if isinstance(v, dict):
                 new_path = path.copy()
                 new_path.append(k)
-                result = self.get_full_key(key, current_level, v, new_path)
+                result = self.get_full_key(key, current_level, v, new_path, dict_to_check)
                 if result:
                     return result
 
         return None
 
+    def update(self, data, current_level=None, dict_to_check="state"):
+        monitored_keys = ["match_started", "match_info.mode", "game_phase", "players", "status"]
 
-    def update(self, data, current_level=None):
-        monitored_keys = ["match_started", "match_info.mode", "game_phase"]  # Put the list of items you want to monitor here
-
-        # If we are at the root level, set the current level to the main dictionary
         if current_level is None:
-            current_level = self._state
+            current_level = self._state if dict_to_check == "state" else self._performance
+
+        target_dict = self._state if dict_to_check == "state" else self._performance
 
         for key, value in data.items():
             if isinstance(value, dict):
-                # If the key does not exist in the current level, create an empty dictionary
                 if key not in current_level:
                     current_level[key] = {}
-                self.update(value, current_level[key])
+                self.update(value, current_level[key], dict_to_check)
             else:
-                # Check if the full key is in the monitored_keys list
-                full_key = self.get_full_key(key, current_level)
-                if full_key in monitored_keys and (full_key not in self._state or self[full_key] != value):
-                    self.__setitem__(full_key, value)
+                full_key = self.get_full_key(key, current_level, dict_to_check=dict_to_check)
+                if full_key in monitored_keys and (full_key not in target_dict or self.__getitem__(full_key, dict_to_check) != value):
+                    self.__setitem__(full_key, value, dict_to_check)
                 else:
                     current_level[key] = value
 
     def add_listener(self, callback):
         self._listeners.append(callback)
 
-    def _emit_event(self, key, value):
+    def _emit_event(self, key, value, old_value):
         for listener in self._listeners:
-            asyncio.create_task(listener(key, value))
+            asyncio.create_task(listener(key, value, old_value))
 
-    def clear(self):
-        self.update({
-            'status': None,
-            'uptime': None,
-            'num_clients': None,
-            'match_started': None,
-            'game_phase': None,
-            'current_match_id': None,
-            'players': [],
-            'performance': {
-                'total_ingame_skipped_frames': 0,
-                'now_ingame_skipped_frames': 0
-            },
-            'skipped_frames_detailed': {},
-            'match_info':{
-                'map':None,
-                'mode':None,
-                'name':None,
-                'match_id':None,
-                'start_time': 0,
-                'duration':0
-            }
-        })
+    def clear(self, dict_to_check=None):
+        if dict_to_check is None or dict_to_check == "state":
+            self.update({
+                'instance_id':self.id,
+                'instance_name': self.local_config['name'],
+                'local_game_port': self.local_config['params']['svr_port'],
+                'remote_game_port': self.local_config['params']['svr_proxyPort'],
+                'local_voice_port': self.local_config['params']['svr_proxyLocalVoicePort'],
+                'remote_voice_port': self.local_config['params']['svr_proxyRemoteVoicePort'],
+                'proxy_enabled': self.local_config['params']['man_enableProxy'],
+                'svr_affinity': self.local_config['params']['host_affinity'],
+                'status': 0,
+                'uptime': 0,
+                'num_clients': 0,
+                'match_started': 0,
+                'game_phase': 0,
+                'current_match_id': 0,
+                'players': [],
+                'match_info':{
+                    'map':None,
+                    'mode':None,
+                    'name':None,
+                    'match_id':None,
+                    'start_time': 0,
+                    'duration':0
+                }
+            }, dict_to_check="state")
+        if dict_to_check is None or dict_to_check == "performance":
+            self.update({
+                "now_ingame_skipped_frames": 0,
+                "total_ingame_skipped_frames": 0,
+                'skipped_frames_detailed': {}
+            }, dict_to_check="performance")

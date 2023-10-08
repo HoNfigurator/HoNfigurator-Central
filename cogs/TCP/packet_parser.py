@@ -1,4 +1,3 @@
-#from cogs.misc.logging import get_logger
 import traceback
 import inspect
 import re
@@ -22,8 +21,9 @@ def read_string(data, offset):
     return str.decode('utf-8'), offset
 
 class GameManagerParser:
-    def __init__(self, client_id,logger=None):
+    def __init__(self, client_id,logger=None,mqtt=None):
         self.logger = logger
+        self.mqtt = mqtt
         self.packet_handlers = {
             0x40: self.server_announce,
             0x41: self.server_closed,
@@ -36,6 +36,10 @@ class GameManagerParser:
             0x4A: self.replay_update
         }
         self.id = client_id
+    
+    def publish_event(self, topic, data):
+        if self.mqtt:
+            self.mqtt.publish_json(topic, data)
 
     def log(self,level,message):
         if self.logger:
@@ -96,6 +100,7 @@ class GameManagerParser:
             game_server.reset_game_state()
             # await game_server.save_gamestate_to_file()
             game_server.reset_skipped_frames()
+            self.publish_event(topic="game_server/status", data={ "type":"server_closed", **game_server.game_state._state})  
         else:
             self.log("debug",f"CowMaster #{self.id} - Received server closed packet: {packet}")
             cowmaster.reset_cowmaster_state()
@@ -134,7 +139,7 @@ class GameManagerParser:
         temp = ({
             'status': packet[1],                                        # extract status field from packet
             'uptime': int.from_bytes(packet[2:6], byteorder='little'),  # extract uptime field from packet
-            'cpu_core_util': f"{int.from_bytes(packet[6:10], byteorder='little') / 100}%",   # extract the server load value
+            'cpu_core_util': int.from_bytes(packet[6:10], byteorder='little') / 100,   # extract the server load value
             'num_clients': packet[10],                                  # extract number of clients field from packet
             'match_started': packet[11],                                # extract match started field from packet
             'game_phase': packet[40],                                   # extract game phase field from packet
@@ -148,7 +153,7 @@ class GameManagerParser:
         if len(packet) == 54:
             if game_server:
                 if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
-                    game_server.game_state._state['players'] = ''
+                    game_server.game_state.update({'players':[]})
             return
 
         # Otherwise, extract player data sections from the packet
@@ -254,6 +259,8 @@ class GameManagerParser:
             game_server.reset_skipped_frames()
 
         self.log("debug", f"GameServer #{self.id} - {lobby_info}")
+        self.publish_event(topic="game_server/match", data={ "type":"lobby_created", **game_server.game_state._state})
+        
 
     async def lobby_closed(self,packet, game_server=None, cowmaster=None):
         """   0x45 Lobby closed
@@ -271,6 +278,7 @@ class GameManagerParser:
             game_server.reset_game_state()
             # await game_server.save_gamestate_to_file()
             game_server.reset_skipped_frames()
+            self.publish_event(topic="game_server/match", data={ "type":"lobby_closed", **game_server.game_state._state})
         else:
             cowmaster.reset_cowmaster_state()
 
