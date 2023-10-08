@@ -427,7 +427,7 @@ async def configure_filebeat(silent=False,test=False):
                 'Server': server_values,
                 'Log_Type': 'match'
             },
-            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_RANDOM','PLAYER_SWAP','INFO_SETTINGS', 'PLAYER_CALL_VOTE', 'HERO_DEATH', 'GAME_CONCEDE', 'GAME_END']
+            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_RANDOM','PLAYER_SWAP','INFO_SETTINGS', 'INFO_MAP', 'INFO_MATCH', 'PLAYER_CALL_VOTE', 'HERO_DEATH', 'GAME_CONCEDE', 'GAME_END']
         }
 
         filebeat_inputs['diagnostic_logs'] = {
