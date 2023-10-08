@@ -10,7 +10,7 @@ class PrepareDependencies:
             raise RuntimeError(f"Unsupported Python version: {sys.version}")
         elif self.python_version[1] < 9:
             raise RuntimeError(f"Python version too old: {sys.version}")
-        elif self.python_version[1] > 11:
+        elif self.python_version[1] > 12:
             raise RuntimeError(f"Python version too new: {sys.version}")
         else:
             minor_version = self.python_version[1]
