@@ -16,6 +16,7 @@ import re
 import hashlib
 from tempfile import NamedTemporaryFile
 import yaml
+from cogs.handlers.mqtt import MQTTHandler
 
 # if code is launched independtly
 if __name__ == "__main__":
@@ -26,7 +27,7 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home, set_mqtt, get_mqtt
 
     from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
@@ -373,17 +374,6 @@ async def configure_filebeat(silent=False,test=False):
         
         return slave_log, match_log, diagnostic_log
     
-    def resolve_filestream_indentation(text, target):
-        count = 0
-        new_text = ''
-        for line in text.split('\n'):
-            if target in line:
-                count += 1
-                if count == 2:
-                    line = '  ' + line
-            new_text += line + '\n'
-        return new_text
-    
     def perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
         server_values = {
             'Name': svr_name,
@@ -416,6 +406,13 @@ async def configure_filebeat(silent=False,test=False):
             'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
+            'include_lines': [
+                r'Error: \[\d{2}:\d{2}:\d{2}\] CPacket::Write\(\) - Exceeded MAX_PACKET_SIZE while writing data: "0x[0-9a-fA-F]+", length: \d+', 
+                r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding', 
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Name: .+', 
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] IP: \d+\.\d+\.\d+\.\d+',
+                r'\[.*\] \[\d{2}:\d{2}:\d{2}\] >.*'
+            ],
             'fields': {
                 'Server': server_values,
                 'Log_Type': 'console'
@@ -432,15 +429,14 @@ async def configure_filebeat(silent=False,test=False):
             'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
-            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_SWAP','INFO_SETTINGS'],
             'fields': {
                 'Server': server_values,
                 'Log_Type': 'match'
-            }
+            },
+            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_RANDOM','PLAYER_SWAP','INFO_SETTINGS', 'INFO_MAP', 'INFO_MATCH', 'PLAYER_CALL_VOTE', 'HERO_DEATH', 'GAME_CONCEDE', 'GAME_END']
         }
 
-        filebeat_inputs['diagnostic_logs'] = \
-        {
+        filebeat_inputs['diagnostic_logs'] = {
             'type': 'filestream',
             'id': 'diagnostic_logs',
             'enabled': True,
@@ -452,7 +448,22 @@ async def configure_filebeat(silent=False,test=False):
             'fields': {
                 'Server': server_values,
                 'Log_Type': 'diagnostic'
-            }
+            },
+            'processors': [
+                {
+                    'drop_event': {
+                        'when': {
+                            'not': {
+                                'or': [
+                                    {'regexp': {'message': '.*:.*:0[0-5].*'}},
+                                    {'regexp': {'message': '.*:.*:2[0-5].*'}},
+                                    {'regexp': {'message': '.*:.*:4[0-5].*'}}
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]
         }
         
         if global_config:
@@ -482,6 +493,7 @@ async def configure_filebeat(silent=False,test=False):
                 'ignore_older': '24h',
                 'scan_frequency': '60s',
                 'exclude_files': '[".gz$"]',
+                'exclude_lines': ['DEBUG'],
                 'fields_under_root': True,
                 'fields': {
                     'Server': server_values,
@@ -514,6 +526,13 @@ async def configure_filebeat(silent=False,test=False):
         
         if global_config and not global_config['application_data']['filebeat']['send_diagnostics_data']:
             del filebeat_inputs['diagnostic_logs']
+        
+        # disabling slave logs, given the MQTT implementation
+        # del filebeat_inputs['slave_logs']
+        
+        # disabling proxy logs for now, dont want extra noise yet
+        if 'proxy_logs' in filebeat_inputs:
+            del filebeat_inputs['proxy_logs']
 
         filebeat_config = {
             'filebeat.inputs': list(filebeat_inputs.values()),
@@ -525,7 +544,7 @@ async def configure_filebeat(silent=False,test=False):
                 'index.number_of_shards': '1'
             },
             'output.logstash': {
-                'hosts': 'hon-elk.honfigurator.app:5044',
+                'hosts': 'elastic-node2.honfigurator.app:5044',
                 'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
                 'ssl.certificate': str(Path(destination_folder) / "client.crt"),
                 'ssl.key': str(Path(destination_folder) / "client.key"),
@@ -643,7 +662,7 @@ async def configure_filebeat(silent=False,test=False):
     if old_config_hash != new_config_hash:
         shutil.move(temp_file_path, config_file_path)
         print_or_log('info',f"Filebeat configuration file downloaded and placed at: {config_file_path}")
-        return True
+        return looked_up_discord_username
     else:
         print_or_log('debug',"No configuration changes required")
         return False
@@ -662,7 +681,7 @@ async def run_command(command_list, success_message=None):
     process = await asyncio.create_subprocess_shell(' '.join(command_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     stdout, stderr = await process.communicate()
     if process.returncode == 0:
-        if success_message: print_or_log(success_message)
+        if success_message: print_or_log('info', success_message)
         return process
     else:
         print_or_log('error',f"Command: {' '.join(command_list)}\nReturn code: {process.returncode}\nError: {stderr.decode()}")
@@ -806,6 +825,15 @@ async def main(config=None, from_main=True):
 
         if not __name__ == "__main__":
             await filebeat_status()    # sets the overall status of filebeat for retreival by other components
+
+            # initialise MQTT
+            mqtt = MQTTHandler(global_config = global_config, certificate_path=get_filebeat_crt_path(), key_path=get_filebeat_key_path())
+            mqtt.connect()
+            if roles_database:
+                discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
+                mqtt.set_discord_id(discord_username)
+            set_mqtt(mqtt)
+            get_mqtt().publish_json("manager/admin", {"event_type":"initialisation_complete"})
         
         return True
 

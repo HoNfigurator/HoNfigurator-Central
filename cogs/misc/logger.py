@@ -73,6 +73,7 @@ class PromptToolkitLogHandler(logging.Handler):
 
 FILEBEAT_AUTH_TOKEN = None
 FILEBEAT_AUTH_URL = None
+MQTT = None
 
 # Get the path of the current script
 def get_script_dir(file):
@@ -153,6 +154,14 @@ def set_misc(misc_object):
 def get_misc():
     global MISC
     return MISC
+
+def get_mqtt():
+    global MQTT
+    return MQTT
+
+def set_mqtt(mqtt):
+    global MQTT
+    MQTT = mqtt
 
 def set_setup(setup_object):
     global SETUP

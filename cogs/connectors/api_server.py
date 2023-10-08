@@ -169,6 +169,22 @@ async def filebeat_installed():
     else:
         return JSONResponse(status_code=404, content=status_dict)
 
+@app.get("/api/public/get_skipped_frame_data/{port}")
+def get_skipped_frame_data(port: str):
+    temp = {}
+    if port != "all":
+        game_server = game_servers.get(int(port),None)
+        if game_server is None: return
+        temp = game_server.get_dict_value("skipped_frames_detailed")
+    else:
+        for game_server in game_servers.values():
+            temp[game_server.config.get_local_by_key('svr_name')] = game_server.get_dict_value("skipped_frames_detailed")
+    json_content = json.dumps(temp, indent=2)
+    return Response(content=json_content, media_type="application/json")
+
+@app.get("/api/public/get_hon_version")
+async def get_hon_version(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"data":MISC.hon_version}
 
 """Protected Endpoints"""
 """Client registration to add server"""

@@ -32,6 +32,10 @@ class Misc:
         self.hon_version = None
 
     def build_commandline_args(self, config_local, config_global, cowmaster=False):
+
+        # remove host_affinity if override is enabled, which is used by the game to manage it's affinity. Instead, lets the code handle affinity assignment
+        if self.get_os_platform() == "windows" and config_local['params']['svr_override_affinity']:
+            config_local['params'].pop('host_affinity')
         # Prepare the parameters
         params = ';'.join(' '.join((f"Set {key}", str(val))) for (key, val) in config_local['params'].items())
 
@@ -402,6 +406,12 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
+    
+    def get_github_branch(self):
+        if self.github_branch:
+            return self.github_branch
+        else:
+            return self.get_current_branch_name()
 
     def get_git_commit_date(self):
         command = 'git log -1 --format="%cd" --date=format-local:"%Y-%m-%d %H:%M:%S"'

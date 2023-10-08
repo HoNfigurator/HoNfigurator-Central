@@ -218,7 +218,7 @@ class HealthCheckManager:
                         self.tasks[task_name] = self.schedule_task(self.poll_for_game_stats(), task_name)
                     elif task_name == 'public_ip_changed_check':
                         self.tasks[task_name] = self.schedule_task(self.public_ip_healthcheck(), task_name)
-                    elif task_name == 'filebeat_verification':
+                    # elif task_name == 'filebeat_verification':
                         self.tasks[task_name] = self.schedule_task(self.filebeat_verification(), task_name)
                     elif task_name == 'general_healthcheck':
                         self.tasks[task_name] = self.schedule_task(self.general_healthcheck(), task_name)
