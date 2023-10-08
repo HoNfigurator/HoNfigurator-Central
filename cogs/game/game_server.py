@@ -353,9 +353,9 @@ class GameServer:
 
         # Extracting the matched groups or None if not found
         info = {
-            'map': match_name.group(1) if match_name else None,
-            'name': map_name.group(1) if map_name else None,
-            'mode': map_mode.group(1) if map_mode else None
+            'map': match_name.group(1).replace('Mode_','').lower() if match_name else None,
+            'name': map_name.group(1).replace('Mode_','').lower() if map_name else None,
+            'mode': map_mode.group(1).replace('Mode_','').lower() if map_mode else None
         }
         self.game_state.update({'match_info':info})
 
