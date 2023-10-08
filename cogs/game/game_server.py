@@ -944,11 +944,16 @@ region=naeu
 
     async def heartbeat(self):
         while not stop_event.is_set():
+            if self.game_state._state['match_started'] == 0:
+                sleep = 60
+            else:
+                sleep = 20
+
             # Introduce jitter: sleep for a random duration between 0 to 10 seconds
             jitter = random.uniform(0, 10)
             await asyncio.sleep(jitter)
             
-            for _ in range(60):
+            for _ in range(sleep):
                 if stop_event.is_set():
                     return
                 await asyncio.sleep(1)
