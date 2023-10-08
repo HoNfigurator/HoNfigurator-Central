@@ -137,7 +137,4 @@ class ConfigManagement():
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
 
-        # if self.get_global_by_key('svr_override_affinity'):
-        #     self.local['params'].pop('host_affinity', None)  # Remove 'host_affinity' key if svr_override_affinity is True
-
         return self.local

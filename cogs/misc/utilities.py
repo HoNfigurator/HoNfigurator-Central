@@ -32,6 +32,10 @@ class Misc:
         self.hon_version = None
 
     def build_commandline_args(self, config_local, config_global, cowmaster=False):
+
+        # remove host_affinity if override is enabled, which is used by the game to manage it's affinity. Instead, lets the code handle affinity assignment
+        if config_local['params']['svr_override_affinity']:
+            config_local['params'].pop('host_affinity')
         # Prepare the parameters
         params = ';'.join(' '.join((f"Set {key}", str(val))) for (key, val) in config_local['params'].items())
 
