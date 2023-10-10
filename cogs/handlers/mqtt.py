@@ -16,11 +16,13 @@ class MQTTHandler:
         self.certificate_path = certificate_path
         self.key_path = key_path
         self.discord_id = None
+        self.mastersv_state = None
+        self.chatsv_state = None
 
         # Create a new MQTT client instance
         self.client = mqtt.Client()
         if get_misc().get_os_platform() == "win32":
-            step_ca_dir = Path(os.environ["HOMEPATH"]) / ".step" / "certs"
+            step_ca_dir = Path(os.environ["HOMEDRIVE"] + os.environ["HOMEPATH"]) / ".step" / "certs"
         else:
             step_ca_dir = Path(os.environ["HOME"]) / ".step" / "certs"
 
@@ -32,7 +34,7 @@ class MQTTHandler:
         if username and password:
             self.client.username_pw_set(username,password)
         else:
-            self.client.tls_set(ca_certs=step_ca_dir / "root_ca.crt",
+            self.client.tls_set(ca_certs=str(step_ca_dir / "root_ca.crt"),
                 certfile=certificate_path,
                 keyfile=key_path)
 
@@ -57,6 +59,12 @@ class MQTTHandler:
     
     def set_discord_id(self, discord_id):
         self.discord_id = discord_id
+    
+    def set_mastersv_state(self, state):
+        self.mastersv_state = state
+    
+    def set_chatsv_state(self, state):
+        self.chatsv_state = state
 
     def add_metadata(self):
         metadata = {
@@ -68,7 +76,9 @@ class MQTTHandler:
             'timestamp': datetime.datetime.utcnow().strftime('%Y-%m-%d %H:%M:%S'),
             'svr_location': self.global_config['hon_data']['svr_location'],
             'cpu_name': self.global_config['system_data']['cpu_name'],
-            'cpu_count': self.global_config['system_data']['cpu_count']
+            'cpu_count': self.global_config['system_data']['cpu_count'],
+            'chatsv_state': self.chatsv_state,
+            'mastersv_state': self.mastersv_state
         }
         if self.discord_id:
             metadata.update({'discord_id':self.discord_id})
