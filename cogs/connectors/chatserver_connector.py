@@ -78,7 +78,7 @@ class ChatServerHandler:
                 LOGGER.error(f"IncompleteReadError: {traceback.format_exc()}")
             except ConnectionResetError:
                 LOGGER.error("Connection reset by the server.")
-                break
+                raise ConnectionResetError
             # except Exception:  This causes spam errors. We should let it reconnect naturally if there's an issue
             #     LOGGER.error(f"Other connection error. {traceback.format_exc()}")
 
