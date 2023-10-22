@@ -411,7 +411,7 @@ async def configure_filebeat(silent=False,test=False):
             'fields_under_root': True,
             'include_lines': [
                 r'Error: \[\d{2}:\d{2}:\d{2}\] CPacket::Write\(\) - Exceeded MAX_PACKET_SIZE while writing data: "0x[0-9a-fA-F]+", length: \d+', 
-                r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding .*',
+                r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding',
                 r'Client \d+ disconnected: disconnect_timed_out',
                 r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ timing out', 
                 r'Sv: \[\d{2}:\d{2}:\d{2}\] Name: .+', 
