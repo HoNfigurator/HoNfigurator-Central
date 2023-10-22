@@ -391,7 +391,7 @@ async def configure_filebeat(silent=False,test=False):
             'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch'],
             'HoN_Server_Version': MISC.get_svr_version(global_config['hon_data']['hon_executable_path']),
             'Proxy_Enabled': global_config['hon_data']['man_enableProxy'] if 'man_enableProxy' in global_config else False
-        },
+        }
         honfigurator_values = {
             'GitHub_Branch': MISC.github_branch,
             'Version': MISC.tag,
@@ -420,6 +420,7 @@ async def configure_filebeat(silent=False,test=False):
             ],
             'fields': {
                 'Server': server_values,
+                'HoNfigurator': honfigurator_values,
                 'Log_Type': 'console'
             }
         }
@@ -505,6 +506,7 @@ async def configure_filebeat(silent=False,test=False):
                 'fields_under_root': True,
                 'fields': {
                     'Server': server_values,
+                    'HoNfigurator': honfigurator_values,
                     'Log_Type': 'honfigurator'
                 },
                 'parsers': [
