@@ -70,6 +70,7 @@ class MQTTHandler:
         metadata = {
             'svr_ip' : self.global_config['hon_data']['svr_ip'],
             'svr_name' : self.global_config['hon_data']['svr_name'],
+            'svr_api_port' : self.global_config['hon_data']['svr_api_port'],
             'svr_version' : self.global_config['hon_data']['svr_version'],
             'svr_total_per_core' : self.global_config['hon_data']['svr_total_per_core'],
             'github_branch': self.global_config['system_data']['github_branch'],
