@@ -17,6 +17,7 @@ import hashlib
 from tempfile import NamedTemporaryFile
 import yaml
 from cogs.handlers.mqtt import MQTTHandler
+import datetime
 
 # if code is launched independtly
 if __name__ == "__main__":
@@ -83,15 +84,24 @@ async def filebeat_status():
     installed = check_filebeat_installed()
     certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
     certificate_status = 'non-existent'
+    certificate_valid = False
+    certificate_expired = False
+    certificate_expiry = None
+    timezone_offset = datetime.datetime.now(datetime.timezone.utc).astimezone().strftime('%z')
+    timezone_offset = timezone_offset[:-2] + ':' + timezone_offset[-2:]
 
     if certificate_exists:
         valid_to = step_certificate.get_certificate_valid_to(get_filebeat_crt_path())
+        certificate_expiry = str(valid_to)
         if step_certificate.is_certificate_expired(get_filebeat_crt_path()):
             certificate_status = f"expired ({valid_to})"
+            certificate_expired = True
         elif step_certificate.is_certificate_expiring(get_filebeat_crt_path()):
             certificate_status = f"expiring soon ({valid_to})"
+            certificate_valid = True
         else:
             certificate_status = f"valid (until {valid_to})"
+            certificate_valid = True
 
     filebeat_running = False
     if MISC.get_proc('filebeat') or MISC.get_proc('filebeat.exe'):
@@ -101,7 +111,11 @@ async def filebeat_status():
         "installed": installed,
         "running": filebeat_running,
         "certificate_exists": certificate_exists,
+        "certificate_valid": certificate_valid,
+        "certificate_expired": certificate_expired,
+        "certificate_expiry": certificate_expiry,
         "certificate_status": certificate_status,
+        "timezone": timezone_offset,
         "pending_oauth_url": True if get_filebeat_auth_url() else False
     }
 
@@ -412,8 +426,8 @@ async def configure_filebeat(silent=False,test=False):
             'include_lines': [
                 r'Error: \[\d{2}:\d{2}:\d{2}\] CPacket::Write\(\) - Exceeded MAX_PACKET_SIZE while writing data: "0x[0-9a-fA-F]+", length: \d+', 
                 r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding',
-                r'Client \d+ disconnected: disconnect_timed_out',
-                r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ timing out', 
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Client #\d+ disconnected: disconnect_timed_out',
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Client #\d+ timing out', 
                 r'Sv: \[\d{2}:\d{2}:\d{2}\] Name: .+', 
                 r'Sv: \[\d{2}:\d{2}:\d{2}\] IP: \d+\.\d+\.\d+\.\d+',
                 r'\[.*\] \[\d{2}:\d{2}:\d{2}\] >.*'
