@@ -29,6 +29,7 @@ class Misc:
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
         self.public_ip = self.lookup_public_ip()
+        self.tag = None
         self.tag = self.get_github_tag()
         self.hon_version = None
 
@@ -410,10 +411,12 @@ class Misc:
     
     def get_github_tag(self):
         try:
+            if self.tag:
+                return self.tag
             tag = subprocess.check_output(['git', 'describe', '--tags'], stderr=subprocess.STDOUT).decode().strip()
             return tag.split('-')[0]
         except subprocess.CalledProcessError:
-            print("Error: Failed to get the tag. Make sure you're in a Git repository and have tags.")
+            LOGGER.error("Error: Failed to get the tag. Make sure you're in a Git repository and have tags.")
             return None
     
     def get_github_branch(self):

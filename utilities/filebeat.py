@@ -408,7 +408,7 @@ async def configure_filebeat(silent=False,test=False):
         }
         honfigurator_values = {
             'GitHub_Branch': MISC.github_branch,
-            'Version': MISC.tag,
+            'Version': MISC.get_github_tag(),
             'API_Port': global_config['hon_data']['svr_api_port'],
         }
 
