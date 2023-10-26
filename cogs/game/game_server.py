@@ -1074,7 +1074,7 @@ class GameState:
                 'remote_voice_port': self.local_config['params']['svr_proxyRemoteVoicePort'],
                 'proxy_enabled': self.local_config['params']['man_enableProxy'],
                 'svr_affinity': self.local_config['params']['host_affinity'],
-                'status': 0,
+                'status': -1,
                 'uptime': 0,
                 'num_clients': 0,
                 'match_started': 0,

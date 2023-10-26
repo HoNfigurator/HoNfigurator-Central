@@ -50,6 +50,7 @@ class ReplayStatus(Enum):
 
 class GameStatus(Enum):
     # the 'status' object within the gameserver game_state dictionary
+    UNKNOWN = -1
     SLEEPING = 0
     READY = 1
     OCCUPIED = 3 # in lobby / game
@@ -58,6 +59,7 @@ class GameStatus(Enum):
 
 class GamePhase(Enum):
     # the 'game_phase' object within the gameserver game_state dictionary
+    UNKNOWN = -1
     IDLE = 0
     IN_LOBBY = 1
     BANNING_PHASE = 2 # Banning phase
