@@ -29,6 +29,7 @@ class Misc:
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
         self.public_ip = self.lookup_public_ip()
+        self.tag = self.get_github_tag()
         self.hon_version = None
 
     def build_commandline_args(self, config_local, config_global, cowmaster=False):
@@ -405,6 +406,14 @@ class Misc:
             return branch_name
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
+            return None
+    
+    def get_github_tag(self):
+        try:
+            tag = subprocess.check_output(['git', 'describe', '--tags'], stderr=subprocess.STDOUT).decode().strip()
+            return tag.split('-')[0]
+        except subprocess.CalledProcessError:
+            print("Error: Failed to get the tag. Make sure you're in a Git repository and have tags.")
             return None
     
     def get_github_branch(self):

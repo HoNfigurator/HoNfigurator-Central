@@ -17,6 +17,7 @@ import hashlib
 from tempfile import NamedTemporaryFile
 import yaml
 from cogs.handlers.mqtt import MQTTHandler
+import datetime
 
 # if code is launched independtly
 if __name__ == "__main__":
@@ -83,15 +84,24 @@ async def filebeat_status():
     installed = check_filebeat_installed()
     certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
     certificate_status = 'non-existent'
+    certificate_valid = False
+    certificate_expired = False
+    certificate_expiry = None
+    timezone_offset = datetime.datetime.now(datetime.timezone.utc).astimezone().strftime('%z')
+    timezone_offset = timezone_offset[:-2] + ':' + timezone_offset[-2:]
 
     if certificate_exists:
         valid_to = step_certificate.get_certificate_valid_to(get_filebeat_crt_path())
+        certificate_expiry = str(valid_to)
         if step_certificate.is_certificate_expired(get_filebeat_crt_path()):
             certificate_status = f"expired ({valid_to})"
+            certificate_expired = True
         elif step_certificate.is_certificate_expiring(get_filebeat_crt_path()):
             certificate_status = f"expiring soon ({valid_to})"
+            certificate_valid = True
         else:
             certificate_status = f"valid (until {valid_to})"
+            certificate_valid = True
 
     filebeat_running = False
     if MISC.get_proc('filebeat') or MISC.get_proc('filebeat.exe'):
@@ -101,7 +111,11 @@ async def filebeat_status():
         "installed": installed,
         "running": filebeat_running,
         "certificate_exists": certificate_exists,
+        "certificate_valid": certificate_valid,
+        "certificate_expired": certificate_expired,
+        "certificate_expiry": certificate_expiry,
         "certificate_status": certificate_status,
+        "timezone": timezone_offset,
         "pending_oauth_url": True if get_filebeat_auth_url() else False
     }
 
@@ -294,7 +308,7 @@ async def request_client_certificate(svr_name, filebeat_path):
                 # Construct the command for certificate renewal
                 result = step_certificate.renew_certificate(crt_file_path,key_file_path)
                 if (isinstance(result,bool) and result) or result.returncode == 0:
-                    restart_filebeat(filebeat_changed=True,silent=False)
+                    await restart_filebeat(filebeat_changed=True,silent=False)
                     return True
                 else:
                     # Certificate request failed
@@ -380,7 +394,6 @@ async def configure_filebeat(silent=False,test=False):
             'Launcher': launcher,
             'Admin': looked_up_discord_username if looked_up_discord_username and not isinstance(looked_up_discord_username,bool) else existing_discord_id,
             'Region': svr_location,
-            'Logging_Config_Version': '1.3',
             'Public_IP': external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip'],
             'HoN_User': global_config['hon_data']['svr_login'],
             'Servers_per_Core': global_config['hon_data']['svr_total_per_core'],
@@ -390,11 +403,15 @@ async def configure_filebeat(silent=False,test=False):
             'Priority': global_config['hon_data']['svr_priority'],
             'Affinity_Override': global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None,
             'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch'],
-            'GitHub_Branch': MISC.github_branch,
             'HoN_Server_Version': MISC.get_svr_version(global_config['hon_data']['hon_executable_path']),
-            'HoNfigurator_API_Port': global_config['hon_data']['svr_api_port'],
             'Proxy_Enabled': global_config['hon_data']['man_enableProxy'] if 'man_enableProxy' in global_config else False
         }
+        honfigurator_values = {
+            'GitHub_Branch': MISC.github_branch,
+            'Version': MISC.tag,
+            'API_Port': global_config['hon_data']['svr_api_port'],
+        }
+
         filebeat_inputs = {}
         filebeat_inputs['slave_logs'] = \
         {
@@ -408,13 +425,16 @@ async def configure_filebeat(silent=False,test=False):
             'fields_under_root': True,
             'include_lines': [
                 r'Error: \[\d{2}:\d{2}:\d{2}\] CPacket::Write\(\) - Exceeded MAX_PACKET_SIZE while writing data: "0x[0-9a-fA-F]+", length: \d+', 
-                r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding', 
+                r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding',
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Client #\d+ disconnected: disconnect_timed_out',
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Client #\d+ timing out', 
                 r'Sv: \[\d{2}:\d{2}:\d{2}\] Name: .+', 
                 r'Sv: \[\d{2}:\d{2}:\d{2}\] IP: \d+\.\d+\.\d+\.\d+',
                 r'\[.*\] \[\d{2}:\d{2}:\d{2}\] >.*'
             ],
             'fields': {
                 'Server': server_values,
+                'HoNfigurator': honfigurator_values,
                 'Log_Type': 'console'
             }
         }
@@ -431,6 +451,7 @@ async def configure_filebeat(silent=False,test=False):
             'fields_under_root': True,
             'fields': {
                 'Server': server_values,
+                'HoNfigurator': honfigurator_values,
                 'Log_Type': 'match'
             },
             'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_RANDOM','PLAYER_SWAP','INFO_SETTINGS', 'INFO_MAP', 'INFO_MATCH', 'PLAYER_CALL_VOTE', 'HERO_DEATH', 'GAME_CONCEDE', 'GAME_END']
@@ -447,6 +468,7 @@ async def configure_filebeat(silent=False,test=False):
             'fields_under_root': True,
             'fields': {
                 'Server': server_values,
+                'HoNfigurator': honfigurator_values,
                 'Log_Type': 'diagnostic'
             },
             'processors': [
@@ -480,6 +502,7 @@ async def configure_filebeat(silent=False,test=False):
                     'fields_under_root': True,
                     'fields': {
                         'Server': server_values,
+                        'HoNfigurator': honfigurator_values,
                         'Log_Type': 'proxy'
                     }
                 }
@@ -497,6 +520,7 @@ async def configure_filebeat(silent=False,test=False):
                 'fields_under_root': True,
                 'fields': {
                     'Server': server_values,
+                    'HoNfigurator': honfigurator_values,
                     'Log_Type': 'honfigurator'
                 },
                 'parsers': [
@@ -544,7 +568,7 @@ async def configure_filebeat(silent=False,test=False):
                 'index.number_of_shards': '1'
             },
             'output.logstash': {
-                'hosts': 'elastic-node2.honfigurator.app:5044',
+                'hosts': 'logstash.honfigurator.app:5044',
                 'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
                 'ssl.certificate': str(Path(destination_folder) / "client.crt"),
                 'ssl.key': str(Path(destination_folder) / "client.key"),

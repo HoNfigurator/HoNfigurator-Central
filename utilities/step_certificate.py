@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import aiohttp
 from aiohttp import TCPConnector
 import asyncio
+import traceback
 
 version = "0.24.3"
 system = platform.system()
@@ -222,11 +223,14 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
             return False
 
 def load_cert_info(cert_path):
-    # Fetch certificate information
-    cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
-    # Convert cert_info string into a dictionary
-    cert_info = json.loads(cert_info)
-    return cert_info
+    try:
+        # Fetch certificate information
+        cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
+        # Convert cert_info string into a dictionary
+        cert_info = json.loads(cert_info)
+        return cert_info
+    except Exception:
+        LOGGER.error(f"Error in loading cert info:\n\tStep client location: {step_location}\n\tCertificate location: {cert_path}\n{traceback.format_exc()}")
 
 def get_certificate_valid_to(cert_path):
     # Fetch the expiration date from the certificate info
