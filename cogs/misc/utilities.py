@@ -14,6 +14,8 @@ from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError, HoNCompatibilityError
 import ipaddress
 import asyncio
+import schedule
+import time
 
 
 LOGGER = get_logger()
@@ -29,7 +31,9 @@ class Misc:
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
         self.public_ip = self.lookup_public_ip()
+        self.tag = None
         self.tag = self.get_github_tag()
+        schedule.every(10).minutes.do(self.check_github_tag)
         self.hon_version = None
 
     def build_commandline_args(self, config_local, config_global, cowmaster=False):
@@ -408,12 +412,19 @@ class Misc:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
     
+    def check_github_tag(self):
+        # Assuming 'misc' is an instance of your Misc class
+        new_tag = self.get_github_tag()
+        LOGGER.debug(f"Checked GitHub Tag: {new_tag}")
+    
     def get_github_tag(self):
         try:
+            if self.tag:
+                return self.tag
             tag = subprocess.check_output(['git', 'describe', '--tags'], stderr=subprocess.STDOUT).decode().strip()
             return tag.split('-')[0]
         except subprocess.CalledProcessError:
-            print("Error: Failed to get the tag. Make sure you're in a Git repository and have tags.")
+            LOGGER.error("Error: Failed to get the tag. Make sure you're in a Git repository and have tags.")
             return None
     
     def get_github_branch(self):

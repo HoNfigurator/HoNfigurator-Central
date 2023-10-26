@@ -79,7 +79,8 @@ class MQTTHandler:
             'cpu_name': self.global_config['system_data']['cpu_name'],
             'cpu_count': self.global_config['system_data']['cpu_count'],
             'chatsv_state': self.chatsv_state,
-            'mastersv_state': self.mastersv_state
+            'mastersv_state': self.mastersv_state,
+            'branch_version': get_misc().get_github_tag()
         }
         if self.discord_id:
             metadata.update({'discord_id':self.discord_id})

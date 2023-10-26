@@ -160,6 +160,10 @@ async def public_serverinfo():
         }
     return JSONResponse(status_code = 200, content = response)
 
+@app.get("/api/public/get_honfigurator_version", description="Gets the current HoNfigurator Version #")
+async def get_honfigurator_version():
+    return {"version": MISC.get_github_tag()}
+
 @app.get("/api/public/check_filebeat_status", summary="Check whether Filebeat is installed and configured to send server logs.")
 async def filebeat_installed():
     status_dict = await filebeat_status()
