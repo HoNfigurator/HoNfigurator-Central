@@ -724,8 +724,8 @@ ALREADY_STOPPED = "Filebeat is already stopped."
 
 
 def run_command_sync(command_list):
-    # Use Popen to run the command in a subprocess
-    process = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE, shell=True)
+    # Use Popen to run the command in a subprocess, without shell=True
+    process = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     stdout, stderr = process.communicate()
     return process.returncode, stdout.decode(), stderr.decode()
 
