@@ -116,7 +116,7 @@ class GameServerManager:
         self.chat_server_handler = None
         self.chat_server_connected = None
         self.master_server_connected = None
-        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
+        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], patch_server=self.global_config['hon_data']['svr_patchServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
         self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
