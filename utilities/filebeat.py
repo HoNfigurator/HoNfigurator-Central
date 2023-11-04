@@ -150,22 +150,25 @@ def is_elastic_source_added():
 
 async def install_filebeat_linux():
     # Download and install the Public Signing Key:
-    # subprocess.run("wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -", shell=True, check=True)
-    await run_command(["wget","-qO","-","https://artifacts.elastic.co/GPG-KEY-elasticsearch","|","sudo","apt-key","add","-"])
+    wget_command = ["wget", "-qO", "-", "https://artifacts.elastic.co/GPG-KEY-elasticsearch"]
+    apt_key_command = ["sudo", "apt-key", "add", "-"]
+
+    wget_proc = subprocess.Popen(wget_command, stdout=subprocess.PIPE)
+    subprocess.run(apt_key_command, stdin=wget_proc.stdout, check=True)
+    wget_proc.stdout.close()  # Allow wget_proc to receive a SIGPIPE if apt-key exits.
 
     # Check if the Elastic source is already added before adding it
     if not is_elastic_source_added():
         # Save the repository definition to /etc/apt/sources.list.d/elastic-8.x.list:
-        # subprocess.run('echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-8.x.list', shell=True, check=True)
-        await run_command(["echo","'deb https://artifacts.elastic.co/packages/8.x/apt stable main'","|","sudo","tee","-a","/etc/apt/sources.list.d/elastic-8.x.list"])
+        with open('/etc/apt/sources.list.d/elastic-8.x.list', 'a') as f:
+            f.write("deb https://artifacts.elastic.co/packages/8.x/apt stable main\n")
+        subprocess.run(["sudo", "tee", "-a", "/etc/apt/sources.list.d/elastic-8.x.list"], input="deb https://artifacts.elastic.co/packages/8.x/apt stable main\n", text=True, check=True)
 
     # Update package lists for upgrades for packages that need upgrading
-    # subprocess.run(["sudo", "apt-get", "update"], check=True)
-    await run_command(["sudo","apt-get","update"])
+    await run_command(["sudo", "apt-get", "update"])
 
     # Install filebeat
-    # subprocess.run(["sudo", "apt-get", "install", "filebeat"], check=True)
-    await run_command(["sudo","apt-get","install","filebeat"])
+    await run_command(["sudo", "apt-get", "install", "filebeat"])
     return True
 
 async def install_filebeat_windows():
