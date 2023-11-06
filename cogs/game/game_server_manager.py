@@ -1196,7 +1196,7 @@ class GameServerManager:
                 return False
 
             LOGGER.info("Patching successful!")
-            self.global_config['hon_dara']['svr_version'] = svr_version
+            self.global_config['hon_data']['svr_version'] = svr_version
             if source == "startup":
                 return True
             elif source == "healthcheck":
