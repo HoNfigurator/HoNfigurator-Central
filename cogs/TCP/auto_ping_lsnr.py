@@ -71,7 +71,16 @@ class AutoPingListener(asyncio.DatagramProtocol):
                 LOGGER.warn("Unknown message - 43")
                 return
 
-            response = self.prepared_response.copy()
+            # Prepare the response on the fly
+            server_name = self.config["hon_data"]["svr_name"]
+            game_version = self.config["hon_data"]["svr_version"]
+            message_size = 69 + len(server_name) + len(game_version)
+            response = bytearray(message_size)
+            response[42] = 0x01
+            response[43] = 0x66
+            response[46: 46 + len(server_name)] = server_name.encode()
+            response[50 + len(server_name): 50 + len(server_name) + len(game_version)] = game_version.encode()
+
             response[44] = data[44]
             response[45] = data[45]
 
