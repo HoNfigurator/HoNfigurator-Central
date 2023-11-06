@@ -835,7 +835,18 @@ region=naeu
             await config_file.write(config_data)
         return config_file_path, False
 
-    async def start_proxy(self):
+    async def start_proxy(self):    
+        # Define a regular (non-async) function to handle subprocess creation:
+        def run_proxy_subprocess(hon_install_directory, proxy_config_path):
+            proxy_exe_path = hon_install_directory / "proxy.exe"
+            process = subprocess.Popen(
+                [proxy_exe_path, proxy_config_path],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                creationflags=subprocess.DETACHED_PROCESS,  # Detach the process from the console on Windows
+            )
+            return process
+        
         if not self.config.local['params']['man_enableProxy']:
             return # proxy isn't enabled
         try:
@@ -887,13 +898,19 @@ region=naeu
         while not stop_event.is_set() and self.enabled and self.config.local['params']['man_enableProxy']:
             if not self._proxy_process:
                 if MISC.get_os_platform() == "win32":
-                    self._proxy_process = await asyncio.create_subprocess_exec(
-                        self.global_config['hon_data']['hon_install_directory'] / "proxy.exe",
-                        proxy_config_path,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                        creationflags=subprocess.DETACHED_PROCESS,  # Detach the process from the console on Windows
-                    )
+                    try:
+                        loop = asyncio.get_running_loop()
+                        self._proxy_process = await loop.run_in_executor(
+                            None,  # None uses the default executor
+                            run_proxy_subprocess,
+                            self.global_config['hon_data']['hon_install_directory'],
+                            proxy_config_path,
+                        )
+                    except Exception:
+                        LOGGER.error(f"GameServer #{self.id} - Failed to start proxy.exe: {traceback.format_exc()}")
+                        self._proxy_process = None
+                        await asyncio.sleep(10)
+                        continue
                 elif MISC.get_os_platform() == "linux":
                     # The code never gets here, because it raises an error for linux before this point.
                     # However, once proxy is supported, you can start it here
