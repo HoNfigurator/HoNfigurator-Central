@@ -11,7 +11,7 @@ MISC = get_misc()
 
 class MasterServerHandler:
 
-    def __init__(self, master_server="api.kongor.online", version="4.10.6.0", architecture="", event_bus=None):
+    def __init__(self, master_server="api.kongor.online", patch_server = "api.kongor.online", version="4.10.6.0", architecture="", event_bus=None):
         self.manager_event_bus = event_bus
         self.manager_event_bus.subscribe('replay_upload_request', self.get_replay_upload_info)
         self.manager_event_bus.subscribe('replay_upload_start', self.upload_replay_file)
@@ -27,6 +27,7 @@ class MasterServerHandler:
         self.arch_type = self.architecture.split('-')[0]
         self.master_server = master_server
         self.base_url = f"http://{self.master_server}"
+        self.patch_url = f"http://{patch_server}"
         self.user_agent = f"S2 Games/Heroes of Newerth/{self.version}/{self.arch_type}/{self.arch_platform}"
         self.headers = {
             "User-Agent": self.user_agent,
@@ -161,7 +162,7 @@ class MasterServerHandler:
             print(traceback.format_exc())
 
     async def compare_upstream_patch(self):
-        url = f"{self.base_url}/patcher/patcher.php"
+        url = f"{self.patch_url}/patcher/patcher.php"
         data = {"latest": "", "os": f"{self.architecture}", "arch": self.arch_platform}
         timeout = aiohttp.ClientTimeout(total=10)  # 10 seconds timeout for the entire operation
         try:

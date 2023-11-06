@@ -83,6 +83,7 @@ class SetupEnvironment:
                 "hon_install_directory": Path("C:\\Program Files\\Heroes of Newerth x64 - CLEAN\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/app/"),
                 "hon_home_directory": Path("C:\\ProgramData\\HoN Server Data\\") if MISC.get_os_platform() == "win32" else Path("/opt/hon/config/"),
                 "svr_masterServer": "api.kongor.online",
+                "svr_patchServer": "api.kongor.online",
                 "svr_login": "",
                 "svr_password": "",
                 "svr_name": "",

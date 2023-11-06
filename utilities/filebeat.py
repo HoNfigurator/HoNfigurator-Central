@@ -150,25 +150,49 @@ def is_elastic_source_added():
 
 async def install_filebeat_linux():
     # Download and install the Public Signing Key:
-    # subprocess.run("wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -", shell=True, check=True)
-    await run_command(["wget","-qO","-","https://artifacts.elastic.co/GPG-KEY-elasticsearch","|","sudo","apt-key","add","-"])
+    wget_command = ["wget", "-qO", "-", "https://artifacts.elastic.co/GPG-KEY-elasticsearch"]
+    apt_key_command = ["sudo", "apt-key", "add", "-"]
+
+    wget_proc = subprocess.Popen(wget_command, stdout=subprocess.PIPE)
+    subprocess.run(apt_key_command, stdin=wget_proc.stdout, check=True)
+    wget_proc.stdout.close()  # Allow wget_proc to receive a SIGPIPE if apt-key exits.
 
     # Check if the Elastic source is already added before adding it
     if not is_elastic_source_added():
         # Save the repository definition to /etc/apt/sources.list.d/elastic-8.x.list:
-        # subprocess.run('echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-8.x.list', shell=True, check=True)
-        await run_command(["echo","'deb https://artifacts.elastic.co/packages/8.x/apt stable main'","|","sudo","tee","-a","/etc/apt/sources.list.d/elastic-8.x.list"])
+        with open('/etc/apt/sources.list.d/elastic-8.x.list', 'a') as f:
+            f.write("deb https://artifacts.elastic.co/packages/8.x/apt stable main\n")
+        subprocess.run(["sudo", "tee", "-a", "/etc/apt/sources.list.d/elastic-8.x.list"], input="deb https://artifacts.elastic.co/packages/8.x/apt stable main\n", text=True, check=True)
 
     # Update package lists for upgrades for packages that need upgrading
-    # subprocess.run(["sudo", "apt-get", "update"], check=True)
-    await run_command(["sudo","apt-get","update"])
+    await run_command(["sudo", "apt-get", "update"])
 
     # Install filebeat
-    # subprocess.run(["sudo", "apt-get", "install", "filebeat"], check=True)
-    await run_command(["sudo","apt-get","install","filebeat"])
+    await run_command(["sudo", "apt-get", "install", "filebeat"])
     return True
 
 async def install_filebeat_windows():
+    def run_powershell_installer(filebeat_install_dir):
+        command = [
+            "powershell.exe",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(Path(filebeat_install_dir) / "install-service-filebeat.ps1")
+        ]
+        
+        # Run the command in a subprocess
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True
+        )
+
+        # Wait for the subprocess to finish
+        stdout, stderr = process.communicate()
+
+        return process.returncode, stdout, stderr
     # Download and install Filebeat using Python
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_file = os.path.join(temp_dir, "filebeat-8.8.2-windows-x86_64.zip")
@@ -206,17 +230,18 @@ async def install_filebeat_windows():
             destination_path = os.path.join(windows_filebeat_install_dir, os.path.basename(file))
             shutil.move(source_path, destination_path)
         print_or_log('info',f"Filebeat installed successfully at: {windows_filebeat_install_dir}")
-        command = [
-            "powershell.exe",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(Path(windows_filebeat_install_dir) / "install-service-filebeat.ps1")
-        ]
 
-        process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        stdout, stderr = await process.communicate()
-        if process.returncode == 0:
+        loop = asyncio.get_running_loop()
+    
+        # Use the default ThreadPoolExecutor
+        returncode, stdout, stderr = await loop.run_in_executor(
+            None,  # Uses the default executor
+            run_powershell_installer,
+            windows_filebeat_install_dir
+        )
+        
+        # Process the results
+        if returncode == 0:
             print_or_log('info', "Filebeat service installed successfully.")
         else:
             print_or_log('error', f"Failed to install Filebeat service. Error: {stderr.decode()}")
@@ -701,15 +726,28 @@ FAILED_STOP = "Failed to stop Filebeat."
 ALREADY_STOPPED = "Filebeat is already stopped."
 
 
+def run_command_sync(command_list):
+    # Use Popen to run the command in a subprocess, without shell=True
+    process = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    return process.returncode, stdout.decode(), stderr.decode()
+
 async def run_command(command_list, success_message=None):
-    process = await asyncio.create_subprocess_shell(' '.join(command_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await process.communicate()
-    if process.returncode == 0:
-        if success_message: print_or_log('info', success_message)
-        return process
+    loop = asyncio.get_running_loop()
+
+    returncode, stdout, stderr = await loop.run_in_executor(
+        None,  # Uses the default executor
+        run_command_sync,
+        command_list
+    )
+
+    if returncode == 0:
+        if success_message:
+            print_or_log('info', success_message)
+        return returncode, stdout, stderr
     else:
-        print_or_log('error',f"Command: {' '.join(command_list)}\nReturn code: {process.returncode}\nError: {stderr.decode()}")
-        return process
+        print_or_log('error', f"Command: {' '.join(command_list)}\nReturn code: {returncode}\nError: {stderr}")
+        return returncode, stdout, stderr
 
 async def restart_filebeat(filebeat_changed, silent=False):
     async def restart():

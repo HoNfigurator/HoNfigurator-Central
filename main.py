@@ -151,6 +151,10 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        if sys.platform == "win32":
+            loop = asyncio.SelectorEventLoop()
+            asyncio.set_event_loop(loop)
+            
         args = parse_arguments()
         asyncio.run(main())
     except KeyboardInterrupt:
