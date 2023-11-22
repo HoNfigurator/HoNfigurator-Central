@@ -208,6 +208,7 @@ class GameServer:
                 LOGGER.debug(f"GameServer #{self.id} - Game Ended: {self.game_state['current_match_id']}")
                 if get_mqtt():
                     get_mqtt().publish_json("game_server/match", {"event_type":"match_ended", **self.game_state._state})
+
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
@@ -231,8 +232,13 @@ class GameServer:
             if value == GamePhase.IDLE.value and self.scheduled_shutdown:
                 await self.stop_server_network()
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
+                await self.manager_event_bus.emit('cmd_message_server', self, f"Match ending. Total game lag: {self.get_dict_value('now_ingame_skipped_frames') /1000} seconds.")
+                if self.get_dict_value('now_ingame_skipped_frames') > 5000:
+                    # send request to management.honfig requesting administrator be notified
+                    pass
                 LOGGER.debug(f"GameServer #{self.id} - Game in final stages, game ending.")
                 await self.schedule_task(self.start_disconnect_timer,'idle_disconnect_timer', coro_bracket=True)
+
             # add more phases as needed
 
         elif key == "status":
@@ -368,8 +374,8 @@ class GameServer:
     def reset_skipped_frames(self):
         self.game_state._performance['now_ingame_skipped_frames'] = 0
 
-    def increment_skipped_frames(self, frames, time):
-        # if self.get_dict_value('game_phase') == 6:  # Only log skipped frames when we're actually in a match.
+    async def increment_skipped_frames(self, frames, time):
+        if self.get_dict_value('game_phase') in [5,6,7]:  # Only log skipped frames when we're actually in a match (preparation phase, during match, or game ending).
             self.game_state._performance['total_ingame_skipped_frames'] += frames
             self.game_state._performance['now_ingame_skipped_frames'] += frames
             self.game_state._performance['skipped_frames_detailed'][time] = frames
@@ -379,6 +385,9 @@ class GameServer:
             self.game_state._performance['skipped_frames_detailed'] = {key: value for key, value in self.game_state._performance['skipped_frames_detailed'].items() if key >= one_day_ago}
             if get_mqtt():
                 get_mqtt().publish_json("game_server/lag",{"event_type": "skipped_frame", "skipped_frames": frames, **self.game_state._state})
+            
+            # Notify the server of the lag event.
+            await self.manager_event_bus.emit('cmd_message_server', self, f"Server lagged {frames} miliseconds.")
 
 
     def get_pretty_status(self):

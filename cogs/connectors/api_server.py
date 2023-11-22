@@ -657,7 +657,7 @@ def get_all_users(token_and_user_info: dict = Depends(check_permission_factory(r
 def get_default_users(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return roles_database.get_default_users()
 
-@app.get("/api/user", summary="Get specified user with associated roles")
+@app.get("/api/user", summary="Get current authenticated user with associated roles")
 # def get_user(user: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
 def get_user(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     roles = roles_database.get_user_roles_by_discord_id(token_and_user_info['user_info']['id'])

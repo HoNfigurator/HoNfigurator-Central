@@ -215,7 +215,7 @@ class GameManagerParser:
         current_time = datetime.datetime.now().timestamp()  # Get current time in Unix timestamp format
         self.log("debug", f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
         if game_server:
-            game_server.increment_skipped_frames(skipped_frames, current_time)
+            await game_server.increment_skipped_frames(skipped_frames, current_time)
 
 
 
