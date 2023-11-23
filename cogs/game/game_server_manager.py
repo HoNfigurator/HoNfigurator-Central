@@ -191,8 +191,7 @@ class GameServerManager:
             'Content-Type': 'application/json',
         }
         body = {
-            #"discordId": self.roles_database.get_discord_owner_id(),
-            "discordId": '123',
+            "discordId": self.roles_database.get_discord_owner_id(),
             "timeLagged": time_lagged,
             "serverInstance": instance,
             "serverName": server_name,
