@@ -206,6 +206,8 @@ class GameServerManager:
                     LOGGER.error(f"Error notifying discord admin of server side lag: {response.status} - {response_text}")
                     if get_mqtt():
                         get_mqtt().publish_json("manager/admin", {"event_type":"discord_lag_notification_failure","message":"Failed to notify server administrator. {response.status} - {response_text}", "response_code":response.status, "response_status":response.status})
+                    return response.status, response_text
+                LOGGER.info("Successfully notified discord admin of server side lag.")
                 if get_mqtt():
                     get_mqtt().publish_json("manager/admin", {"event_type":"discord_lag_notification_success","message":"Successfully notified server administrator."})
                 return response.status, response_text
