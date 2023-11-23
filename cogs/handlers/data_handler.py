@@ -34,7 +34,7 @@ def get_cowmaster_configuration(hon_data):
         'svr_voicePortStart':hon_data.get('svr_starting_voicePort'),
         'man_enableProxy':hon_data.get('man_enableProxy'),
         'svr_location':hon_data.get('svr_location'),
-        'svr_enableBotMatch': hon_data.get('svr_enableBotMatch'),
+        # 'svr_enableBotMatch': hon_data.get('svr_enableBotMatch'),
 #'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
         'svr_broadcast':True,
         'upd_checkForUpdates':False,
@@ -108,7 +108,7 @@ class ConfigManagement():
                 'svr_voicePortStart':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
                 'man_enableProxy':self.get_global_by_key('man_enableProxy'),
                 'svr_location':self.get_global_by_key('svr_location'),
-                'svr_enableBotMatch': self.get_global_by_key('svr_enableBotMatch'),
+                # 'svr_enableBotMatch': self.get_global_by_key('svr_enableBotMatch'), # dont know why this is a parameter. All these parameters are for configs relating to the server itself. Not manager opertions.
                 'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
                 'svr_total_per_core' : self.get_global_by_key('svr_total_per_core'),
                 'svr_broadcast':True,
