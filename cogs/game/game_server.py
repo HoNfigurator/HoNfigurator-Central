@@ -15,6 +15,7 @@ from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, Gam
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.misc.logparser import find_game_info_post_launch, find_match_id_post_launch
 from cogs.TCP.packet_parser import GameManagerParser
+from cogs.db.roles_db_connector import RolesDatabase
 import aiofiles
 import glob
 import re
@@ -235,7 +236,8 @@ class GameServer:
                 await self.manager_event_bus.emit('cmd_message_server', self, f"Match ending. Total game lag: {self.get_dict_value('now_ingame_skipped_frames') /1000} seconds.")
                 if self.get_dict_value('now_ingame_skipped_frames') > 5000:
                     # send request to management.honfig requesting administrator be notified
-                    pass
+                    await self.manager_event_bus.emit('notify_discord_admin_of_lag', self.get_dict_value('now_ingame_skipped_frames'), self.id, self.global_config['hon_data']['svr_name'], self.get_dict_value('current_match_id'))
+
                 LOGGER.debug(f"GameServer #{self.id} - Game in final stages, game ending.")
                 await self.schedule_task(self.start_disconnect_timer,'idle_disconnect_timer', coro_bracket=True)
 

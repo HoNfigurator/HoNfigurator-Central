@@ -10,12 +10,14 @@ from datetime import datetime, timedelta
 import inspect
 import tempfile
 import shutil
+import aiohttp
 from cogs.misc.exceptions import HoNAuthenticationError, HoNServerError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
 from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.connectors.api_server import start_api_server
+from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.game_server import GameServer
 from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
@@ -72,6 +74,7 @@ class GameServerManager:
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.event_bus.subscribe('update_server_start_semaphore', self.update_server_start_semaphore)
+        self.event_bus.subscribe('notify_discord_admin_of_lag', self.notify_discord_admin_of_lag)
         self.tasks = {
             'cli_handler':None,
             'health_checks':None,
@@ -88,6 +91,9 @@ class GameServerManager:
 
         # set the current state of patching
         self.patching = False
+
+        # set up connection to the local DB for the occasional query
+        self.roles_database = RolesDatabase()
 
         # preserve the current system path. We need it for a silly fix.
         self.preserved_path = os.environ["PATH"]
@@ -178,6 +184,32 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
+            
+    async def notify_discord_admin_of_lag(self, time_lagged, instance, server_name, match_id):
+        url = 'https://management.honfigurator.app:3001/api-ui/sendDiscordMessage'
+        headers = {
+            'Content-Type': 'application/json',
+        }
+        body = {
+            #"discordId": self.roles_database.get_discord_owner_id(),
+            "discordId": '123',
+            "timeLagged": time_lagged,
+            "serverInstance": instance,
+            "serverName": server_name,
+            "matchId": match_id
+        }
+        
+        # Use aiohttp.ClientSession to send the request
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=body, ssl=False) as response:  # Use json=body here
+                response_text = await response.text()
+                if response.status != 200:
+                    LOGGER.error(f"Error notifying discord admin of server side lag: {response.status} - {response_text}")
+                    if get_mqtt():
+                        get_mqtt().publish_json("manager/admin", {"event_type":"discord_lag_notification_failure","message":"Failed to notify server administrator. {response.status} - {response_text}", "response_code":response.status, "response_status":response.status})
+                if get_mqtt():
+                    get_mqtt().publish_json("manager/admin", {"event_type":"discord_lag_notification_success","message":"Successfully notified server administrator."})
+                return response.status, response_text
     
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True, kill=False):
         try:
