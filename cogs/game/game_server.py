@@ -234,7 +234,7 @@ class GameServer:
                 await self.stop_server_network()
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
                 await self.manager_event_bus.emit('cmd_message_server', self, f"Match ending. Total game lag: {self.get_dict_value('now_ingame_skipped_frames') /1000} seconds.")
-                if self.get_dict_value('now_ingame_skipped_frames') > 5000:
+                if self.get_dict_value('now_ingame_skipped_frames') > 5000 and value == GamePhase.GAME_ENDED.value:
                     # send request to management.honfig requesting administrator be notified
                     await self.manager_event_bus.emit('notify_discord_admin_of_lag', self.get_dict_value('now_ingame_skipped_frames'), self.id, self.global_config['hon_data']['svr_name'], self.get_dict_value('current_match_id'))
 
