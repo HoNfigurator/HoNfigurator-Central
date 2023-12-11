@@ -145,7 +145,7 @@ if __name__ == "__main__":
     game_traffic_port = 11032
     manager_traffic_port = 11033
     client_traffic_port = 11031
-    remote_host = '212.181.3.23'
+    remote_host = '104.251.123.39'
     try:
         asyncio.run(main(game_traffic_port, manager_traffic_port, client_traffic_port))
     except KeyboardInterrupt:

@@ -74,7 +74,7 @@ class GameServerManager:
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.event_bus.subscribe('update_server_start_semaphore', self.update_server_start_semaphore)
-        self.event_bus.subscribe('notify_discord_admin_of_lag', self.notify_discord_admin_of_lag)
+        self.event_bus.subscribe('notify_discord_admin', self.notify_discord_admin)
         self.tasks = {
             'cli_handler':None,
             'health_checks':None,
@@ -185,33 +185,40 @@ class GameServerManager:
         self.tasks[name] = task
         return task
             
-    async def notify_discord_admin_of_lag(self, time_lagged, instance, server_name, match_id):
+    async def notify_discord_admin(self, **kwargs):
         url = 'https://management.honfigurator.app:3001/api-ui/sendDiscordMessage'
-        headers = {
-            'Content-Type': 'application/json',
-        }
+        headers = {'Content-Type': 'application/json'}
+
         body = {
             "discordId": self.roles_database.get_discord_owner_id(),
-            "timeLagged": time_lagged,
-            "serverInstance": instance,
-            "serverName": server_name,
-            "matchId": match_id
+            "serverInstance": kwargs.get('instance'),
+            "serverName": kwargs.get('server_name'),
+            "matchId": kwargs.get('match_id')
         }
-        
-        # Use aiohttp.ClientSession to send the request
+
+        if kwargs.get('type') == 'lag':
+            body["timeLagged"] = kwargs.get('time_lagged')
+            log_message = "server side lag"
+        elif kwargs.get('type') == 'crash':
+            body["timeCrashed"] = kwargs.get('time_of_crash')
+            body["gamePhase"] = kwargs.get('game_phase')
+            log_message = "server crash"
+        else:
+            raise ValueError(f"Unknown event type: {kwargs.get('event_type')}")
+
         async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=headers, json=body, ssl=False) as response:  # Use json=body here
+            async with session.post(url, headers=headers, json=body, ssl=False) as response:
                 response_text = await response.text()
                 if response.status != 200:
-                    LOGGER.error(f"Error notifying discord admin of server side lag: {response.status} - {response_text}")
+                    LOGGER.error(f"Error notifying discord admin of {log_message}: {response.status} - {response_text}")
                     if get_mqtt():
-                        get_mqtt().publish_json("manager/admin", {"event_type":"discord_lag_notification_failure","message":"Failed to notify server administrator. {response.status} - {response_text}", "response_code":response.status, "response_status":response.status})
+                        get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{event_type}_notification_failure","message": f"Failed to notify server administrator. {response.status} - {response_text}", "response_code": response.status, "response_status": response.status})
                     return response.status, response_text
-                LOGGER.info("Successfully notified discord admin of server side lag.")
+                LOGGER.info(f"Successfully notified discord admin of {log_message}.")
                 if get_mqtt():
-                    get_mqtt().publish_json("manager/admin", {"event_type":"discord_lag_notification_success","message":"Successfully notified server administrator."})
+                    get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{event_type}_notification_success","message": "Successfully notified server administrator."})
                 return response.status, response_text
-    
+              
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True, kill=False):
         try:
             if game_server is None: return False

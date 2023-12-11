@@ -236,8 +236,14 @@ class GameServer:
                 await self.manager_event_bus.emit('cmd_message_server', self, f"Match ending. Total game lag: {self.get_dict_value('now_ingame_skipped_frames') /1000} seconds.")
                 if self.get_dict_value('now_ingame_skipped_frames') > 5000 and value == GamePhase.GAME_ENDED.value:
                     # send request to management.honfig requesting administrator be notified
-                    await self.manager_event_bus.emit('notify_discord_admin_of_lag', self.get_dict_value('now_ingame_skipped_frames'), self.id, self.global_config['hon_data']['svr_name'], self.get_dict_value('current_match_id'))
-
+                    await self.manager_event_bus.emit(
+                        'notify_discord_admin', 
+                        event_type='lag',
+                        time_lagged=self.get_dict_value('now_ingame_skipped_frames'),
+                        instance=self.id,
+                        server_name=self.global_config['hon_data']['svr_name'],
+                        match_id=self.get_dict_value('current_match_id')
+                    )
                 LOGGER.debug(f"GameServer #{self.id} - Game in final stages, game ending.")
                 await self.schedule_task(self.start_disconnect_timer,'idle_disconnect_timer', coro_bracket=True)
 
@@ -967,6 +973,17 @@ region=naeu
                         self.server_closed.set()  # Set the server_closed event
                         if get_mqtt():
                             get_mqtt().publish_json("game_server/status",{"event_type":"server_crashed", **self.game_state._state})
+                        #if self.get_dict_value('game_phase') in [GamePhase.BANNING_PHASE.value, GamePhase.GAME_ENDING.value, GamePhase.LOADING_INTO_MATCH.value, GamePhase.MATCH_STARTED, GamePhase.PREPERATION_PHASE.value, GamePhase.PICKING_PHASE.value]:
+                        LOGGER.warn(f"GameServer #{self.id} crashed while in a match. Restarting server...")
+                        await self.manager_event_bus.emit(
+                            'notify_discord_admin', 
+                            type='crash',
+                            time_of_crash=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                            instance=self.id,
+                            server_name=self.global_config['hon_data']['svr_name'],
+                            match_id=self.get_dict_value('current_match_id'),
+                            game_phase=GamePhase(self.get_dict_value('game_phase')).name
+                        )
                         self.reset_game_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
                         asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self], service_recovery=False))  # restart the server

@@ -140,7 +140,7 @@ Page Overview:
 > Superadmins can view the hon username and password used to configure the server.  
 
 ## Monitoring
-When you are all done, your server should appear here after it's first match: https://hon-elk.honfigurator.app:5601
+When you are all done, your server should appear here after it's first match: https://elastic.honfigurator.app
 > [!NOTE]
 > Select "Continue as Guest"
 

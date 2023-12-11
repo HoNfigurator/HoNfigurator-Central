@@ -775,12 +775,12 @@ async def restart_filebeat(filebeat_changed, silent=False):
         # If silent, only restart filebeat if config has changed and it's currently running
         if filebeat_changed and filebeat_running:
             if await restart():
-                print_or_log('info',"Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+                print_or_log('info',"Setup complete! Please visit https://elastic.honfigurator.app to view server monitoring")
     else:
         # If not silent, start filebeat if stopped, or restart if config changed
         if filebeat_changed and filebeat_running:
             if await restart():
-                print_or_log('info',"Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+                print_or_log('info',"Setup complete! Please visit https://elastic.honfigurator.app to view server monitoring")
         elif not filebeat_running:
             await restart()
 

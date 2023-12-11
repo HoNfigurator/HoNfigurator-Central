@@ -69,7 +69,7 @@ A certificate will have been issued to your server, which it uses to authenticat
 ![mermaid-diagram-2023-07-19-144541](https://github.com/HoNfigurator/HoNfigurator-Central/assets/82205454/59574bca-0aab-4cab-ae0e-17bc26002065)
 
 ## Start Monitoring!
-Visit [HoN ElasticSearch Server Monitoring](https://hon-elk.honfigurator.app:5601)  
+Visit [HoN ElasticSearch Server Monitoring](https://elastic.honfigurator.app)  
 > Username: ``readonly``  
 Password: ``Provided by me``
 
