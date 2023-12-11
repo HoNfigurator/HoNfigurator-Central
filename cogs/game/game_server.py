@@ -973,17 +973,17 @@ region=naeu
                         self.server_closed.set()  # Set the server_closed event
                         if get_mqtt():
                             get_mqtt().publish_json("game_server/status",{"event_type":"server_crashed", **self.game_state._state})
-                        #if self.get_dict_value('game_phase') in [GamePhase.BANNING_PHASE.value, GamePhase.GAME_ENDING.value, GamePhase.LOADING_INTO_MATCH.value, GamePhase.MATCH_STARTED, GamePhase.PREPERATION_PHASE.value, GamePhase.PICKING_PHASE.value]:
-                        LOGGER.warn(f"GameServer #{self.id} crashed while in a match. Restarting server...")
-                        await self.manager_event_bus.emit(
-                            'notify_discord_admin', 
-                            type='crash',
-                            time_of_crash=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-                            instance=self.id,
-                            server_name=self.global_config['hon_data']['svr_name'],
-                            match_id=self.get_dict_value('current_match_id'),
-                            game_phase=GamePhase(self.get_dict_value('game_phase')).name
-                        )
+                        if self.get_dict_value('game_phase') in [GamePhase.BANNING_PHASE.value, GamePhase.GAME_ENDING.value, GamePhase.LOADING_INTO_MATCH.value, GamePhase.MATCH_STARTED, GamePhase.PREPERATION_PHASE.value, GamePhase.PICKING_PHASE.value]:
+                            LOGGER.warn(f"GameServer #{self.id} crashed while in a match. Restarting server...")
+                            await self.manager_event_bus.emit(
+                                'notify_discord_admin', 
+                                type='crash',
+                                time_of_crash=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                instance=self.id,
+                                server_name=self.global_config['hon_data']['svr_name'],
+                                match_id=self.get_dict_value('current_match_id'),
+                                game_phase=GamePhase(self.get_dict_value('game_phase')).name
+                            )
                         self.reset_game_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
                         asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self], service_recovery=False))  # restart the server
