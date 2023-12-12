@@ -212,11 +212,11 @@ class GameServerManager:
                 if response.status != 200:
                     LOGGER.error(f"Error notifying discord admin of {log_message}: {response.status} - {response_text}")
                     if get_mqtt():
-                        get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{event_type}_notification_failure","message": f"Failed to notify server administrator. {response.status} - {response_text}", "response_code": response.status, "response_status": response.status})
+                        get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{kwargs.get('type')}_notification_failure","message": f"Failed to notify server administrator. {response.status} - {response_text}", "response_code": response.status, "response_status": response.status})
                     return response.status, response_text
                 LOGGER.info(f"Successfully notified discord admin of {log_message}.")
                 if get_mqtt():
-                    get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{event_type}_notification_success","message": "Successfully notified server administrator."})
+                    get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{kwargs.get('type')}_notification_success","message": "Successfully notified server administrator."})
                 return response.status, response_text
               
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True, kill=False):
