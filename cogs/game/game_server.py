@@ -681,6 +681,7 @@ class GameServer:
         self.started = False
         self.unschedule_shutdown()
         self.server_closed.set()
+        self.reset_game_state()
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
@@ -756,6 +757,7 @@ class GameServer:
             self.unschedule_shutdown()
             self.stop_proxy()
             self.server_closed.set()
+            self.reset_game_state()
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)

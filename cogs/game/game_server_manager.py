@@ -995,7 +995,7 @@ class GameServerManager:
                 game_server = self.game_servers.get(key, None)
                 #   This is in case game server doesn't exist intentionally (maybe config changed)
                 if game_server:
-                    game_server.reset_game_state()
+                    # game_server.reset_game_state() # this is happening prematurely, and crash reports are not aware of the current match ID or phase
                     game_server.unset_client_connection()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
                 # await self.commands.initialise_commands()
