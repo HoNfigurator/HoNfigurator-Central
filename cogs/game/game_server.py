@@ -947,6 +947,8 @@ region=naeu
 
             if self.enabled:
                 LOGGER.warn(f"proxy.exe (GameServer #{self.id}) crashed. Restarting...")
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/status",{"event_type":"proxy_crashed", **self.game_state._state})
                 self._proxy_process = None
 
     def stop_proxy(self):
