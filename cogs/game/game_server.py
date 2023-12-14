@@ -65,7 +65,7 @@ class GameServer:
         self.game_state._state.update({'instance_id': self.id})
         self.game_state._state.update({'instance_name': self.id})
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
-        asyncio.create_task(self.load_gamestate_from_file(match_only=False))
+        # asyncio.create_task(self.load_gamestate_from_file(match_only=False)) # disabled function
         # Start the monitor_process method as a background task
         coro = self.monitor_process
         self.schedule_task(coro,'process_monitor', coro_bracket=True)

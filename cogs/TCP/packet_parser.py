@@ -361,7 +361,7 @@ class GameManagerParser:
                 match_id = int(match.group(1))
                 self.log("debug",f"Updated running match data with Match ID: {match_id}")
                 game_server.update_dict_value('current_match_id',match_id)
-                await game_server.load_gamestate_from_file(match_only=True)
+                # await game_server.load_gamestate_from_file(match_only=True) # disabled function
             else:
                 self.log("debug","Match ID not found")
 
