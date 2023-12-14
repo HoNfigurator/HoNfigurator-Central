@@ -1125,7 +1125,7 @@ class GameState:
                 'uptime': 0,
                 'num_clients': 0,
                 'match_started': 0,
-                'game_phase': 0,
+                'game_phase': -1,
                 'current_match_id': 0,
                 'players': [],
                 'match_info':{
