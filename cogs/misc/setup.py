@@ -5,7 +5,10 @@ from pathlib import Path
 import pathlib
 import json
 import requests
-from cogs.misc.logger import get_logger, get_home, get_misc
+import re
+import traceback
+from cogs.misc.logger import get_logger, get_home, get_misc, get_discord_username, set_discord_username
+from utilities.filebeat import get_discord_user_id_from_api
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.hide_pass import getpass
 
@@ -132,6 +135,9 @@ class SetupEnvironment:
                 },
                 "filebeat": {
                     "send_diagnostics_data": True
+                },
+                "discord": {
+                    "owner_id": 0
                 }
             }
         }
@@ -140,32 +146,66 @@ class SetupEnvironment:
         try:
             public_ip = MISC.get_public_ip()
             response = requests.get(
-                f"https://api.iplocation.net/?ip={public_ip}")
-            country_code = response.json()['country_code2']
+                f"http://ip-api.com/json/{public_ip}")
+            data = response.json()
+            country_code = data['countryCode']
+            longitude = float(data['lon'])
         except Exception as e:
             print(f"Failed to get IP geolocation: {e}")
             return None
 
-        # Map country codes to server regions
+        # Determine US region based on longitude
+        if country_code == 'US':
+            if longitude < -98.5795:  # Approximate center longitude of the US
+                return 'USW'
+            else:
+                return 'USE'
+
+        # Map other country codes to server regions
         mapping = {
-            'AU': 'AU',
-            'EU': 'EU',
+            'AU': 'AU', 'NZ': 'AU', 'JP': 'AU', 'KR': 'AU', 'IN': 'AU',
+            'EU': 'EU', 'GB': 'EU', 'DE': 'EU', 'FR': 'EU', 'ES': 'EU', 'IT': 'EU', 'TR': 'EU', 'IL': 'EU',
             'TH': 'TH',
-            'SG': 'SEA',  # Singapore for Southeast Asia
-            'BR': 'BR',
-            'RU': 'RU',
-            'US': 'USE'  # default to USE for all US IPs
+            'SEA': 'SEA', 'SG': 'SEA', 'MY': 'SEA', 'ID': 'SEA', 'PH': 'SEA', 'VN': 'SEA',
+            'BR': 'BR', 'AR': 'BR', 'CL': 'BR', 'CO': 'BR', 'PE': 'BR',
+            'RU': 'RU', 'UA': 'RU', 'KZ': 'RU', 'BY': 'RU',
+            # Add more regions as needed
         }
 
         # default to 'USE' if country code not found
-        return mapping.get(country_code, "")
+        return mapping.get(country_code, "USE")
 
     def get_existing_configuration(self):
         with open(self.config_file_hon, 'r') as config_file_hon:
             hon_data = json.load(config_file_hon)
         return hon_data
+    
+    async def generate_server_name(self):
+        # Get the city
+        city = self.format_city(self.resolve_city(MISC.get_public_ip()))
 
-    def validate_hon_data(self, hon_data=None, application_data=None):
+        # Get the discord username
+        discord_username = get_discord_username()
+
+        # Resolve the username from the discord ID
+        if not discord_username:
+            try:
+                discord_username = await get_discord_user_id_from_api(self.application_data['discord']['owner_id'])
+            except Exception:
+                LOGGER.error(f"Failed to resolve the discord username, are you sure this discord ID is correct? {self.application_data['discord']['owner_id']}\n{traceback.format_exc()}")
+        
+        if not discord_username:
+            discord_username = "Unknown"
+
+        # Format the discord username
+        discord_username = self.format_discord_username(discord_username)
+
+        # Generate the server name
+        server_name = f"{self.hon_data['svr_location']}-{city} {discord_username}"
+
+        return server_name
+
+    async def validate_hon_data(self, hon_data=None, application_data=None):
         if hon_data:
             self.hon_data = hon_data
 
@@ -318,7 +358,7 @@ class SetupEnvironment:
                 value = handle_path('location', app_dict['location'])
                 if value is not None:
                     app_dict['location'] = value
-
+            
         iterate_over_app_data(self.application_data, default_application_data)
 
         for key, value in list(self.hon_data.items()):
@@ -398,7 +438,7 @@ class SetupEnvironment:
 
         return True
 
-    def check_configuration(self, args):
+    async def check_configuration(self, args):
         if not os.path.exists(Path('game_states')):
             os.makedirs(Path('game_states'))
         if not os.path.exists(pathlib.PurePath(self.config_file_hon).parent):
@@ -410,9 +450,19 @@ class SetupEnvironment:
                 if args.hon_install_directory:
                     self.hon_data["hon_install_directory"] = Path(
                         args.hon_install_directory)
-            self.create_hon_configuration_file(
+            await self.create_hon_configuration_file(
                 detected="hon_install_directory")
+            
+        # Load configuration from config file
+        try:
+            self.hon_data = self.get_existing_configuration()['hon_data']
+            self.application_data = self.get_existing_configuration()[
+                'application_data']
+        except KeyError:  # using old config format
+            self.hon_data = self.get_existing_configuration()
+
         database = RolesDatabase()
+
         if not database.add_default_data():
             while True:
                 value = input(
@@ -422,19 +472,19 @@ class SetupEnvironment:
                     if len(str(discord_id)) < 10:
                         raise ValueError
                     database.add_default_data(discord_id=discord_id)
+                    self.application_data["discord"]["owner_id"] = discord_id
                     break
                 except ValueError:
                     print(
                         "Value must be a more than 10 digits.")
-        # else:
-        try:
-            self.hon_data = self.get_existing_configuration()['hon_data']
-            self.application_data = self.get_existing_configuration()[
-                'application_data']
-        except KeyError:  # using old config format
-            self.hon_data = self.get_existing_configuration()
+        elif database.get_discord_owner_id() != self.application_data["discord"]["owner_id"]:
+            if self.application_data["discord"]["owner_id"] == 0:
+                self.application_data["discord"]["owner_id"] = database.get_discord_owner_id()
+            else:
+                database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
+
         self.full_config = self.merge_config()
-        if self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
+        if await self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
             return True
         else:
             return False
@@ -444,7 +494,7 @@ class SetupEnvironment:
             json.dump(self.get_default_logging_configuration(),
                       config_file_logging, indent=4)
 
-    def create_hon_configuration_file(self, detected=None):
+    async def create_hon_configuration_file(self, detected=None):
         print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
         while True:
             basic = input(
@@ -509,7 +559,7 @@ class SetupEnvironment:
                             f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
                 else:
                     break
-        if self.validate_hon_data():
+        if await self.validate_hon_data():
             return True
         return False
 
@@ -614,37 +664,39 @@ class SetupEnvironment:
             }
         )
 
-    def get_final_configuration(self):
+    async def get_final_configuration(self):
         self.add_runtime_data()
-        if self.validate_hon_data():
+        
+        self.hon_data['svr_name'] = await self.generate_server_name()
+        if await self.validate_hon_data():
             return self.merge_config()
         else:
             return False
         
-    def resolve_city(ip_address):
+    def resolve_city(self, ip_address):
         API_KEY = "6822fd77ae464cafb5ce4f3be425f1ad"
         try:
             response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}&fields=city')
             response_data = response.json()
 
             # Extract the city from the response
-            city = response_data.get('city', None)
+            city = response_data.get('city', 'Unknown')
 
             if not city:
                 # Fallback: Make a second API call without the IP address as a query parameter
                 response = requests.get('https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&fields=city')
                 response_data = response.json()
-                city = response_data.get('city', None)
+                city = response_data.get('city', 'Unknown')
 
             # Format the city using a separate method
-            formatted_city = format_city(city)
+            formatted_city = self.format_city(city)
 
             return formatted_city
         except Exception as e:
             LOGGER.error(f"Failed to fetch or process data. Error: {str(e)}")
             return None
 
-    def format_city(city):
+    def format_city(self, city):
         if city:
             # Remove whitespace, special characters, and punctuation
             formatted_city = re.sub(r'\W', '', city)
@@ -653,15 +705,15 @@ class SetupEnvironment:
             LOGGER.warning("City information not available.")
             return None
     
-    def format_discord_username():
+    def format_discord_username(self, discord_username):
         # Remove special characters, whitespaces, and numbers
-        cleaned_string = re.sub(r'[^A-Za-z]', '', self.hon_data["svr_login"])
+        cleaned_string = re.sub(r'[^A-Za-z]', '', discord_username)
 
         # Capitalize the first character
         cleaned_string = cleaned_string.capitalize()
 
         # Truncate the string after the fourth character
-        truncated_string = cleaned_string[:4]
+        truncated_string = cleaned_string[:5]
 
         return truncated_string
         

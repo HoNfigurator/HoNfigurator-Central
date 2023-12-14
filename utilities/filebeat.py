@@ -28,7 +28,7 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home, set_mqtt, get_mqtt
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home, set_mqtt, get_mqtt, set_discord_username, get_discord_username
 
     from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
@@ -365,6 +365,8 @@ async def get_discord_user_id_from_api(discord_id):
             async with session.get(api_url, ssl=False) as response:
                 if response.status == 200:
                     data = await response.json()
+                    if data.get('username'):
+                        set_discord_username(data.get('username'))
                     return data.get('username')
                 else:
                     print_or_log("error","Failed to get Discord username for ID: {discord_id}")
@@ -691,9 +693,13 @@ async def configure_filebeat(silent=False,test=False):
     
     if not existing_discord_id and isinstance(looked_up_discord_username,bool):
         if roles_database:
-            looked_up_discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
+            if not get_discord_username():
+                looked_up_discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
+            else:
+                looked_up_discord_username = get_discord_username()
         else:
             looked_up_discord_username = await step_certificate.discord_oauth_flow_stepca(svr_name, get_filebeat_csr_path(), get_filebeat_crt_path(), get_filebeat_key_path(),get_filebeat_auth_token())
+            set_discord_username(looked_up_discord_username)
     
     if not looked_up_discord_username:
         print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
