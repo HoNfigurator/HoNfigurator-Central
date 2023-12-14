@@ -172,7 +172,7 @@ async def send_csr_to_server(server_url, csr, cert_name, token, ssl=False):
 async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, token=None):
     # Config
     discord_client_id = '1096750568388702228'
-    server_url = 'https://hon-elk.honfigurator.app:8443'
+    server_url = 'https://step-ca.honfigurator.app:8443'
 
     # Register the client and get a token
     if not token:
@@ -329,7 +329,7 @@ async def main(stop_event_from_honfig=None,logger=None, set_auth_token=None, set
     else:
         print_or_log('debug',"Step CLI is already installed.")
 
-    ca_url = "https://hon-elk.honfigurator.app"
+    ca_url = "https://step-ca.honfigurator.app"
     if not is_ca_bootstrapped(ca_url):
         await bootstrap_ca(ca_url)
     else:
