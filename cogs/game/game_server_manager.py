@@ -313,7 +313,7 @@ class GameServerManager:
             await client_connection.writer.drain()
             if get_mqtt():
                 get_mqtt().publish_json("manager/command", {"event_type":"custom_command","command":command})
-            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
+            LOGGER.info(f"Command - Custom command ({command}) sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
