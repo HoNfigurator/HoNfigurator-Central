@@ -35,6 +35,9 @@ class Misc:
         self.tag = self.get_github_tag()
         schedule.every(10).minutes.do(self.check_github_tag)
         self.hon_version = None
+        self.used_space = 0
+        self.total_space = 0
+        self.usage_percentage = 0
 
     def build_commandline_args(self, config_local, config_global, cowmaster=False):
 
@@ -481,3 +484,26 @@ class Misc:
             os.execv(sys.executable, [sys.executable] + sys.argv)
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"Error: Could not switch to branch '{target_branch}', make sure it exists: {e.output}")
+    
+    def get_disk_usage(self):
+        if os.name == 'nt':  # Windows
+            drive_path = 'C:\\'
+        elif os.name == 'posix':  # Linux
+            drive_path = '/'
+        else:
+            LOGGER.error("Unsupported operating system")
+            # raise NotImplementedError("Unsupported operating system")
+
+        try:
+            disk_usage = psutil.disk_usage(drive_path)
+            self.used_space = disk_usage.used
+            self.total_space = disk_usage.total
+            self.usage_percentage = disk_usage.percent
+        except Exception as e:
+            print(f"Error getting disk usage: {e}")
+
+        return {
+            'used_space': self.used_space,
+            'total_space': self.total_space,
+            'usage_percentage': self.usage_percentage
+        }

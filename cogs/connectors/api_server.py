@@ -371,6 +371,14 @@ class CpuUsageResponse(BaseModel):
 def get_cpu_usage(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"cpu_usage": MISC.get_cpu_load()}
 
+@app.get("/api/get_disk_usage")
+def get_disk_usage(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {
+        'used_space': MISC.get_disk_usage().used_space,
+        'total_space': MISC.get_disk_usage().total_space,
+        'usage_percentage': MISC.get_disk_usage().usage_percentage
+    }
+
 class MemoryUsageResponse(BaseModel):
     memory_usage: float
 
