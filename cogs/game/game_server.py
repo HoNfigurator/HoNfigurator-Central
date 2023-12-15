@@ -237,20 +237,20 @@ class GameServer:
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
                 skipped_frames = self.get_dict_value('now_ingame_skipped_frames')
                 if 0 <= skipped_frames < 5000:
-                    performance = "Good!"
-                elif 5000 <= skipped_frames < 20000:
-                    performance = "Poor, admin will be notified."
-                elif skipped_frames >= 20000:
-                    performance = "Terrible, admin will be notified."
+                    performance = "Excellent."
+                elif 5000 <= skipped_frames < 10000:
+                    performance = "Acceptable."
+                elif skipped_frames >= 10000:
+                    performance = "Poor. Host has been notified."
                     
-                await self.manager_event_bus.emit('cmd_message_server', self, f"Match ending. Total game lag: {skipped_frames /1000} seconds. Performance summary: {performance}")
+                await self.manager_event_bus.emit('cmd_message_server', self, f"Total server lag: {skipped_frames /1000} seconds. Lag rating: {performance}")
 
                 if skipped_frames > 5000 and value == GamePhase.GAME_ENDED.value:
                     # send request to management.honfig requesting administrator be notified
                     await self.manager_event_bus.emit(
-                        'notify_discord_admin', 
+                        'notify_discord_admin',
                         type='lag',
-                        time_lagged=skipped_frames,
+                        time_lagged=skipped_frames / 1000,
                         instance=self.id,
                         server_name=self.global_config['hon_data']['svr_name'],
                         match_id=self.get_dict_value('current_match_id')
@@ -410,7 +410,10 @@ class GameServer:
                     duration = f"{self.game_state._performance['monitored_skipped_frames']} miliseconds"
 
                 LOGGER.warn(f"GameServer #{self.id} - Server lagged {duration} in the last minute which is above threshold (3000ms).")
-                await self.manager_event_bus.emit('cmd_message_server', self, f"Server lagged {duration} in the last minute. Admin will be notified.")
+                try:
+                    await self.manager_event_bus.emit('cmd_message_server', self, f"Server lag detected on {self.global_config['hon_data']['svr_name']}-{self.id}. This is being monitored and will be reported to the administrator if it continues.")
+                except Exception:
+                    LOGGER.error(traceback.format_exc())
                 # Reset the monitored skipped frames to 0, for the next iteration
                 self.game_state._performance['monitored_skipped_frames'] = 0
 
