@@ -204,7 +204,7 @@ class GameServerManager:
             body["gamePhase"] = kwargs.get('game_phase')
             log_message = "server crash"
         else:
-            raise ValueError(f"Unknown event type: {kwargs.get('event_type')}")
+            raise ValueError(f"Unknown event type: {kwargs.get('type')}")
 
         async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=headers, json=body, ssl=False) as response:

@@ -213,6 +213,7 @@ class GameServer:
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
+                await self.stop_monitor_skipped_frames()
                 if self.global_config['hon_data']['svr_restart_between_games'] and self.game_in_progress:
                     LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'svr_restart_between_games' is enabled.")
                     coro = self.schedule_shutdown_server(disable=False)
@@ -225,6 +226,7 @@ class GameServer:
                 self.game_in_progress = True
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
+                await self.schedule_task(self.start_monitor_skipped_frames,'monitor_skipped_frames',coro_bracket=True)
             # Add more phases as needed
         elif key == "game_phase":
             LOGGER.debug(f"GameServer #{self.id} - Game phase {value}")
@@ -233,13 +235,22 @@ class GameServer:
             if value == GamePhase.IDLE.value and self.scheduled_shutdown:
                 await self.stop_server_network()
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
-                await self.manager_event_bus.emit('cmd_message_server', self, f"Match ending. Total game lag: {self.get_dict_value('now_ingame_skipped_frames') /1000} seconds.")
-                if self.get_dict_value('now_ingame_skipped_frames') > 5000 and value == GamePhase.GAME_ENDED.value:
+                skipped_frames = self.get_dict_value('now_ingame_skipped_frames')
+                if 0 <= skipped_frames < 5000:
+                    performance = "Good!"
+                elif 5000 <= skipped_frames < 20000:
+                    performance = "Poor, admin will be notified."
+                elif skipped_frames >= 20000:
+                    performance = "Terrible, admin will be notified."
+                    
+                await self.manager_event_bus.emit('cmd_message_server', self, f"Match ending. Total game lag: {skipped_frames /1000} seconds. Performance summary: {performance}")
+
+                if skipped_frames > 5000 and value == GamePhase.GAME_ENDED.value:
                     # send request to management.honfig requesting administrator be notified
                     await self.manager_event_bus.emit(
                         'notify_discord_admin', 
-                        event_type='lag',
-                        time_lagged=self.get_dict_value('now_ingame_skipped_frames'),
+                        type='lag',
+                        time_lagged=skipped_frames,
                         instance=self.id,
                         server_name=self.global_config['hon_data']['svr_name'],
                         match_id=self.get_dict_value('current_match_id')
@@ -382,10 +393,36 @@ class GameServer:
     def reset_skipped_frames(self):
         self.game_state._performance['now_ingame_skipped_frames'] = 0
 
+    async def start_monitor_skipped_frames(self):
+        """
+            This function will monitor the skipped frames in segments and report on it in-game if it breaches a threshold.
+        """
+        while True:
+            self.game_state._performance['monitored_skipped_frames'] = 0
+            for _ in range(60):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
+            if self.game_state._performance['monitored_skipped_frames'] > 3000:
+                if self.game_state._performance['monitored_skipped_frames'] > 1000:
+                    duration = f"{self.game_state._performance['monitored_skipped_frames'] / 1000} seconds"
+                else:
+                    duration = f"{self.game_state._performance['monitored_skipped_frames']} miliseconds"
+
+                LOGGER.warn(f"GameServer #{self.id} - Server lagged {duration} in the last minute which is above threshold (3000ms).")
+                await self.manager_event_bus.emit('cmd_message_server', self, f"Server lagged {duration} in the last minute. Admin will be notified.")
+                # Reset the monitored skipped frames to 0, for the next iteration
+                self.game_state._performance['monitored_skipped_frames'] = 0
+
+    async def stop_monitor_skipped_frames(self):
+        self.stop_task(self.tasks['monitor_skipped_frames'])
+        self.game_state._performance['monitored_skipped_frames'] = 0
+
     async def increment_skipped_frames(self, frames, time):
         if self.get_dict_value('game_phase') in [5,6,7]:  # Only log skipped frames when we're actually in a match (preparation phase, during match, or game ending).
             self.game_state._performance['total_ingame_skipped_frames'] += frames
             self.game_state._performance['now_ingame_skipped_frames'] += frames
+            self.game_state._performance['monitored_skipped_frames'] += frames
             self.game_state._performance['skipped_frames_detailed'][time] = frames
 
             # Remove entries older than one day
@@ -393,9 +430,6 @@ class GameServer:
             self.game_state._performance['skipped_frames_detailed'] = {key: value for key, value in self.game_state._performance['skipped_frames_detailed'].items() if key >= one_day_ago}
             if get_mqtt():
                 get_mqtt().publish_json("game_server/lag",{"event_type": "skipped_frame", "skipped_frames": frames, **self.game_state._state})
-            
-            # Notify the server of the lag event.
-            await self.manager_event_bus.emit('cmd_message_server', self, f"Server lagged {frames} miliseconds.")
 
 
     def get_pretty_status(self):
@@ -1143,5 +1177,6 @@ class GameState:
             self.update({
                 "now_ingame_skipped_frames": 0,
                 "total_ingame_skipped_frames": 0,
+                "monitored_skipped_frames": 0,
                 'skipped_frames_detailed': {}
             }, dict_to_check="performance")
