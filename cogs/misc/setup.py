@@ -309,19 +309,6 @@ class SetupEnvironment:
                     return None
             return value
 
-        def handle_path(key, value):
-            value = validate_paths(key, value)
-            if not value:
-                return None
-
-            if not value.is_dir() and not value.is_file():
-                try:
-                    value.mkdir(parents=True, exist_ok=True)
-                    return value
-                except Exception:
-                    return None
-            return value
-
         def iterate_over_app_data(app_dict, default_dict):
             keys_to_remove = []
             for key, value in app_dict.items():
