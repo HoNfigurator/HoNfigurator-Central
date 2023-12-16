@@ -686,7 +686,9 @@ async def configure_filebeat(silent=False,test=False):
 
     certificate_requested = await request_client_certificate(svr_name, Path(destination_folder))
 
-    discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
+    discord_username = get_discord_username()
+    if not discord_username:
+        discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
         
     existing_discord_id, old_config_hash = None, None
     if os.path.exists(config_file_path):

@@ -191,7 +191,8 @@ class SetupEnvironment:
         # Resolve the username from the discord ID
         if not discord_username:
             try:
-                discord_username = await get_discord_user_id_from_api(self.database.get_discord_owner_id())
+                if not get_discord_username():
+                    discord_username = await get_discord_user_id_from_api(self.database.get_discord_owner_id())
             except Exception:
                 LOGGER.error(f"Failed to resolve the discord username, are you sure this discord ID is correct? {self.application_data['discord']['owner_id']}\n{traceback.format_exc()}")
         
@@ -492,7 +493,7 @@ class SetupEnvironment:
             self.hon_data = self.get_existing_configuration()
         
         if "discord" in self.application_data:
-            if self.database.get_discord_owner_id() != self.application_data["discord"]["owner_id"]:
+            if int(self.database.get_discord_owner_id()) != self.application_data["discord"]["owner_id"]:
                 if self.application_data["discord"]["owner_id"] == 0:
                     self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
                 else:
