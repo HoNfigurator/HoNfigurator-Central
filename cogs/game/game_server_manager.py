@@ -685,7 +685,7 @@ class GameServerManager:
         if max_servers < 0: max_servers = 0
         self.global_config['hon_data']['svr_total'] = max_servers
 
-        self.setup.validate_hon_data(self.global_config['hon_data'])
+        await self.setup.validate_hon_data(self.global_config['hon_data'])
 
         idle_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') != 3]
         occupied_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') == 3]
@@ -1030,7 +1030,7 @@ class GameServerManager:
                 # on some systems, the compiled honfigurator.exe file, which is just launcher.py from cogs.misc causes issues for the opened hon_x64.exe. The exe is unable to locate one of the game dll resources.
                 # I wasted a lot of time trying to troubleshoot it, launching main.py directly works fine. This is my solution until a better one comes around. It's set within the scope of the script, and doesn't modify the systems environment.
                 path_list = os.environ["PATH"].split(os.pathsep)
-                if str(Path(self.global_config['hon_data']['hon_install_directory'])  / 'game') not in path_list:
+                if str(self.global_config['hon_data']['hon_install_directory']  / 'game') not in path_list:
                     os.environ["PATH"] = f"{self.global_config['hon_data']['hon_install_directory'] / 'game'}{os.pathsep}{self.preserved_path}"
 
             if launch and await self.check_upstream_patch():

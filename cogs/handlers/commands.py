@@ -224,7 +224,7 @@ class Commands:
             sub_command = sub_command[key]
         sub_command.current_value = value
 
-        if self.setup.validate_hon_data(self.global_config['hon_data']):
+        if await self.setup.validate_hon_data(self.global_config['hon_data']):
             print_formatted_text(f"Value for key '{last_key}' changed from {old_value} to {value}")
             LOGGER.info("Saved local configuration")
             # TODO: If command line arguments change, then schedule restart..
