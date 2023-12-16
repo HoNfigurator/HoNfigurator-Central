@@ -491,8 +491,8 @@ class SetupEnvironment:
         except KeyError:  # using old config format
             self.hon_data = self.get_existing_configuration()
         
-        if self.database.get_discord_owner_id() != self.application_data["discord"]["owner_id"]:
-            if "discord" in self.application_data:
+        if "discord" in self.application_data:
+            if self.database.get_discord_owner_id() != self.application_data["discord"]["owner_id"]:
                 if self.application_data["discord"]["owner_id"] == 0:
                     self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
                 else:
