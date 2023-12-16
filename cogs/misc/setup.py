@@ -468,7 +468,8 @@ class SetupEnvironment:
                     if len(str(discord_id)) < 10:
                         raise ValueError
                     self.database.add_default_data(discord_id=discord_id)
-                    self.application_data["discord"]["owner_id"] = discord_id
+                    if "discord" in self.application_data:
+                        self.application_data["discord"]["owner_id"] = discord_id
                     break
                 except ValueError:
                     print(
@@ -491,10 +492,11 @@ class SetupEnvironment:
             self.hon_data = self.get_existing_configuration()
         
         if self.database.get_discord_owner_id() != self.application_data["discord"]["owner_id"]:
-            if self.application_data["discord"]["owner_id"] == 0:
-                self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
-            else:
-                self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
+            if "discord" in self.application_data:
+                if self.application_data["discord"]["owner_id"] == 0:
+                    self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
+                else:
+                    self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
 
         self.full_config = self.merge_config()
         if await self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
