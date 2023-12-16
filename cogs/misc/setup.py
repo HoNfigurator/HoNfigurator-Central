@@ -5,7 +5,10 @@ from pathlib import Path
 import pathlib
 import json
 import requests
-from cogs.misc.logger import get_logger, get_home, get_misc
+import re
+import traceback
+from cogs.misc.logger import get_logger, get_home, get_misc, get_discord_username, set_discord_username
+from utilities.filebeat import get_discord_user_id_from_api
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.hide_pass import getpass
 
@@ -30,7 +33,8 @@ class SetupEnvironment:
             self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE
         self.OTHER_CONFIG_EXCLUSIONS = ["svr_ip", "svr_version", "hon_executable",
                                         'architecture', 'hon_executable_name', 'autoping_responder_port']
-        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = ['svr_noConsole','svr_override_affinity','man_enableProxy']
+        self.WINDOWS_SPECIFIC_CONFIG_ITEMS = [
+            'svr_noConsole', 'svr_override_affinity', 'man_enableProxy']
         self.LINUX_SPECIFIC_CONFIG_ITEMS = ['man_use_cowmaster']
         self.config_file_hon = config_file_hon
         self.config_file_logging = HOME_PATH / "config" / "logging.json"
@@ -95,14 +99,14 @@ class SetupEnvironment:
                 "svr_noConsole": False,
                 "svr_enableBotMatch": True,
                 "svr_start_on_launch": True,
-		        "svr_override_affinity": False,
+                "svr_override_affinity": False,
                 "svr_max_start_at_once": 5,
                 "svr_starting_gamePort": 10001,
                 "svr_starting_voicePort": 10061,
                 "svr_managerPort": 1134,
                 "svr_startup_timeout": 180,
                 "svr_api_port": 5000,
-                "man_use_cowmaster":False,
+                "man_use_cowmaster": False,
                 "svr_restart_between_games": False
             },
             "application_data": {
@@ -110,7 +114,7 @@ class SetupEnvironment:
                     "manager": {
                         "public_ip_healthcheck": 1800,
                         "general_healthcheck": 60,
-                        "lag_healthcheck":120,
+                        "lag_healthcheck": 120,
                         "check_for_hon_update": 120,
                         "check_for_honfigurator_update": 60,
                         "resubmit_match_stats": 20,
@@ -130,7 +134,10 @@ class SetupEnvironment:
                     "location": ""
                 },
                 "filebeat": {
-                    "send_diagnostics_data" : True
+                    "send_diagnostics_data": True
+                },
+                "discord": {
+                    "owner_id": 0
                 }
             }
         }
@@ -138,31 +145,67 @@ class SetupEnvironment:
     def get_server_region(self):
         try:
             public_ip = MISC.get_public_ip()
-            response = requests.get(f"https://api.iplocation.net/?ip={public_ip}")
-            country_code = response.json()['country_code2']
+            response = requests.get(
+                f"http://ip-api.com/json/{public_ip}")
+            data = response.json()
+            country_code = data['countryCode']
+            longitude = float(data['lon'])
         except Exception as e:
             print(f"Failed to get IP geolocation: {e}")
             return None
 
-        # Map country codes to server regions
+        # Determine US region based on longitude
+        if country_code == 'US':
+            if longitude < -98.5795:  # Approximate center longitude of the US
+                return 'USW'
+            else:
+                return 'USE'
+
+        # Map other country codes to server regions
         mapping = {
-            'AU': 'AU',
-            'EU': 'EU',
+            'AU': 'AU', 'NZ': 'AU', 'JP': 'AU', 'KR': 'AU', 'IN': 'AU',
+            'EU': 'EU', 'GB': 'EU', 'DE': 'EU', 'FR': 'EU', 'ES': 'EU', 'IT': 'EU', 'TR': 'EU', 'IL': 'EU',
             'TH': 'TH',
-            'SG': 'SEA', # Singapore for Southeast Asia
-            'BR': 'BR',
-            'RU': 'RU',
-            'US': 'USE' # default to USE for all US IPs
+            'SEA': 'SEA', 'SG': 'SEA', 'MY': 'SEA', 'ID': 'SEA', 'PH': 'SEA', 'VN': 'SEA',
+            'BR': 'BR', 'AR': 'BR', 'CL': 'BR', 'CO': 'BR', 'PE': 'BR',
+            'RU': 'RU', 'UA': 'RU', 'KZ': 'RU', 'BY': 'RU',
+            # Add more regions as needed
         }
 
-        return mapping.get(country_code, "") # default to 'USE' if country code not found
+        # default to 'USE' if country code not found
+        return mapping.get(country_code, "USE")
 
     def get_existing_configuration(self):
         with open(self.config_file_hon, 'r') as config_file_hon:
             hon_data = json.load(config_file_hon)
         return hon_data
+    
+    async def generate_server_name(self):
+        # Get the city
+        city = self.format_city(self.resolve_city(MISC.get_public_ip()))
 
-    def validate_hon_data(self, hon_data=None, application_data=None):
+        # Get the discord username
+        discord_username = get_discord_username()
+
+        # Resolve the username from the discord ID
+        if not discord_username:
+            try:
+                discord_username = await get_discord_user_id_from_api(self.application_data['discord']['owner_id'])
+            except Exception:
+                LOGGER.error(f"Failed to resolve the discord username, are you sure this discord ID is correct? {self.application_data['discord']['owner_id']}\n{traceback.format_exc()}")
+        
+        if not discord_username:
+            discord_username = "Unknown"
+
+        # Format the discord username
+        discord_username = self.format_discord_username(discord_username)
+
+        # Generate the server name
+        server_name = f"{self.hon_data['svr_location']}-{city} {discord_username}"
+
+        return server_name
+
+    async def validate_hon_data(self, hon_data=None, application_data=None):
         if hon_data:
             self.hon_data = hon_data
 
@@ -179,12 +222,14 @@ class SetupEnvironment:
         def validate_paths(key, value):
             path = Path(value)
             if not os.path.isabs(str(path)):
-                major_issues.append(f"The provided path for {key} is not a fully qualified path: {path}")
+                major_issues.append(
+                    f"The provided path for {key} is not a fully qualified path: {path}")
                 return False
             try:
                 path.relative_to(HOME_PATH)
                 # If the path is relative to HOME_PATH, raise a major issue
-                major_issues.append(f"The provided path for {key} should not be beneath the home path of HoNfigurator: {path}")
+                major_issues.append(
+                    f"The provided path for {key} should not be beneath the home path of HoNfigurator: {path}")
                 return False
             except ValueError:
                 # If it raises a ValueError, the path is not under HOME_PATH, so this is what we want
@@ -199,7 +244,8 @@ class SetupEnvironment:
             if not value.is_dir() and not value.is_file():
                 try:
                     value.mkdir(parents=True, exist_ok=True)
-                    minor_issues.append(f"Resolved: Path did not exist for {key}.")
+                    minor_issues.append(
+                        f"Resolved: Path did not exist for {key}.")
                 except Exception:
                     major_issues.append(f"Invalid path for {key}: {value}")
                     return None
@@ -283,15 +329,19 @@ class SetupEnvironment:
 
                 if default_value is None:
                     keys_to_remove.append(key)
-                    minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
+                    minor_issues.append(
+                        f"Resolved: Removed unknown configuration item: {key}")
                 elif isinstance(value, dict) and isinstance(default_value, dict):
                     iterate_over_app_data(value, default_value)
                 else:
-                    new_value = check_type_and_convert(key, value, default_value_type)
+                    new_value = check_type_and_convert(
+                        key, value, default_value_type)
                     if new_value is None:
-                        major_issues.append(f"Invalid value for {key}: {value}")
+                        major_issues.append(
+                            f"Invalid value for {key}: {value}")
                     elif new_value != value:
-                        minor_issues.append(f"Resolved: Converted {key} to appropriate type")
+                        minor_issues.append(
+                            f"Resolved: Converted {key} to appropriate type")
                     app_dict[key] = new_value
 
             for key in keys_to_remove:
@@ -300,17 +350,16 @@ class SetupEnvironment:
             for key, default_value in default_dict.items():
                 if key not in app_dict:
                     app_dict[key] = default_value
-                    minor_issues.append(f"Resolved: Added missing configuration item: {key} with default value: {default_value}")
+                    minor_issues.append(
+                        f"Resolved: Added missing configuration item: {key} with default value: {default_value}")
 
             # Extra logic for the "location" key
             if 'location' in app_dict and self.application_data['longterm_storage']['active']:
                 value = handle_path('location', app_dict['location'])
                 if value is not None:
                     app_dict['location'] = value
-
-
+            
         iterate_over_app_data(self.application_data, default_application_data)
-
 
         for key, value in list(self.hon_data.items()):
             default_value = default_hon_data.get(key)
@@ -321,35 +370,45 @@ class SetupEnvironment:
                 if value is not None:
                     self.hon_data[key] = value
             else:
-                new_value = check_type_and_convert(key, value, default_value_type)
+                new_value = check_type_and_convert(
+                    key, value, default_value_type)
                 if new_value is None:
                     major_issues.append(f"Invalid value for {key}: {value}")
                 elif new_value is not value:
-                    minor_issues.append(f"Resolved: Converted {key} to appropriate type")
+                    minor_issues.append(
+                        f"Resolved: Converted {key} to appropriate type")
                 self.hon_data[key] = new_value
 
                 # Additional validation for some specific keys
                 if key == "svr_starting_gamePort" and new_value < 10001:
                     self.hon_data[key] = 10001
-                    minor_issues.append(f"Resolved: Starting game port reassigned to {self.hon_data[key]}. Must start from 10001 one onwards.")
+                    minor_issues.append(
+                        f"Resolved: Starting game port reassigned to {self.hon_data[key]}. Must start from 10001 one onwards.")
                 elif key == "svr_starting_voicePort":
                     if new_value < 10061:
                         self.hon_data[key] = 10061
-                        minor_issues.append(f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be greater than 10061.")
+                        minor_issues.append(
+                            f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be greater than 10061.")
                     if self.hon_data[key] - self.hon_data['svr_total'] < self.hon_data['svr_starting_gamePort']:
-                        self.hon_data[key] = self.hon_data['svr_starting_gamePort'] + self.hon_data['svr_total']
-                        minor_issues.append(f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be at least {self.hon_data['svr_total']} (svr_total) higher than the starting game port.")
+                        self.hon_data[key] = self.hon_data['svr_starting_gamePort'] + \
+                            self.hon_data['svr_total']
+                        minor_issues.append(
+                            f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be at least {self.hon_data['svr_total']} (svr_total) higher than the starting game port.")
                 elif key == "svr_location" and new_value not in ALLOWED_REGIONS:
-                    major_issues.append(f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
+                    major_issues.append(
+                        f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
                 elif key == "svr_total":
-                    total_allowed = int(MISC.get_total_allowed_servers(float(self.hon_data['svr_total_per_core'])))
+                    total_allowed = int(MISC.get_total_allowed_servers(
+                        float(self.hon_data['svr_total_per_core'])))
                     if new_value > total_allowed:
                         self.hon_data[key] = total_allowed
-                        minor_issues.append("Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
+                        minor_issues.append(
+                            "Resolved: total server count reduced to total allowed. This is based on CPU analysis. More than this will provide a bad experience to players")
 
             if key in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE or key in self.OTHER_CONFIG_EXCLUSIONS:
                 pass
-            elif key == "svr_enableProxy":  # this is to resolve a misconfig where svr_enableProxy was used instead of man_enableProxy by accident.
+            # this is to resolve a misconfig where svr_enableProxy was used instead of man_enableProxy by accident.
+            elif key == "svr_enableProxy":
                 self.hon_data["man_enableProxy"] = self.hon_data[key]
                 del self.hon_data[key]
             elif key == "hon_home_directory":
@@ -359,12 +418,13 @@ class SetupEnvironment:
                 self.hon_data["hon_home_directory"] = Path(hon_home_directory)
             elif default_value_type is type(None):
                 del self.hon_data[key]
-                minor_issues.append(f"Resolved: Removed unknown configuration item: {key}")
+                minor_issues.append(
+                    f"Resolved: Removed unknown configuration item: {key}")
             elif key == "man_use_cowmaster" and MISC.get_os_platform() != "linux":
                 if self.hon_data[key]:
                     self.hon_data[key] = False
-                    minor_issues.append("Resolved: CowMaster is reserved for linux use only. Setting this value to false.")
-
+                    minor_issues.append(
+                        "Resolved: CowMaster is reserved for linux use only. Setting this value to false.")
 
         if major_issues:
             error_message = "Configuration file validation issues:\n" + \
@@ -378,7 +438,7 @@ class SetupEnvironment:
 
         return True
 
-    def check_configuration(self, args):
+    async def check_configuration(self, args):
         if not os.path.exists(Path('game_states')):
             os.makedirs(Path('game_states'))
         if not os.path.exists(pathlib.PurePath(self.config_file_hon).parent):
@@ -390,29 +450,41 @@ class SetupEnvironment:
                 if args.hon_install_directory:
                     self.hon_data["hon_install_directory"] = Path(
                         args.hon_install_directory)
-            self.create_hon_configuration_file(
+            await self.create_hon_configuration_file(
                 detected="hon_install_directory")
+            
+        # Load configuration from config file
+        try:
+            self.hon_data = self.get_existing_configuration()['hon_data']
+            self.application_data = self.get_existing_configuration()[
+                'application_data']
+        except KeyError:  # using old config format
+            self.hon_data = self.get_existing_configuration()
+
         database = RolesDatabase()
+
         if not database.add_default_data():
             while True:
-                value = input("\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
+                value = input(
+                    "\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
                 try:
                     discord_id = int(value)
                     if len(str(discord_id)) < 10:
                         raise ValueError
                     database.add_default_data(discord_id=discord_id)
+                    self.application_data["discord"]["owner_id"] = discord_id
                     break
                 except ValueError:
                     print(
                         "Value must be a more than 10 digits.")
-        # else:
-        try:
-            self.hon_data = self.get_existing_configuration()['hon_data']
-            self.application_data = self.get_existing_configuration()['application_data']
-        except KeyError: # using old config format
-            self.hon_data = self.get_existing_configuration()
+        elif database.get_discord_owner_id() != self.application_data["discord"]["owner_id"]:
+            if self.application_data["discord"]["owner_id"] == 0:
+                self.application_data["discord"]["owner_id"] = database.get_discord_owner_id()
+            else:
+                database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
+
         self.full_config = self.merge_config()
-        if self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
+        if await self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
             return True
         else:
             return False
@@ -422,23 +494,25 @@ class SetupEnvironment:
             json.dump(self.get_default_logging_configuration(),
                       config_file_logging, indent=4)
 
-    def create_hon_configuration_file(self, detected=None):
+    async def create_hon_configuration_file(self, detected=None):
         print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
         while True:
-            basic = input("Would you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
-            if basic in ['y','n', 'Y', 'N']:
+            basic = input(
+                "Would you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
+            if basic in ['y', 'n', 'Y', 'N']:
                 break
             print("Please provide 'y' for default settings or 'n' for advanced settings.")
 
         for key, value in self.hon_data.items():
-            if basic in ['y','Y'] and (value or value == False): continue
+            if basic in ['y', 'Y'] and (value or value == False):
+                continue
             while True:
                 if key == "svr_password":
-                    user_input = getpass(f"\tEnter the value for '{key}' (HINT: HoN Password): ")
+                    user_input = getpass(
+                        f"\tEnter the value for '{key}' (HINT: HoN Password): ")
                 elif key == "svr_login":
-                    user_input = input(f"\tEnter the value for '{key}' (HINT: HoN Username): ")
-                elif key == "svr_name":
-                    user_input = input(f"\tEnter the value for '{key}' (HINT: Server display name): ")
+                    user_input = input(
+                        f"\tEnter the value for '{key}' (HINT: HoN Username): ")
                 elif detected == key:
                     user_input = input("\tEnter the value for '{}'{}: ".format(
                         key, " (detected: {})".format(value) if value or value == False else ""))
@@ -485,7 +559,7 @@ class SetupEnvironment:
                             f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
                 else:
                     break
-        if self.validate_hon_data():
+        if await self.validate_hon_data():
             return True
         return False
 
@@ -498,6 +572,7 @@ class SetupEnvironment:
                 elif isinstance(value, dict):
                     # If the value is a dictionary, search it recursively
                     update_nested_key_path_value(value, target_key)
+
         def are_dicts_equal_with_types(d1, d2):
             if d1.keys() != d2.keys():
                 return False
@@ -589,9 +664,56 @@ class SetupEnvironment:
             }
         )
 
-    def get_final_configuration(self):
+    async def get_final_configuration(self):
         self.add_runtime_data()
-        if self.validate_hon_data():
+        
+        self.hon_data['svr_name'] = await self.generate_server_name()
+        if await self.validate_hon_data():
             return self.merge_config()
         else:
             return False
+        
+    def resolve_city(self, ip_address):
+        API_KEY = "6822fd77ae464cafb5ce4f3be425f1ad"
+        try:
+            response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}&fields=city')
+            response_data = response.json()
+
+            # Extract the city from the response
+            city = response_data.get('city', 'Unknown')
+
+            if not city:
+                # Fallback: Make a second API call without the IP address as a query parameter
+                response = requests.get('https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&fields=city')
+                response_data = response.json()
+                city = response_data.get('city', 'Unknown')
+
+            # Format the city using a separate method
+            formatted_city = self.format_city(city)
+
+            return formatted_city
+        except Exception as e:
+            LOGGER.error(f"Failed to fetch or process data. Error: {str(e)}")
+            return None
+
+    def format_city(self, city):
+        if city:
+            # Remove whitespace, special characters, and punctuation
+            formatted_city = re.sub(r'\W', '', city)
+            return formatted_city
+        else:
+            LOGGER.warning("City information not available.")
+            return None
+    
+    def format_discord_username(self, discord_username):
+        # Remove special characters, whitespaces, and numbers
+        cleaned_string = re.sub(r'[^A-Za-z]', '', discord_username)
+
+        # Capitalize the first character
+        cleaned_string = cleaned_string.capitalize()
+
+        # Truncate the string after the fourth character
+        truncated_string = cleaned_string[:5]
+
+        return truncated_string
+        
