@@ -1,7 +1,7 @@
 import paho.mqtt.client as mqtt
 import json
 import datetime
-from cogs.misc.logger import get_logger, get_misc
+from cogs.misc.logger import get_logger, get_misc, get_discord_username
 import os
 from pathlib import Path
 
@@ -15,7 +15,6 @@ class MQTTHandler:
         self.keepalive = keepalive
         self.certificate_path = certificate_path
         self.key_path = key_path
-        self.discord_id = None
         self.mastersv_state = None
         self.chatsv_state = None
 
@@ -57,9 +56,6 @@ class MQTTHandler:
         self.client.loop_stop()
         self.client.disconnect()
     
-    def set_discord_id(self, discord_id):
-        self.discord_id = discord_id
-    
     def set_mastersv_state(self, state):
         self.mastersv_state = state
     
@@ -83,8 +79,8 @@ class MQTTHandler:
             'mastersv_state': self.mastersv_state,
             'branch_version': get_misc().get_github_tag()
         }
-        if self.discord_id:
-            metadata.update({'discord_id':self.discord_id})
+        if get_discord_username():
+            metadata.update({'discord_id':get_discord_username()})
             
         return metadata
 
