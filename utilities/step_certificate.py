@@ -209,7 +209,7 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
                         cert_file.write(cert_text)
 
                     print_or_log('info','Certificate received and saved.')
-                    return response_content["username"]
+                    return True
                 else:
                     print_or_log('error','Failed to send CSR to server.')
             else:

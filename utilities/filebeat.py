@@ -413,11 +413,11 @@ async def configure_filebeat(silent=False,test=False):
         
         return slave_log, match_log, diagnostic_log
     
-    def perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
+    def perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, discord_username, destination_folder):
         server_values = {
             'Name': svr_name,
             'Launcher': launcher,
-            'Admin': looked_up_discord_username if looked_up_discord_username and not isinstance(looked_up_discord_username,bool) else existing_discord_id,
+            'Admin': discord_username,
             'Region': svr_location,
             'Public_IP': external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip'],
             'HoN_User': global_config['hon_data']['svr_login'],
@@ -682,24 +682,23 @@ async def configure_filebeat(silent=False,test=False):
     if not svr_desc: svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
 
-    looked_up_discord_username = await request_client_certificate(svr_name, Path(destination_folder))
+    certificate_requested = await request_client_certificate(svr_name, Path(destination_folder))
+
+    discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
         
     existing_discord_id, old_config_hash = None, None
     if os.path.exists(config_file_path):
         old_config_hash = calculate_file_hash(config_file_path)
         existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
     
-    if not existing_discord_id and isinstance(looked_up_discord_username,bool):
-        if roles_database:
-            looked_up_discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
-        else:
-            looked_up_discord_username = await step_certificate.discord_oauth_flow_stepca(svr_name, get_filebeat_csr_path(), get_filebeat_crt_path(), get_filebeat_key_path(),get_filebeat_auth_token())
-    
-    if not looked_up_discord_username:
+    # In case of failure retrieving username, set to existing username (assuming it's set)
+    if not discord_username and existing_discord_id:
+        discord_username = existing_discord_id
+    elif not discord_username and not existing_discord_id:
         print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
         return
         
-    filebeat_config = perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
+    filebeat_config = perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, discord_username, destination_folder)
 
     temp_dir = tempfile.TemporaryDirectory()
     temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
@@ -711,7 +710,7 @@ async def configure_filebeat(silent=False,test=False):
     if old_config_hash != new_config_hash:
         shutil.move(temp_file_path, config_file_path)
         print_or_log('info',f"Filebeat configuration file downloaded and placed at: {config_file_path}")
-        return looked_up_discord_username
+        return discord_username
     else:
         print_or_log('debug',"No configuration changes required")
         return False
