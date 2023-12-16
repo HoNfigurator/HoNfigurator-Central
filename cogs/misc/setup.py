@@ -42,6 +42,7 @@ class SetupEnvironment:
         self.hon_data = self.default_configuration['hon_data']
         self.application_data = self.default_configuration['application_data']
         self.current_data = None
+        self.server_name_generated = False
 
     def get_default_logging_configuration(self):
         return {
@@ -190,7 +191,7 @@ class SetupEnvironment:
         # Resolve the username from the discord ID
         if not discord_username:
             try:
-                discord_username = await get_discord_user_id_from_api(self.application_data['discord']['owner_id'])
+                discord_username = await get_discord_user_id_from_api(self.database.get_discord_owner_id())
             except Exception:
                 LOGGER.error(f"Failed to resolve the discord username, are you sure this discord ID is correct? {self.application_data['discord']['owner_id']}\n{traceback.format_exc()}")
         
@@ -445,25 +446,33 @@ class SetupEnvironment:
             os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
         if not os.path.exists(self.config_file_logging):
             self.create_logging_configuration_file()
-        if not os.path.exists(self.config_file_hon):
-            if args:
-                if args.hon_install_directory:
-                    self.hon_data["hon_install_directory"] = Path(
-                        args.hon_install_directory)
-            await self.create_hon_configuration_file(
-                detected="hon_install_directory")
-            
-        # Load configuration from config file
-        try:
-            self.hon_data = self.get_existing_configuration()['hon_data']
-            self.application_data = self.get_existing_configuration()[
-                'application_data']
-        except KeyError:  # using old config format
-            self.hon_data = self.get_existing_configuration()
+        
+        self.database = RolesDatabase()
 
-        database = RolesDatabase()
-
-        if not database.add_default_data():
+        if not self.database.add_default_data():
+            agree = input("Welcome to HoNfigurator. By using our software, you agree to these terms and conditions.\
+                        \n1. To ensure the legitimacy and effective administration of game servers, server administrators are required to authenticate using their Discord account.\
+                        \n2. You may receive alerts or notifications via Discord from the HoNfigurator bot regarding the status of your game servers.\
+                        \n3. The hosting of dedicated servers through HoNfigurator requires the use of HoN server binaries. Users acknowledge that these binaries are not owned or maintained by the author of HoNfigurator.\
+                        \n4. In order to monitor server performance and maintain game integrity, the following diagnostic data will be collected:\
+                        \n\t- This server's public IP address.\
+                        \n\t- Server administrator's Discord ID.\
+                        \n\t- Game server logs, including in-game events and chat logs.\
+                        \n\t- Player account names and public IP addresses.\
+                        \n   This data is essential for the effective operation of the server and for ensuring a fair gaming environment.\
+                        \n\n6. Game replays will be stored on the server and can be requested by players in-game. Server administrators may manage these replays using the provided HoNfigurator settings. We recommend retaining replays for a minimum of 30 days for player review and quality assurance purposes.\
+                        \n\nIn summary, by using HoNfigurator, users agree to:\
+                        \n\t- Properly manage and administer their game server.\
+                        \n\t- Ensure the privacy and security of collected data.\
+                        \n\t- Retain game replays for a minimum of 30 days (if practical).\
+                        \n\t- Not tamper with, or modify the game state in any way that may negatively affect the outcome of a match in progress.\
+                        \n\nDo you agree to these terms and conditions? (y/n): ")
+            if agree in ['y', 'Y']:
+                pass
+            else:
+                LOGGER.fatal("You must agree to the terms and conditions to use HoNfigurator. If there are any questions, you may reach out to me on Discord (https://discordapp.com/users/197967989964800000).")
+                input("Press ENTER to exit.")
+                exit()
             while True:
                 value = input(
                     "\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
@@ -471,17 +480,34 @@ class SetupEnvironment:
                     discord_id = int(value)
                     if len(str(discord_id)) < 10:
                         raise ValueError
-                    database.add_default_data(discord_id=discord_id)
+                    self.database.add_default_data(discord_id=discord_id)
                     self.application_data["discord"]["owner_id"] = discord_id
                     break
                 except ValueError:
                     print(
                         "Value must be a more than 10 digits.")
-        elif database.get_discord_owner_id() != self.application_data["discord"]["owner_id"]:
+
+        if not os.path.exists(self.config_file_hon):
+            if args:
+                if args.hon_install_directory:
+                    self.hon_data["hon_install_directory"] = Path(
+                        args.hon_install_directory)
+            await self.create_hon_configuration_file(
+                detected="hon_install_directory")
+                    
+        # Load configuration from config file
+        try:
+            self.hon_data = self.get_existing_configuration()['hon_data']
+            self.application_data = self.get_existing_configuration()[
+                'application_data']
+        except KeyError:  # using old config format
+            self.hon_data = self.get_existing_configuration()
+        
+        if self.database.get_discord_owner_id() != self.application_data["discord"]["owner_id"]:
             if self.application_data["discord"]["owner_id"] == 0:
-                self.application_data["discord"]["owner_id"] = database.get_discord_owner_id()
+                self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
             else:
-                database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
+                self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
 
         self.full_config = self.merge_config()
         if await self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
@@ -495,16 +521,19 @@ class SetupEnvironment:
                       config_file_logging, indent=4)
 
     async def create_hon_configuration_file(self, detected=None):
-        print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
         while True:
             basic = input(
-                "Would you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
+                "\nWould you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
             if basic in ['y', 'n', 'Y', 'N']:
+                if basic in ['n','N']:
+                    print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
                 break
             print("Please provide 'y' for default settings or 'n' for advanced settings.")
 
         for key, value in self.hon_data.items():
             if basic in ['y', 'Y'] and (value or value == False):
+                continue
+            if key == "svr_name" and self.hon_data['svr_location'] != "TH": # skip server name as it's auto generated
                 continue
             while True:
                 if key == "svr_password":
@@ -559,6 +588,8 @@ class SetupEnvironment:
                             f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
                 else:
                     break
+        self.hon_data['svr_name'] = await self.generate_server_name()
+        self.server_name_generated = True
         if await self.validate_hon_data():
             return True
         return False
@@ -583,8 +614,7 @@ class SetupEnvironment:
 
             return True
 
-        hon_data_to_save = {key: value for key, value in self.hon_data.items(
-        ) if key not in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE and key not in self.OTHER_CONFIG_EXCLUSIONS}
+        hon_data_to_save = {key: value for key, value in self.hon_data.items() if key not in self.PATH_KEYS_NOT_IN_HON_DATA_CONFIG_FILE and key not in self.OTHER_CONFIG_EXCLUSIONS}
         application_data_to_save = self.application_data
 
         # ensure path objects are
@@ -667,7 +697,9 @@ class SetupEnvironment:
     async def get_final_configuration(self):
         self.add_runtime_data()
         
-        self.hon_data['svr_name'] = await self.generate_server_name()
+        # Since TH has over 10 servers hosted by a single person, we need to do more testing first on what the impact would be of having the same server names. So excluding from autogen for now.
+        if self.hon_data['svr_location'] != "TH" and not self.server_name_generated:
+            self.hon_data['svr_name'] = await self.generate_server_name()
         if await self.validate_hon_data():
             return self.merge_config()
         else:
