@@ -1171,13 +1171,13 @@ class GameServerManager:
         if MISC.get_os_platform() == "win32":
             launcher_binary = 'hon_update_x64.exe'
             launcher_zip = 'hon_update_x64.zip'
-            hon_version_url = HON_WAS_VERSION_URL
-            launcher_download_url = HON_WAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = self.HON_WAS_VERSION_URL
+            launcher_download_url = self.HON_WAS_LAUNCHER_DOWNLOAD_URL
         else:
             launcher_binary = 'launcher'
             launcher_zip = 'launcher.zip'
-            hon_version_url = HON_LAS_VERSION_URL
-            launcher_download_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = self.HON_LAS_VERSION_URL
+            launcher_download_url = self.HON_LAS_LAUNCHER_DOWNLOAD_URL
 
         launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
         if not launcher_crc:
