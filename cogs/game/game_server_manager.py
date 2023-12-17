@@ -33,10 +33,6 @@ import random
 LOGGER = get_logger()
 MISC = get_misc()
 HOME_PATH = get_home()
-HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
-HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
-HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
-HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
 
 class GameServerManager:
     def __init__(self, global_config, setup):
@@ -47,6 +43,16 @@ class GameServerManager:
         global_config (dict): A dictionary containing the global configuration for the game server.
         """
         self.global_config = global_config
+        """
+        Global class configuration. These are URLs for retrieval of game data for patching and updates.
+        """
+        self.HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+        self.HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+        self.HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+        self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
+        if "svr_beta_mode" in self.global_config and self.global_config["svr_beta_mode"]:
+            self.HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+            self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86_64/launcher.zip"
         """
         Event Subscriptions. These are used to call other parts of the code in an event-driven approach within async functions.
         """

@@ -108,7 +108,8 @@ class SetupEnvironment:
                 "svr_startup_timeout": 180,
                 "svr_api_port": 5000,
                 "man_use_cowmaster": False,
-                "svr_restart_between_games": False
+                "svr_restart_between_games": False,
+                "svr_beta_mode": False
             },
             "application_data": {
                 "timers": {
