@@ -109,7 +109,7 @@ class SetupEnvironment:
                 "svr_api_port": 5000,
                 "man_use_cowmaster": False,
                 "svr_restart_between_games": False,
-                "svr_city_name": False # overrides the city lookup for the server
+                "svr_city_name": "auto" # overrides the city lookup for the server
             },
             "application_data": {
                 "timers": {
@@ -184,10 +184,10 @@ class SetupEnvironment:
     
     async def generate_server_name(self):
         # Get the city
-        if 'svr_city_name' not in self.hon_data or not self.hon_data['svr_city_name']:
-            city = self.resolve_city(MISC.get_public_ip())
-        else:
+        if 'svr_city_name' in self.hon_data and self.hon_data['svr_city_name'] != 'auto':
             city = self.hon_data['svr_city_name']
+        else:
+            city = self.resolve_city(MISC.get_public_ip())
 
         # Get the discord username
         discord_username = get_discord_username()

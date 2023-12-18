@@ -87,6 +87,9 @@ class ConfigManagement():
                 pass
         return None
     def get_local_configuration(self):
+        """
+        Controls the game server settings. When "params" change below, the game server will be restarted to match the new configuration. So be careful when adding new settings here.
+        """
         self.local = ({
             'config' : {
                 'file_name':self.gbl['hon_data']['hon_executable_name'],
