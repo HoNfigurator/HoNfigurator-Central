@@ -52,8 +52,8 @@ class GameServerManager:
         self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
         if "svr_beta_mode" in self.global_config['hon_data'] and self.global_config['hon_data']['svr_beta_mode']:
             self.global_config['hon_data']['architecture'] == "lxs-crIac6LASwoafrl8FrOa"
-            self.HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
-            self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86_64/launcher.zip"
+            self.HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+            self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
         """
         Event Subscriptions. These are used to call other parts of the code in an event-driven approach within async functions.
         """
