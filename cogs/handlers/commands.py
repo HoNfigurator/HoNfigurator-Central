@@ -386,7 +386,7 @@ class Commands:
                 print_formatted_text("Usage: command <GameServer#> <command>")
                 return
             
-            if isinstance(command[0],str) and command[0].lower() not in ['message','terminateplayer','serverreset','flushserverlogs']:
+            if isinstance(command[0],str) and command[0].lower() not in ['message','terminateplayer','serverreset','flushserverlogs', 'givegold', 'giveexp']:
                 LOGGER.warn("Command disallowed")
                 return
             if game_server == "all":
