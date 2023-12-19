@@ -294,7 +294,7 @@ class Misc:
     def get_svr_version(self,hon_exe):
         def validate_version_format(version):
             version_parts = version.split('.')
-            if len(version_parts) != 4:
+            if len(version_parts) < 3:
                 return False
 
             for part in version_parts:
