@@ -304,8 +304,10 @@ class Misc:
                     return False
 
             return True
-
-        if not exists(hon_exe):
+        
+        if not exists(hon_exe) and exists(hon_exe + "_KONGOR"):
+            hon_exe += "_KONGOR"
+        else:
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
 
         if self.get_os_platform() == "win32":
