@@ -304,8 +304,8 @@ class Misc:
                     return False
 
             return True
-        
-        if not exists(hon_exe) and exists(str(hon_exe.replace("_KONGOR", ""))):
+        hon_exe = str(hon_exe)
+        if not exists(hon_exe) and exists(hon_exe.replace("_KONGOR", "")):
             hon_exe = hon_exe.replace("_KONGOR", "")
         else:
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
