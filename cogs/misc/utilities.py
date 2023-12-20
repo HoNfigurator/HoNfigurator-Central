@@ -4,6 +4,7 @@ import hashlib
 import crcmod
 import zipfile
 import binascii
+import shutil
 from os.path import exists
 from pathlib import Path
 import sys
@@ -304,8 +305,11 @@ class Misc:
                     return False
 
             return True
-            
-        if not exists(hon_exe):
+        
+        hon_exe = str(hon_exe)
+        if not exists(hon_exe) and exists(hon_exe.replace("_KONGOR","")):
+            shutil.copyfile(f"{self.hon_data['hon_install_dir'] / 'hon-x86_64-server'}", f"{self.hon_data['hon_install_dir'] / executable}")
+        else:
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
 
         if self.get_os_platform() == "win32":
