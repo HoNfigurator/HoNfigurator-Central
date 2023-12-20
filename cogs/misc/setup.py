@@ -663,8 +663,6 @@ class SetupEnvironment:
             hon_replays_directory = hon_artefacts_directory / "KONGOR" / "replays"
             hon_logs_directory = hon_artefacts_directory / "KONGOR" / "logs"
             executable = "hon-x86_64-server_KONGOR"
-            if not os.path.exists(executable) and os.path.exists("hon-x86_64-server"):
-                shutil.copyfile(f"{self.hon_data['hon_install_dir'] / 'hon-x86_64-server'}", f"{self.hon_data['hon_install_dir'] / executable}")
             file_name = executable
             architecture = 'las-crIac6LASwoafrl8FrOa'
 
