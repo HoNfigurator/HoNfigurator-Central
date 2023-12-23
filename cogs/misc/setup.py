@@ -210,8 +210,10 @@ class SetupEnvironment:
 
         # Generate the server name
         state = state_code.split('-')
-        if isinstance(state, list) and len(state) > 0:
+        if len(state) > 1:
             state = state[1]
+        else:
+            state = state[0]
 
         server_name = f"{self.hon_data['svr_location']}-{state} {discord_username}"
 
@@ -706,17 +708,22 @@ class SetupEnvironment:
     def resolve_state_code(self, ip_address):
         API_KEY = "6822fd77ae464cafb5ce4f3be425f1ad"
         try:
-            response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}&fields=state_code')
+            response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}')
             response_data = response.json()
 
             # Extract the state from the response
             state_code = response_data.get('state_code', 'Unknown')
 
+            if state_code in ['', 'Unknown']:
+                state_code = response_data.get('country_name', 'Unknown')
+
             if not state_code:
                 # Fallback: Make a second API call without the IP address as a query parameter
-                response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&fields=state_code')
+                response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}')
                 response_data = response.json()
-                state_code = response_data.get('state', 'Unknown')
+                state_code = response_data.get('state_code', 'Unknown')
+                if state_code in ['', 'Unknown']:
+                    state_code = response_data.get('country_name', 'Unknown')
 
             return state_code
         except Exception as e:
