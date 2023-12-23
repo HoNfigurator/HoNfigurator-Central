@@ -304,7 +304,7 @@ class Misc:
                     return False
 
             return True
-
+        
         if not exists(hon_exe):
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
 
