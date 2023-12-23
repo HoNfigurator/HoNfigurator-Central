@@ -185,10 +185,10 @@ class SetupEnvironment:
     
     async def generate_server_name(self):
         # Get the city
-        if 'svr_city_name' in self.hon_data and self.hon_data['svr_city_name'] != 'auto':
-            city = self.hon_data['svr_city_name']
+        if 'svr_state_name' in self.hon_data and self.hon_data['svr_state_name'] != 'auto':
+            state_code = self.hon_data['svr_state_name']
         else:
-            city = self.resolve_city(MISC.get_public_ip())
+            state_code = self.resolve_state_code(MISC.get_public_ip())
 
         # Get the discord username
         discord_username = get_discord_username()
@@ -208,7 +208,11 @@ class SetupEnvironment:
         discord_username = self.format_discord_username(discord_username)
 
         # Generate the server name
-        server_name = f"{self.hon_data['svr_location']}-{city} {discord_username}"
+        state = state_code.split('-')
+        if len(state) > 0:
+            state = state[1]
+
+        server_name = f"{self.hon_data['svr_location']}-{state} {discord_username}"
 
         return server_name
 
@@ -698,36 +702,33 @@ class SetupEnvironment:
         else:
             return False
         
-    def resolve_city(self, ip_address):
+    def resolve_state_code(self, ip_address):
         API_KEY = "6822fd77ae464cafb5ce4f3be425f1ad"
         try:
-            response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}&fields=city')
+            response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}&fields=state_code')
             response_data = response.json()
 
-            # Extract the city from the response
-            city = response_data.get('city', 'Unknown')
+            # Extract the state from the response
+            state_code = response_data.get('state_code', 'Unknown')
 
-            if not city:
+            if not state_code:
                 # Fallback: Make a second API call without the IP address as a query parameter
-                response = requests.get('https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&fields=city')
+                response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&fields=state_code')
                 response_data = response.json()
-                city = response_data.get('city', 'Unknown')
+                state_code = response_data.get('state', 'Unknown')
 
-            # Format the city using a separate method
-            formatted_city = self.format_city(city)
-
-            return formatted_city
+            return state_code
         except Exception as e:
             LOGGER.error(f"Failed to fetch or process data. Error: {str(e)}")
             return None
 
-    def format_city(self, city):
-        if city:
+    def format_state(self, state):
+        if state:
             # Remove whitespace, special characters, and punctuation
-            formatted_city = re.sub(r'\W', '', city)
-            return formatted_city
+            formatted_state = re.sub(r'\W', '', state)
+            return formatted_state
         else:
-            LOGGER.warning("City information not available.")
+            LOGGER.warning("State information not available.")
             return None
     
     def format_discord_username(self, discord_username):
