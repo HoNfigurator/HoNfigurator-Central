@@ -110,7 +110,7 @@ class SetupEnvironment:
                 "svr_api_port": 5000,
                 "man_use_cowmaster": False,
                 "svr_restart_between_games": False,
-                "svr_city_name": "auto" # overrides the city lookup for the server
+                "svr_state_name": "auto" # overrides the state lookup for the server
             },
             "application_data": {
                 "timers": {
