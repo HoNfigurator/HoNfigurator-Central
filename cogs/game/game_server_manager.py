@@ -33,10 +33,6 @@ import random
 LOGGER = get_logger()
 MISC = get_misc()
 HOME_PATH = get_home()
-HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
-HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
-HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
-HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
 
 class GameServerManager:
     def __init__(self, global_config, setup):
@@ -47,6 +43,17 @@ class GameServerManager:
         global_config (dict): A dictionary containing the global configuration for the game server.
         """
         self.global_config = global_config
+        """
+        Global class configuration. These are URLs for retrieval of game data for patching and updates.
+        """
+        self.HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+        self.HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+        self.HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+        self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
+        if "svr_beta_mode" in self.global_config['hon_data'] and self.global_config['hon_data']['svr_beta_mode']:
+            self.global_config['hon_data']['architecture'] == "lxs-crIac6LASwoafrl8FrOa"
+            self.HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+            self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
         """
         Event Subscriptions. These are used to call other parts of the code in an event-driven approach within async functions.
         """
@@ -1165,13 +1172,13 @@ class GameServerManager:
         if MISC.get_os_platform() == "win32":
             launcher_binary = 'hon_update_x64.exe'
             launcher_zip = 'hon_update_x64.zip'
-            hon_version_url = HON_WAS_VERSION_URL
-            launcher_download_url = HON_WAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = self.HON_WAS_VERSION_URL
+            launcher_download_url = self.HON_WAS_LAUNCHER_DOWNLOAD_URL
         else:
             launcher_binary = 'launcher'
             launcher_zip = 'launcher.zip'
-            hon_version_url = HON_LAS_VERSION_URL
-            launcher_download_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = self.HON_LAS_VERSION_URL
+            launcher_download_url = self.HON_LAS_LAUNCHER_DOWNLOAD_URL
 
         launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
         if not launcher_crc:
