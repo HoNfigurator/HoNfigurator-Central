@@ -210,7 +210,7 @@ class SetupEnvironment:
 
         # Generate the server name
         state = state_code.split('-')
-        if len(state) > 0:
+        if isinstance(state, list) and len(state) > 0:
             state = state[1]
 
         server_name = f"{self.hon_data['svr_location']}-{state} {discord_username}"
