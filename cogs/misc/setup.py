@@ -93,6 +93,10 @@ class SetupEnvironment:
                 "svr_login": "",
                 "svr_password": "",
                 "svr_name": "",
+                "svr_override_suffix": False,
+                "svr_suffix": "",
+                "svr_override_state": False,
+                "svr_state": "",
                 "svr_location": self.get_server_region(),
                 "svr_priority": "HIGH",
                 "svr_total": int(MISC.get_cpu_count() / 2),
@@ -111,7 +115,6 @@ class SetupEnvironment:
                 "man_use_cowmaster": False,
                 "svr_restart_between_games": False,
                 "svr_beta_mode": False,
-                "svr_state_name": "auto" # overrides the state lookup for the server
             },
             "application_data": {
                 "timers": {
@@ -142,7 +145,7 @@ class SetupEnvironment:
                 },
                 "discord": {
                     "owner_id": 0
-                }
+                },
             }
         }
 
@@ -186,27 +189,31 @@ class SetupEnvironment:
     
     async def generate_server_name(self):
         # Get the city
-        if 'svr_state_name' in self.hon_data and self.hon_data['svr_state_name'] != 'auto':
-            state_code = self.hon_data['svr_state_name']
+        if 'svr_override_state' in self.hon_data and self.hon_data['svr_override_state']:
+            state_code = self.hon_data['svr_state']
         else:
             state_code = self.resolve_state_code(MISC.get_public_ip())
-
-        # Get the discord username
-        discord_username = get_discord_username()
-
-        # Resolve the username from the discord ID
-        if not discord_username:
-            try:
-                if not get_discord_username():
-                    discord_username = await get_discord_user_id_from_api(self.database.get_discord_owner_id())
-            except Exception:
-                LOGGER.error(f"Failed to resolve the discord username, are you sure this discord ID is correct? {self.application_data['discord']['owner_id']}\n{traceback.format_exc()}")
         
-        if not discord_username:
-            discord_username = "Unknown"
+        if 'svr_override_suffix' in self.hon_data and self.hon_data['svr_override_suffix']:
+            suffix = self.hon_data['svr_suffix']
+            suffix = self.format_discord_username(suffix)
+        else:
+            # Get the discord username
+            suffix = get_discord_username()
 
-        # Format the discord username
-        discord_username = self.format_discord_username(discord_username)
+            # Resolve the username from the discord ID
+            if not suffix:
+                try:
+                    if not get_discord_username():
+                        suffix = await get_discord_user_id_from_api(self.database.get_discord_owner_id())
+                except Exception:
+                    LOGGER.error(f"Failed to resolve the discord username, are you sure this discord ID is correct? {self.application_data['discord']['owner_id']}\n{traceback.format_exc()}")
+            
+            if not suffix:
+                suffix = "Unknown"
+
+            # Format the discord username
+            suffix = self.format_discord_username(suffix)
 
         # Generate the server name
         state = state_code.split('-')
@@ -214,8 +221,8 @@ class SetupEnvironment:
             state = state[1]
         else:
             state = state[0]
-
-        server_name = f"{self.hon_data['svr_location']}-{state} {discord_username}"
+        
+        server_name = f"{self.hon_data['svr_location']}-{state} {suffix}"
 
         return server_name
 
@@ -225,6 +232,11 @@ class SetupEnvironment:
 
         if application_data:
             self.application_data = application_data
+        
+        
+        # Since TH has over 10 servers hosted by a single person, we need to do more testing first on what the impact would be of having the same server names. So excluding from autogen for now.
+        if self.hon_data['svr_location'] != "TH" and not self.server_name_generated:
+            self.hon_data['svr_name'] = await self.generate_server_name()
 
         major_issues = []
         minor_issues = []
@@ -316,7 +328,7 @@ class SetupEnvironment:
 
         def handle_str(key, value):
             if not isinstance(value, str) or value == '':
-                if key == "location" and value == '':
+                if key in ["location", "svr_state", "svr_suffix"] and value == '':
                     return value
                 else:
                     return None
@@ -697,9 +709,6 @@ class SetupEnvironment:
     async def get_final_configuration(self):
         self.add_runtime_data()
         
-        # Since TH has over 10 servers hosted by a single person, we need to do more testing first on what the impact would be of having the same server names. So excluding from autogen for now.
-        if self.hon_data['svr_location'] != "TH" and not self.server_name_generated:
-            self.hon_data['svr_name'] = await self.generate_server_name()
         if await self.validate_hon_data():
             return self.merge_config()
         else:
@@ -746,8 +755,8 @@ class SetupEnvironment:
         # Capitalize the first character
         cleaned_string = cleaned_string.capitalize()
 
-        # Truncate the string after the fourth character
-        truncated_string = cleaned_string[:5]
+        # Truncate the string after the eigth character
+        cleaned_string = cleaned_string[:8]
 
-        return truncated_string
+        return cleaned_string
         
