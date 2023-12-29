@@ -114,25 +114,43 @@ class GameManagerParser:
 
                 Total Length is 54 w 0 Players
                 Contains:
-                    int 1 msg_type			# 0
-                    int 1 status			# 1
-                    int 4 uptime			# 2-6
-                    int 4 server load		# 6-10
-                    int 1 num_clients1		# 10
-                    int 1 match_started		# 11
-                    int 4 unknown           # 12-16
-                    int 4 unknown           # 16-20
-                    int 4 unknown           # 20-24
-                    int 4 unknown           # 24-28
-                    int 4 unknown           # 28-32
-                    int 4 unknown           # 32-36
-                    int 4 unknown           # 36-40
-                    int 1 game_phase        # 40
-                    int 4 unknown           # 40-44
-                    int 4 unknown           # 44-48
-                    int 4 unknown           # 48-52
-                    int 1 num_clients2      # 53
-                With Players, first 54 bytes remains as fixed values, so treat them first. Additional data is tacked on the end as the clients. See code below for parsing
+                    int 1 msg_type			            # 0
+                    int 1 status			            # 1
+                    int 4 uptime			            # 2-6
+                    int 4 server load		            # 6-10
+                    int 1 num_clients1		            # 10
+                    int 1 match_started		            # 11
+                    int 4 num_frame_bytes_sent          # 12-16
+                    int 4 num_frame_packets_sent        # 16-20
+                    int 4 num_frame_errors              # 20-24
+                    int 4 num_frame_packets_errors      # 24-28
+                    int 4 num_frame_bytes_received      # 28-32
+                    int 4 num_frame_packets_received    # 32-36
+                    int 4 memory_usage                  # 36-40
+                    int 1 game_phase                    # 40
+                    int 4 unknown (always 0)            # 40-44
+                    int 4 unknown (always 0)            # 44-48
+                    int 4 unknown (always -1)           # 48-52
+                    int 1 num_clients2                  # 53
+
+                    With Players, above 54 bytes remains as fixed structure, so treat them first. Additional data is tacked on the end as the clients. See code below for parsing
+                    Players bytes begins.
+                    for each client:
+                        -- int account_id
+                        -- string ip address
+                        -- string name
+                        -- string ??? possibly geoip
+                        -- short minping
+                        -- short avgping
+                        -- short maxping
+                        -- short num_reliable_packets_sent
+                        -- short num_reliable_packets_confirmed
+                        -- short num_reliable_packets_client_sent
+                        -- short num_reliable_packets_client_confirmed
+                        -- short num_unreliable_packets_sent
+                        -- short num_unreliable_packets_confirmed
+                        -- short num_unreliable_packets_client_sent
+                        -- short num_unreliable_packets_client_confirmed
         """
 
         # Parse fixed-length fields
@@ -215,7 +233,7 @@ class GameManagerParser:
         current_time = datetime.datetime.now().timestamp()  # Get current time in Unix timestamp format
         self.log("debug", f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
         if game_server:
-            game_server.increment_skipped_frames(skipped_frames, current_time)
+            await game_server.increment_skipped_frames(skipped_frames, current_time)
 
 
 
@@ -343,7 +361,7 @@ class GameManagerParser:
                 match_id = int(match.group(1))
                 self.log("debug",f"Updated running match data with Match ID: {match_id}")
                 game_server.update_dict_value('current_match_id',match_id)
-                await game_server.load_gamestate_from_file(match_only=True)
+                # await game_server.load_gamestate_from_file(match_only=True) # disabled function
             else:
                 self.log("debug","Match ID not found")
 
@@ -670,11 +688,15 @@ class ClientChatParser:
     async def chat_authentication_ok(self,packet_data):
         offset = 2
         status, offset = read_int(packet_data, offset)
+
+        self.log("debug",f"{self.print_prefix}Authentication OK")
         return status
 
     async def chat_authentication_fail(self,packet_data):
         offset = 2
         status, offset = read_int(packet_data, offset)
+
+        self.log("debug",f"{self.print_prefix}Authentication FAIL")
         return status
 
 

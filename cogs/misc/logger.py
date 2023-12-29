@@ -74,6 +74,7 @@ class PromptToolkitLogHandler(logging.Handler):
 FILEBEAT_AUTH_TOKEN = None
 FILEBEAT_AUTH_URL = None
 MQTT = None
+DISCORD_USERNAME = None
 
 # Get the path of the current script
 def get_script_dir(file):
@@ -94,6 +95,13 @@ def set_filebeat_auth_url(url):
 
 def get_filebeat_auth_url():
     return FILEBEAT_AUTH_URL
+
+def set_discord_username(username):
+    global DISCORD_USERNAME
+    DISCORD_USERNAME = username
+
+def get_discord_username():
+    return DISCORD_USERNAME
 
 def set_logger():
     global HOME_PATH

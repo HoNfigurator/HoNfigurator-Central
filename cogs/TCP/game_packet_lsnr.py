@@ -95,11 +95,6 @@ class ClientConnection:
 
             # Add a small delay to allow other clients to send packets
             await asyncio.sleep(0.001)
-        
-        if self.game_server:
-            self.game_server.reset_game_state() # clear the game server state object to indicate we've lost comms from this server.
-        else:
-            self.cowmaster.reset_cowmaster_state()
             
         await self.close()
 

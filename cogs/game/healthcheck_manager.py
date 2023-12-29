@@ -9,11 +9,26 @@ import os
 import re
 from datetime import datetime
 
+# Initialize loggers and miscellaneous utilities
 LOGGER = get_logger()
 MISC = get_misc()
 
 class HealthCheckManager:
+    """
+    Manages health checks for game servers. This includes regular checks for game patches, server status,
+    IP changes, and more. It schedules and manages various asynchronous tasks to monitor and maintain server health.
+    """
+
     def __init__(self, game_servers, event_bus, callback_check_upstream_patch, callback_resubmit_match_stats, global_config):
+        """
+        Initializes the HealthCheckManager.
+
+        :param game_servers: A collection of game server instances to monitor.
+        :param event_bus: Event bus for inter-process or inter-thread communication.
+        :param callback_check_upstream_patch: Callback function to check for game updates.
+        :param callback_resubmit_match_stats: Callback function to handle game statistics.
+        :param global_config: Global configuration settings.
+        """
         self.game_servers = game_servers
         self.event_bus = event_bus
         self.check_upstream_patch = callback_check_upstream_patch
@@ -26,39 +41,44 @@ class HealthCheckManager:
             'game_stats_resubmission': None,
             'public_ip_changed_check': None,
             'filebeat_verification': None,
-            'spawned_filebeat_setup':None,
-            'general_healthcheck':None
+            'spawned_filebeat_setup': None,
+            'general_healthcheck': None
         }
     
-    def schedule_task(self, coro, name, override = False):
-        existing_task = self.tasks.get(name)  # Get existing task if any
+    def schedule_task(self, coro, name, override=False):
+        """
+        Schedules an asynchronous task, with the option to override existing tasks.
 
-        if existing_task is not None:
-            if not isinstance(existing_task, asyncio.Task):
-                LOGGER.error(f"Item '{name}' in tasks is not a Task object.")
-                # raise ValueError(f"Item '{name}' in tasks is not a Task object.")  # Option 1: raise an error
-                existing_task = None  # Option 2: ignore the non-Task item and overwrite it later
+        :param coro: Coroutine representing the task to be scheduled.
+        :param name: Name of the task, used for tracking and logging.
+        :param override: Boolean indicating whether to override an existing task of the same name.
+        :return: The scheduled asyncio Task object.
+        """
+        existing_task = self.tasks.get(name)
 
+        # Validate and manage the existing task
         if existing_task:
-            if existing_task.done():
-                if not existing_task.cancelled():
-                    # If the task has finished and was not cancelled, retrieve any possible exception to avoid 'unretrieved exception' warnings
-                    exception = existing_task.exception()
-                    if exception:
-                        LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+            if isinstance(existing_task, asyncio.Task):
+                if existing_task.done():
+                    if not existing_task.cancelled():
+                        exception = existing_task.exception()
+                        if exception:
+                            LOGGER.error(f"The previous task '{name}' raised an exception: {exception}. We are scheduling a new one.")
+                    else:
+                        LOGGER.info(f"The previous task '{name}' was cancelled.")
                 else:
-                    LOGGER.info(f"The previous task '{name}' was cancelled.")
+                    if not override:
+                        LOGGER.debug(f"Task '{name}' is still running, new task not scheduled.")
+                        return existing_task
+                    else:
+                        try:
+                            existing_task.cancel()
+                        except Exception:
+                            LOGGER.error(f"Failed to cancel existing task: {name}")
+                            LOGGER.error(traceback.format_exc())
             else:
-                if not override:
-                    # Task is still running
-                    LOGGER.debug(f"Task '{name}' is still running, new task not scheduled.")
-                    return existing_task  # Return existing task
-                else:
-                    try:
-                        self.tasks['name'].cancel()
-                    except Exception:
-                        LOGGER.error(f"Failed to cancel existing task: {name}")
-                        LOGGER.error(traceback.format_exc())
+                LOGGER.error(f"Item '{name}' in tasks is not a Task object.")
+                existing_task = None
 
         # Create and register the new task
         task = asyncio.create_task(coro)
@@ -67,6 +87,12 @@ class HealthCheckManager:
         return task
 
     async def public_ip_healthcheck(self):
+        """
+        Periodically checks for changes in the public IP address. If a change is detected, it triggers a restart check.
+
+        This method runs in a loop that can be interrupted by the 'stop_event'. It waits for a predefined interval and
+        then checks for a change in the public IP address.
+        """
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['public_ip_healthcheck']):
                 if stop_event.is_set():
@@ -78,6 +104,13 @@ class HealthCheckManager:
                 await self.event_bus.emit('check_for_restart_required')
 
     async def general_healthcheck(self):
+        """
+        Performs a general health check on all game servers. This includes checking for idle or stuck servers,
+        terminating orphan proxy processes, and other general maintenance tasks.
+
+        This method runs in a loop that can be interrupted by the 'stop_event'. It checks each game server's status
+        and performs necessary actions based on the server's condition.
+        """
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['general_healthcheck']):
                 if stop_event.is_set():
@@ -109,10 +142,15 @@ class HealthCheckManager:
                 
 
             for proc in proxy_procs:
-                # LOGGER.info(f"WHAT-IF: Removed orphan proxy.exe ({proc.pid}) process. It is not associated with any currently connected game server instances.")
                 proc.terminate()
 
     async def lag_healthcheck(self):
+        """
+        Continuously checks for lag in each game server. This method can be expanded to implement specific lag detection logic.
+
+        Runs in a loop that can be interrupted by the 'stop_event'. It waits for a predefined interval before 
+        performing the next check.
+        """
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['lag_healthcheck']):
                 if stop_event.is_set():
@@ -124,6 +162,12 @@ class HealthCheckManager:
                 pass
 
     async def patch_version_healthcheck(self):
+        """
+        Regularly checks for new game patches. If a new patch is found, it triggers the patching process.
+
+        Runs in a loop that can be interrupted by the 'stop_event'. Waits for a predefined interval before
+        checking for new patches.
+        """
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['check_for_hon_update']):
                 if stop_event.is_set():
@@ -137,6 +181,12 @@ class HealthCheckManager:
 
                 
     async def filebeat_verification(self):
+        """
+        Periodically verifies and sets up Filebeat for log file monitoring. Schedules a task for Filebeat setup.
+
+        Runs in a loop that can be interrupted by the 'stop_event'. Waits for a predefined interval before
+        performing the verification.
+        """
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['filebeat_verification']):
                 if stop_event.is_set():
@@ -150,6 +200,12 @@ class HealthCheckManager:
                 LOGGER.error(traceback.format_exc())
     
     async def honfigurator_version_healthcheck(self):
+        """
+        Checks for updates to the 'honfigurator' component. If an update is available, it triggers the update process.
+
+        Runs in a loop that can be interrupted by the 'stop_event'. Waits for a predefined interval before
+        performing the check.
+        """
         while not stop_event.is_set():
             for _ in range(self.global_config['application_data']['timers']['manager']['check_for_honfigurator_update']):
                 if stop_event.is_set():
@@ -161,6 +217,12 @@ class HealthCheckManager:
                 LOGGER.error(traceback.format_exc())
     
     async def poll_for_game_stats(self):
+        """
+        Regularly polls the game statistics and processes them. Handles and resubmits match stats to the master server.
+
+        Runs in a loop that can be interrupted by the 'stop_event'. Waits for a short interval before
+        checking the game stats directory for new files.
+        """
         while not stop_event.is_set():
             for _ in range(10):
                 if stop_event.is_set():
@@ -179,19 +241,13 @@ class HealthCheckManager:
             except Exception as e:
                 LOGGER.error(f"Error while polling stats directory: {e}")
                 traceback.print_exc()
-    
-    async def remove_old_proxy_processes(self):
-        while not stop_event.is_set():
-            for _ in range(self.global_config['application_data']['timers']['manager']['general_healthcheck']):
-                if stop_event.is_set():
-                    return
-                await asyncio.sleep(1)
 
     async def run_health_checks(self):
         """
-            Schedule and run healthchecks defined in this class.
+        Schedules and manages the execution of all health check tasks. This method ensures that each health check
+        is run periodically and handles any exceptions that occur during their execution.
 
-            If health check functions are not wrapped in try
+        If a task encounters an exception, it is logged, and the task is rescheduled.
         """
         # Create tasks using schedule_task method
         self.tasks['hon_update_check'] = self.schedule_task(self.patch_version_healthcheck(), 'hon_update_check')

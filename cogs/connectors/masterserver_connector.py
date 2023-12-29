@@ -18,6 +18,7 @@ class MasterServerHandler:
         self.version = version
         self.was = "was-crIac6LASwoafrl8FrOa"
         self.las = "las-crIac6LASwoafrl8FrOa"
+        self.lxs = "lxs-crIac6LASwoafrl8FrOa"
         self.architecture = architecture
         if MISC.get_os_platform() == "win32":
             self.arch_platform = "x86_64"

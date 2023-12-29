@@ -309,6 +309,13 @@ class RolesDatabase:
             return row[0]
         else:
             return ""
+    
+    @health_check_decorator
+    def update_discord_owner_id(self, discord_id: int) -> None:
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET discord_id = ? WHERE nickname = 'owner'", (discord_id,))
+            conn.commit()
 
     @health_check_decorator  
     def get_user_roles_by_discord_id(self, discord_id: str) -> List[str]:

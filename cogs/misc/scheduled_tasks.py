@@ -98,7 +98,7 @@ class HonfiguratorSchedule():
         get_replaysnew_scheduled_time = get_replays_scheduled_time + timedelta(hours=1)
         get_replaysnew_scheduled_time_str = get_replaysnew_scheduled_time.strftime("%H:%M")
 
-        schedule.every().day.at(get_replaysnew_scheduled_time_str, pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
+        #schedule.every().day.at(get_replaysnew_scheduled_time_str, pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.get_replays)
         schedule.every().day.at(self.config['application_data']['timers']['replay_cleaner']['scheduled_time'], pytz.timezone(f"{tzlocal.get_localzone_name()}")).do(self.delete_or_move_files)
         LOGGER.info("Success!")
 
@@ -139,8 +139,10 @@ class HonfiguratorSchedule():
 
     @catch_exceptions()
     def delete_or_move_files(self):
+        LOGGER.info("Begin scheduled log file and replay cleaning...")
         instance = ReplayCleaner(self.config)
         instance.clean()
+        LOGGER.info("Scheduled log file and replay cleaning complete.")
 
 class Stats(HonfiguratorSchedule):
     def __init__(self, config):
