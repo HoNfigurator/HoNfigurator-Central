@@ -460,7 +460,7 @@ class SetupEnvironment:
                         \n\t- Game server logs, including in-game events and chat logs.\
                         \n\t- Player account names and public IP addresses.\
                         \n   This data is essential for the effective operation of the server and for ensuring a fair gaming environment.\
-                        \n\n6. Game replays will be stored on the server and can be requested by players in-game. Server administrators may manage these replays using the provided HoNfigurator settings. We recommend retaining replays for a minimum of 30 days for player review and quality assurance purposes.\
+                        \n\n6. Game replays will be stored on the server and can be requested by players in-game. Server administrators may manage these replays using the provided HoNfigurator settings. We recommend retaining replays for a minimum of 60 days for player review and quality assurance purposes.\
                         \n\nIn summary, by using HoNfigurator, users agree to:\
                         \n\t- Properly manage and administer their game server.\
                         \n\t- Ensure the privacy and security of collected data.\
