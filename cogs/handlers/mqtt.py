@@ -9,7 +9,7 @@ LOGGER = get_logger()
 
 class MQTTHandler:
 
-    def __init__(self, server="doormat.honfigurator.app", port=8883, keepalive=60, username=None, password=None, global_config=None, certificate_path=None, key_path=None):
+    def __init__(self, server="mqtt.honfigurator.app", port=8883, keepalive=60, username=None, password=None, global_config=None, certificate_path=None, key_path=None):
         self.server = server
         self.port = port
         self.keepalive = keepalive
