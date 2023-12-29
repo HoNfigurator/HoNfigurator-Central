@@ -22,7 +22,7 @@ from cogs.game.game_server import GameServer
 from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GamePhase, GameServerCommands, EventBus as ManagerEventBus
-from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt, get_filebeat_status, get_filebeat_auth_url
+from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt, get_filebeat_status, get_filebeat_auth_url, get_roles_database, set_roles_database
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
@@ -100,7 +100,11 @@ class GameServerManager:
         self.patching = False
 
         # set up connection to the local DB for the occasional query
-        self.roles_database = RolesDatabase()
+        if not get_roles_database():
+            self.roles_database = RolesDatabase()
+            set_roles_database(self.roles_database)
+        else:
+            self.roles_database = get_roles_database()
 
         # preserve the current system path. We need it for a silly fix.
         self.preserved_path = os.environ["PATH"]
@@ -130,7 +134,7 @@ class GameServerManager:
         self.chat_server_connected = None
         self.master_server_connected = None
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], patch_server=self.global_config['hon_data']['svr_patchServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
-        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
+        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.notify_discord_admin, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
         self.schedule_task(coro, 'health_checks')
@@ -198,18 +202,24 @@ class GameServerManager:
 
         body = {
             "discordId": self.roles_database.get_discord_owner_id(),
-            "serverInstance": kwargs.get('instance'),
-            "serverName": kwargs.get('server_name'),
-            "matchId": kwargs.get('match_id')
+            "serverName": self.global_config['hon_data']['svr_name'],
         }
 
         if kwargs.get('type') == 'lag':
             body["timeLagged"] = kwargs.get('time_lagged')
+            body["serverInstance"] = kwargs.get('instance'),
+            body["matchId"] = kwargs.get('match_id')
             log_message = "server side lag"
         elif kwargs.get('type') == 'crash':
             body["timeCrashed"] = kwargs.get('time_of_crash')
             body["gamePhase"] = kwargs.get('game_phase')
+            body["serverInstance"] = kwargs.get('instance'),
+            body["matchId"] = kwargs.get('match_id')
             log_message = "server crash"
+        elif kwargs.get('type') == 'disk_alert':
+            body["diskUtilisation"] = kwargs.get('disk_space')
+            body["severity"] = kwargs.get('severity')
+            log_message = "disk space alert"
         else:
             raise ValueError(f"Unknown event type: {kwargs.get('type')}")
 

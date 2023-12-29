@@ -119,6 +119,17 @@ class RolesDatabase:
                 UNIQUE (user_id, role_id)
             )
             """)
+
+            cursor.execute("""
+            CREATE TABLE IF NOT EXISTS alerts (
+                id INTEGER PRIMARY KEY,
+                type TEXT NOT NULL,
+                severity TEXT NOT NULL,
+                threshold INTEGER NOT NULL,
+                active BOOLEAN NOT NULL DEFAULT 0,
+                notified BOOLEAN NOT NULL DEFAULT 0
+            )
+            """)
             conn.commit()
     
     def add_default_data(self, discord_id=None):
@@ -170,6 +181,95 @@ class RolesDatabase:
 
                 conn.commit()
         return True
+
+    def add_default_alerts_data(self):
+        initial_alerts = [(1, 'Warning', 'Disk Utilisation', 80, 0),
+                  (2, 'Warning','Disk Utilisation', 90, 0),
+                  (3, 'Critical', 'Disk Utilisation', 95, 0),
+                  (4, 'Fatal', 'Disk Utilisation', 100, 0)]
+
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.executemany("""
+            INSERT INTO alerts (id, severity, type, threshold, active)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO NOTHING
+            """, initial_alerts)
+            conn.commit()
+
+    @health_check_decorator
+    def update_disk_utilization_alerts(self, percent_used):
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            # Retrieve all disk utilization alerts in descending order of severity
+            cursor.execute("SELECT id, severity, threshold, active, notified FROM alerts WHERE type = 'Disk Utilisation' ORDER BY severity DESC")
+            alerts = cursor.fetchall()
+
+            # Initialize variables to track the most severe alert that meets the criteria
+            most_severe_applicable_alert = None
+
+            # Iterate through all alerts to find the most severe one that meets the disk utilization threshold
+            for alert in alerts:
+                alert_id, severity, threshold, active, notified = alert
+                if percent_used >= threshold:
+                    most_severe_applicable_alert = alert
+                    # Don't break here as we want the most severe one
+
+            alert_activated = {}  # Dict to track if any alert was activated
+
+            # Update the alerts based on the identified most severe applicable alert
+            for alert in alerts:
+                alert_id, severity, threshold, active, notified = alert
+
+                if most_severe_applicable_alert is not None and alert_id == most_severe_applicable_alert[0]:
+                    # Activate the most severe applicable alert if it's not already active
+                    if not active or not notified:
+                        cursor.execute("UPDATE alerts SET active = 1, notified = 0 WHERE id = ?", (alert_id,))
+                        alert_activated = {'id': alert_id, 'severity': severity, 'threshold': threshold}
+                else:
+                    # Deactivate all other alerts
+                    if active or notified:
+                        cursor.execute("UPDATE alerts SET active = 0, notified = 0 WHERE id = ?", (alert_id,))
+
+            conn.commit()
+            return alert_activated  # Return the most severe activated alert's info or None if no alerts were activated
+
+    @health_check_decorator
+    def get_latest_active_alert(self, alert_type=None, alert_id=None):
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            # Query to select the most severe active alert for the given type
+            if alert_type:
+                cursor.execute("""
+                SELECT severity, threshold, active, notified
+                FROM alerts
+                WHERE type = ? AND active = 1 
+                ORDER BY id DESC 
+                LIMIT 1
+                """, (alert_type,))
+            elif alert_id:
+                cursor.execute("""
+                SELECT severity, threshold, active, notified
+                FROM alerts
+                WHERE id = ? AND active = 1 
+                ORDER BY id DESC 
+                LIMIT 1
+                """, (alert_id,))
+            # Fetch the result
+            result = cursor.fetchone()
+            return dict(result)
+
+    @health_check_decorator
+    def update_alert_with_notified(self, alert_id):
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            # Update all active alerts of the given type to have notified = 1
+            cursor.execute("""
+            UPDATE alerts
+            SET notified = 1
+            WHERE id = ?
+            """, (alert_id,))
+            conn.commit()
 
     # Other methods are updated to use the "self.get_conn()" context manager
     @health_check_decorator

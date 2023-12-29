@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
-from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url
+from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url, get_roles_database, set_roles_database
 from cogs.handlers.events import stop_event
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.match_parser import MatchParser
@@ -37,7 +37,11 @@ HOME_PATH = get_home()
 MISC = get_misc()
 SETUP = get_setup()
 
-roles_database = RolesDatabase()
+if not get_roles_database():
+    roles_database = RolesDatabase()
+    set_roles_database(roles_database)
+else:
+    roles_database = get_roles_database()
 
 CACHE_EXPIRY = timedelta(minutes=20)  # Change to desired cache expiry time
 user_info_cache = {}

@@ -28,12 +28,16 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home, set_mqtt, get_mqtt, set_discord_username, get_discord_username
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home, set_mqtt, get_mqtt, set_discord_username, get_discord_username, get_roles_database, set_roles_database
 
     from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
     LOGGER = get_logger()
-    roles_database = RolesDatabase()
+    if not get_roles_database():
+        roles_database = RolesDatabase()
+        set_roles_database(roles_database)
+    else:
+        roles_database = get_roles_database()
     MISC = get_misc()
 
 def print_or_log(log_lvl='info', msg=''):

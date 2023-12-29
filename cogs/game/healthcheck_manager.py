@@ -1,11 +1,12 @@
 
 from cogs.handlers.events import stop_event, get_logger
-from cogs.misc.logger import get_logger, get_misc
+from cogs.misc.logger import get_logger, get_misc, get_roles_database
 from cogs.handlers.events import GameStatus
 from utilities.filebeat import main as filebeat_setup
 import asyncio
 import traceback
 import os
+import shutil
 import re
 from datetime import datetime
 
@@ -19,7 +20,7 @@ class HealthCheckManager:
     IP changes, and more. It schedules and manages various asynchronous tasks to monitor and maintain server health.
     """
 
-    def __init__(self, game_servers, event_bus, callback_check_upstream_patch, callback_resubmit_match_stats, global_config):
+    def __init__(self, game_servers, event_bus, callback_check_upstream_patch, callback_resubmit_match_stats, callback_notify_discord_admin, global_config):
         """
         Initializes the HealthCheckManager.
 
@@ -33,6 +34,7 @@ class HealthCheckManager:
         self.event_bus = event_bus
         self.check_upstream_patch = callback_check_upstream_patch
         self.resubmit_match_stats = callback_resubmit_match_stats
+        self.notify_discord_admin = callback_notify_discord_admin
         self.global_config = global_config
         self.patching = False
         self.tasks = {
@@ -42,8 +44,11 @@ class HealthCheckManager:
             'public_ip_changed_check': None,
             'filebeat_verification': None,
             'spawned_filebeat_setup': None,
-            'general_healthcheck': None
+            'general_healthcheck': None,
+            'disk_utilisation_healthcheck': None
         }
+
+        get_roles_database().add_default_alerts_data()
     
     def schedule_task(self, coro, name, override=False):
         """
@@ -143,6 +148,47 @@ class HealthCheckManager:
 
             for proc in proxy_procs:
                 proc.terminate()
+    
+    async def disk_utilisation_healthcheck(self):
+        """
+        Checks for disk utilisation on the server. If the disk utilisation exceeds a certain threshold, it triggers a restart check.
+
+        This method runs in a loop that can be interrupted by the 'stop_event'. It waits for a predefined interval and
+        then checks the disk utilisation.
+        """
+        while not stop_event.is_set():
+            for _ in range(self.global_config['application_data']['timers']['manager']['disk_utilisation_healthcheck']):
+                if stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
+        # Retrieve the path from the global_config dictionary.
+        path = self.global_config['hon_data']['hon_artefacts_directory']
+        
+        # Normalize the path to ensure compatibility across platforms
+        normalized_path = os.path.abspath(path)
+        
+        # Check if the path exists to avoid errors
+        if not os.path.exists(normalized_path):
+            raise ValueError(f"The path {normalized_path} does not exist.")
+        
+        # On Unix-like systems, the root partition is a good default. On Windows, this will be empty.
+        drive = os.path.splitdrive(normalized_path)[0] or '/'
+        
+        # For Unix-like systems, find the mount point
+        if os.name == 'posix':
+            while not os.path.ismount(drive):
+                drive = os.path.dirname(drive)
+        
+        # Use shutil.disk_usage to get disk usage statistics.
+        total, used, free = shutil.disk_usage(drive)
+        
+        # Calculate the percentage of disk used.
+        percent_used = round((used / total) * 100, 2)
+
+        alert_activated = get_roles_database().update_disk_utilization_alerts(percent_used)
+        if alert_activated:
+            if await self.notify_discord_admin(type='disk_alert',disk_space=f"{str(percent_used)}%",severity=alert_activated['severity']):
+                get_roles_database().update_alert_with_notified(alert_activated['id'])
 
     async def lag_healthcheck(self):
         """
@@ -256,6 +302,7 @@ class HealthCheckManager:
         self.tasks['public_ip_changed_check'] = self.schedule_task(self.public_ip_healthcheck(), 'public_ip_changed_check')
         self.tasks['filebeat_verification'] = self.schedule_task(self.filebeat_verification(), 'filebeat_verification')
         self.tasks['general_healthcheck'] = self.schedule_task(self.general_healthcheck(), 'general_healthcheck')
+        self.tasks['disk_utilisation_healthcheck'] = self.schedule_task(self.disk_utilisation_healthcheck(), 'disk_utilisation_healthcheck')
 
         while not stop_event.is_set():
             for task_name, task in self.tasks.items():
@@ -278,6 +325,8 @@ class HealthCheckManager:
                         self.tasks[task_name] = self.schedule_task(self.filebeat_verification(), task_name)
                     elif task_name == 'general_healthcheck':
                         self.tasks[task_name] = self.schedule_task(self.general_healthcheck(), task_name)
+                    elif task_name == 'disk_utilisation_healthcheck':
+                        self.tasks[task_name] = self.schedule_task(self.disk_utilisation_healthcheck(), task_name)
 
             # Sleep for a bit before checking tasks again
             for _ in range(10):
