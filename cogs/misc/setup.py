@@ -238,6 +238,7 @@ class SetupEnvironment:
         # Since TH has over 10 servers hosted by a single person, we need to do more testing first on what the impact would be of having the same server names. So excluding from autogen for now.
         if self.hon_data['svr_location'] != "TH" and not self.server_name_generated:
             self.hon_data['svr_name'] = await self.generate_server_name()
+            self.hon_data['svr_name'] = self.hon_data['svr_name'][:16]
 
         major_issues = []
         minor_issues = []
@@ -608,6 +609,7 @@ class SetupEnvironment:
                 else:
                     break
         self.hon_data['svr_name'] = await self.generate_server_name()
+        self.hon_data['svr_name'] = self.hon_data['svr_name'][:16]
         self.server_name_generated = True
         if await self.validate_hon_data():
             return True
@@ -759,8 +761,5 @@ class SetupEnvironment:
 
         # Capitalize the first character
         cleaned_string = cleaned_string.capitalize()
-
-        # Truncate the string after the eigth character
-        cleaned_string = cleaned_string[:8]
 
         return cleaned_string
