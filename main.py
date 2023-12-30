@@ -84,9 +84,9 @@ async def main():
             LOGGER.warn("---- IMPORTANT ----\nYou have to run it as root (at the moment)\nReason is the priority setting on the game instances.\n---- IMPORTANT ----")
             return
 
-    config = setup.check_configuration(args)
+    config = await setup.check_configuration(args)
     if config:
-        global_config = setup.get_final_configuration()
+        global_config = await setup.get_final_configuration()
     else:
         LOGGER.exception(f"{traceback.format_exc()}")
         raise HoNConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")

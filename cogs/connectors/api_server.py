@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
-from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url
+from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url, get_roles_database, set_roles_database
 from cogs.handlers.events import stop_event
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.match_parser import MatchParser
@@ -37,7 +37,11 @@ HOME_PATH = get_home()
 MISC = get_misc()
 SETUP = get_setup()
 
-roles_database = RolesDatabase()
+if not get_roles_database():
+    roles_database = RolesDatabase()
+    set_roles_database(roles_database)
+else:
+    roles_database = get_roles_database()
 
 CACHE_EXPIRY = timedelta(minutes=20)  # Change to desired cache expiry time
 user_info_cache = {}
@@ -261,7 +265,7 @@ async def get_replay(match_id: str, token_and_user_info: dict = Depends(check_pe
 @app.post("/api/set_hon_data", description="Sets the 'hon_data' key within the global manager data dictionary")
 async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     try:
-        validation = SETUP.validate_hon_data(hon_data=hon_data)
+        validation = await SETUP.validate_hon_data(hon_data=hon_data)
         if validation:
             global_config['hon_data'] = hon_data
             await manager_event_bus.emit('update_server_start_semaphore')
@@ -273,7 +277,7 @@ async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = D
 @app.post("/api/set_app_data", description="Sets the 'application_data' key within the global manager data dictionary")
 async def set_app_data(app_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     try:
-        validation = SETUP.validate_hon_data(application_data=app_data)
+        validation = await SETUP.validate_hon_data(application_data=app_data)
         if validation:
             global_config['application_data'] = app_data
             await manager_event_bus.emit('check_for_restart_required', config_reload=True)
@@ -657,7 +661,7 @@ def get_all_users(token_and_user_info: dict = Depends(check_permission_factory(r
 def get_default_users(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return roles_database.get_default_users()
 
-@app.get("/api/user", summary="Get specified user with associated roles")
+@app.get("/api/user", summary="Get current authenticated user with associated roles")
 # def get_user(user: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
 def get_user(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     roles = roles_database.get_user_roles_by_discord_id(token_and_user_info['user_info']['id'])

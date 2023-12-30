@@ -10,17 +10,19 @@ from datetime import datetime, timedelta
 import inspect
 import tempfile
 import shutil
+import aiohttp
 from cogs.misc.exceptions import HoNAuthenticationError, HoNServerError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
 from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.connectors.api_server import start_api_server
+from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.game_server import GameServer
 from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
 from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GamePhase, GameServerCommands, EventBus as ManagerEventBus
-from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt, get_filebeat_status, get_filebeat_auth_url
+from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt, get_filebeat_status, get_filebeat_auth_url, get_roles_database, set_roles_database
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
@@ -31,10 +33,6 @@ import random
 LOGGER = get_logger()
 MISC = get_misc()
 HOME_PATH = get_home()
-HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
-HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
-HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
-HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
 
 class GameServerManager:
     def __init__(self, global_config, setup):
@@ -45,6 +43,17 @@ class GameServerManager:
         global_config (dict): A dictionary containing the global configuration for the game server.
         """
         self.global_config = global_config
+        """
+        Global class configuration. These are URLs for retrieval of game data for patching and updates.
+        """
+        self.HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+        self.HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+        self.HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+        self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
+        if "svr_beta_mode" in self.global_config['hon_data'] and self.global_config['hon_data']['svr_beta_mode']:
+            self.global_config['hon_data']['architecture'] == "lxs-crIac6LASwoafrl8FrOa"
+            self.HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+            self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
         """
         Event Subscriptions. These are used to call other parts of the code in an event-driven approach within async functions.
         """
@@ -72,6 +81,7 @@ class GameServerManager:
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.event_bus.subscribe('update_server_start_semaphore', self.update_server_start_semaphore)
+        self.event_bus.subscribe('notify_discord_admin', self.notify_discord_admin)
         self.tasks = {
             'cli_handler':None,
             'health_checks':None,
@@ -88,6 +98,13 @@ class GameServerManager:
 
         # set the current state of patching
         self.patching = False
+
+        # set up connection to the local DB for the occasional query
+        if not get_roles_database():
+            self.roles_database = RolesDatabase()
+            set_roles_database(self.roles_database)
+        else:
+            self.roles_database = get_roles_database()
 
         # preserve the current system path. We need it for a silly fix.
         self.preserved_path = os.environ["PATH"]
@@ -117,7 +134,7 @@ class GameServerManager:
         self.chat_server_connected = None
         self.master_server_connected = None
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], patch_server=self.global_config['hon_data']['svr_patchServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
-        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
+        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.notify_discord_admin, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
         self.schedule_task(coro, 'health_checks')
@@ -178,7 +195,47 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-    
+            
+    async def notify_discord_admin(self, **kwargs):
+        url = 'https://management.honfigurator.app:3001/api-ui/sendDiscordMessage'
+        headers = {'Content-Type': 'application/json'}
+
+        body = {
+            "discordId": self.roles_database.get_discord_owner_id(),
+            "serverName": self.global_config['hon_data']['svr_name'],
+        }
+
+        if kwargs.get('type') == 'lag':
+            body["timeLagged"] = kwargs.get('time_lagged')
+            body["serverInstance"] = kwargs.get('instance'),
+            body["matchId"] = kwargs.get('match_id')
+            log_message = "server side lag"
+        elif kwargs.get('type') == 'crash':
+            body["timeCrashed"] = kwargs.get('time_of_crash')
+            body["gamePhase"] = kwargs.get('game_phase')
+            body["serverInstance"] = kwargs.get('instance'),
+            body["matchId"] = kwargs.get('match_id')
+            log_message = "server crash"
+        elif kwargs.get('type') == 'disk_alert':
+            body["diskUtilisation"] = kwargs.get('disk_space')
+            body["severity"] = kwargs.get('severity')
+            log_message = "disk space alert"
+        else:
+            raise ValueError(f"Unknown event type: {kwargs.get('type')}")
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=body, ssl=False) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    LOGGER.error(f"Error notifying discord admin of {log_message}: {response.status} - {response_text}")
+                    if get_mqtt():
+                        get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{kwargs.get('type')}_notification_failure","message": f"Failed to notify server administrator. {response.status} - {response_text}", "response_code": response.status, "response_status": response.status})
+                    return response.status, response_text
+                LOGGER.info(f"Successfully notified discord admin of {log_message}.")
+                if get_mqtt():
+                    get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{kwargs.get('type')}_notification_success","message": "Successfully notified server administrator."})
+                return response.status, response_text
+              
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True, kill=False):
         try:
             if game_server is None: return False
@@ -273,7 +330,7 @@ class GameServerManager:
             await client_connection.writer.drain()
             if get_mqtt():
                 get_mqtt().publish_json("manager/command", {"event_type":"custom_command","command":command})
-            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
+            LOGGER.info(f"Command - Custom command ({command}) sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -645,7 +702,7 @@ class GameServerManager:
         if max_servers < 0: max_servers = 0
         self.global_config['hon_data']['svr_total'] = max_servers
 
-        self.setup.validate_hon_data(self.global_config['hon_data'])
+        await self.setup.validate_hon_data(self.global_config['hon_data'])
 
         idle_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') != 3]
         occupied_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') == 3]
@@ -955,7 +1012,7 @@ class GameServerManager:
                 game_server = self.game_servers.get(key, None)
                 #   This is in case game server doesn't exist intentionally (maybe config changed)
                 if game_server:
-                    game_server.reset_game_state()
+                    # game_server.reset_game_state() # this is happening prematurely, and crash reports are not aware of the current match ID or phase
                     game_server.unset_client_connection()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
                 # await self.commands.initialise_commands()
@@ -1125,13 +1182,13 @@ class GameServerManager:
         if MISC.get_os_platform() == "win32":
             launcher_binary = 'hon_update_x64.exe'
             launcher_zip = 'hon_update_x64.zip'
-            hon_version_url = HON_WAS_VERSION_URL
-            launcher_download_url = HON_WAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = self.HON_WAS_VERSION_URL
+            launcher_download_url = self.HON_WAS_LAUNCHER_DOWNLOAD_URL
         else:
             launcher_binary = 'launcher'
             launcher_zip = 'launcher.zip'
-            hon_version_url = HON_LAS_VERSION_URL
-            launcher_download_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = self.HON_LAS_VERSION_URL
+            launcher_download_url = self.HON_LAS_LAUNCHER_DOWNLOAD_URL
 
         launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
         if not launcher_crc:

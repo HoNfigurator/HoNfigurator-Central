@@ -15,6 +15,7 @@ from cogs.handlers.events import stop_event, GameStatus, GameServerCommands, Gam
 from cogs.misc.exceptions import HoNCompatibilityError, HoNInvalidServerBinaries, HoNServerError
 from cogs.misc.logparser import find_game_info_post_launch, find_match_id_post_launch
 from cogs.TCP.packet_parser import GameManagerParser
+from cogs.db.roles_db_connector import RolesDatabase
 import aiofiles
 import glob
 import re
@@ -64,7 +65,7 @@ class GameServer:
         self.game_state._state.update({'instance_id': self.id})
         self.game_state._state.update({'instance_name': self.id})
         self.data_file = os.path.join(f"{HOME_PATH}", "game_states", f"GameServer-{self.id}_state_data.json")
-        asyncio.create_task(self.load_gamestate_from_file(match_only=False))
+        # asyncio.create_task(self.load_gamestate_from_file(match_only=False)) # disabled function
         # Start the monitor_process method as a background task
         coro = self.monitor_process
         self.schedule_task(coro,'process_monitor', coro_bracket=True)
@@ -208,9 +209,11 @@ class GameServer:
                 LOGGER.debug(f"GameServer #{self.id} - Game Ended: {self.game_state['current_match_id']}")
                 if get_mqtt():
                     get_mqtt().publish_json("game_server/match", {"event_type":"match_ended", **self.game_state._state})
+
                 await self.set_server_priority_reduce()
                 await self.stop_match_timer()
                 await self.stop_disconnect_timer()
+                await self.stop_monitor_skipped_frames()
                 if self.global_config['hon_data']['svr_restart_between_games'] and self.game_in_progress:
                     LOGGER.info(f"GameServer #{self.id} - Restart game server between games as 'svr_restart_between_games' is enabled.")
                     coro = self.schedule_shutdown_server(disable=False)
@@ -223,6 +226,7 @@ class GameServer:
                 self.game_in_progress = True
                 await self.set_server_priority_increase()
                 await self.start_match_timer()
+                await self.schedule_task(self.start_monitor_skipped_frames,'monitor_skipped_frames',coro_bracket=True)
             # Add more phases as needed
         elif key == "game_phase":
             LOGGER.debug(f"GameServer #{self.id} - Game phase {value}")
@@ -231,8 +235,29 @@ class GameServer:
             if value == GamePhase.IDLE.value and self.scheduled_shutdown:
                 await self.stop_server_network()
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
+                skipped_frames = self.get_dict_value('now_ingame_skipped_frames')
+                if 0 <= skipped_frames < 5000:
+                    performance = "Excellent."
+                elif 5000 <= skipped_frames < 10000:
+                    performance = "Acceptable."
+                elif skipped_frames >= 10000:
+                    performance = "Poor. Host has been notified."
+                    
+                await self.manager_event_bus.emit('cmd_message_server', self, f"Total server lag: {skipped_frames /1000} seconds. Lag rating: {performance}")
+
+                if skipped_frames > 5000 and value == GamePhase.GAME_ENDED.value:
+                    # send request to management.honfig requesting administrator be notified
+                    await self.manager_event_bus.emit(
+                        'notify_discord_admin',
+                        type='lag',
+                        time_lagged=skipped_frames / 1000,
+                        instance=self.id,
+                        server_name=self.global_config['hon_data']['svr_name'],
+                        match_id=self.get_dict_value('current_match_id')
+                    )
                 LOGGER.debug(f"GameServer #{self.id} - Game in final stages, game ending.")
                 await self.schedule_task(self.start_disconnect_timer,'idle_disconnect_timer', coro_bracket=True)
+
             # add more phases as needed
 
         elif key == "status":
@@ -368,10 +393,39 @@ class GameServer:
     def reset_skipped_frames(self):
         self.game_state._performance['now_ingame_skipped_frames'] = 0
 
-    def increment_skipped_frames(self, frames, time):
-        # if self.get_dict_value('game_phase') == 6:  # Only log skipped frames when we're actually in a match.
+    async def start_monitor_skipped_frames(self, threshold=6000, interval_seconds=120):
+        """
+            This function will monitor the skipped frames in segments and report on it in-game if it breaches a threshold.
+        """
+        while True:
+            self.game_state._performance['monitored_skipped_frames'] = 0
+            for _ in range(interval_seconds):
+                if stop_event.is_set():
+                    break
+                await asyncio.sleep(1)
+            if self.game_state._performance['monitored_skipped_frames'] > threshold:
+                if self.game_state._performance['monitored_skipped_frames'] > 1000:
+                    duration = f"{self.game_state._performance['monitored_skipped_frames'] / 1000} seconds"
+                else:
+                    duration = f"{self.game_state._performance['monitored_skipped_frames']} miliseconds"
+
+                LOGGER.warn(f"GameServer #{self.id} - Server lagged {duration} in the last {interval_seconds} seconds which is above threshold ({threshold}ms).")
+                try:
+                    await self.manager_event_bus.emit('cmd_message_server', self, f"Server lag detected on {self.global_config['hon_data']['svr_name']}-{self.id}. This is being monitored and will be reported to the administrator if it continues.")
+                except Exception:
+                    LOGGER.error(traceback.format_exc())
+                # Reset the monitored skipped frames to 0, for the next iteration
+                self.game_state._performance['monitored_skipped_frames'] = 0
+
+    async def stop_monitor_skipped_frames(self):
+        self.stop_task(self.tasks['monitor_skipped_frames'])
+        self.game_state._performance['monitored_skipped_frames'] = 0
+
+    async def increment_skipped_frames(self, frames, time):
+        if self.get_dict_value('game_phase') in [5,6,7]:  # Only log skipped frames when we're actually in a match (preparation phase, during match, or game ending).
             self.game_state._performance['total_ingame_skipped_frames'] += frames
             self.game_state._performance['now_ingame_skipped_frames'] += frames
+            self.game_state._performance['monitored_skipped_frames'] += frames
             self.game_state._performance['skipped_frames_detailed'][time] = frames
 
             # Remove entries older than one day
@@ -664,6 +718,7 @@ class GameServer:
         self.started = False
         self.unschedule_shutdown()
         self.server_closed.set()
+        self.reset_game_state()
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
@@ -739,6 +794,7 @@ class GameServer:
             self.unschedule_shutdown()
             self.stop_proxy()
             self.server_closed.set()
+            self.reset_game_state()
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
@@ -928,6 +984,8 @@ region=naeu
 
             if self.enabled:
                 LOGGER.warn(f"proxy.exe (GameServer #{self.id}) crashed. Restarting...")
+                if get_mqtt():
+                    get_mqtt().publish_json("game_server/status",{"event_type":"proxy_crashed", **self.game_state._state})
                 self._proxy_process = None
 
     def stop_proxy(self):
@@ -956,6 +1014,17 @@ region=naeu
                         self.server_closed.set()  # Set the server_closed event
                         if get_mqtt():
                             get_mqtt().publish_json("game_server/status",{"event_type":"server_crashed", **self.game_state._state})
+                        if self.get_dict_value('game_phase') in [GamePhase.BANNING_PHASE.value, GamePhase.GAME_ENDING.value, GamePhase.LOADING_INTO_MATCH.value, GamePhase.MATCH_STARTED, GamePhase.PREPERATION_PHASE.value, GamePhase.PICKING_PHASE.value]:
+                            LOGGER.warn(f"GameServer #{self.id} crashed while in a match. Restarting server...")
+                            await self.manager_event_bus.emit(
+                                'notify_discord_admin', 
+                                type='crash',
+                                time_of_crash=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                                instance=self.id,
+                                server_name=self.global_config['hon_data']['svr_name'],
+                                match_id=self.get_dict_value('current_match_id'),
+                                game_phase=GamePhase(self.get_dict_value('game_phase')).name
+                            )
                         self.reset_game_state()
                         # the below intentionally does not use self.schedule_task. The manager ends up creating the task.
                         asyncio.create_task(self.manager_event_bus.emit('start_game_servers', [self], service_recovery=False))  # restart the server
@@ -1095,7 +1164,7 @@ class GameState:
                 'uptime': 0,
                 'num_clients': 0,
                 'match_started': 0,
-                'game_phase': 0,
+                'game_phase': -1,
                 'current_match_id': 0,
                 'players': [],
                 'match_info':{
@@ -1111,5 +1180,6 @@ class GameState:
             self.update({
                 "now_ingame_skipped_frames": 0,
                 "total_ingame_skipped_frames": 0,
+                "monitored_skipped_frames": 0,
                 'skipped_frames_detailed': {}
             }, dict_to_check="performance")
