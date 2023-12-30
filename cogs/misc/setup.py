@@ -8,7 +8,7 @@ import requests
 import re
 import shutil
 import traceback
-from cogs.misc.logger import get_logger, get_home, get_misc, get_discord_username, set_discord_username
+from cogs.misc.logger import get_logger, get_home, get_misc, get_discord_username, set_discord_username, get_roles_database, set_roles_database
 from utilities.filebeat import get_discord_user_id_from_api
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.misc.hide_pass import getpass
@@ -123,6 +123,7 @@ class SetupEnvironment:
                         "general_healthcheck": 60,
                         "lag_healthcheck": 120,
                         "check_for_hon_update": 120,
+                        "disk_utilisation_healthcheck": 3600,
                         "check_for_honfigurator_update": 60,
                         "resubmit_match_stats": 20,
                         "filebeat_verification": 10800
@@ -458,8 +459,12 @@ class SetupEnvironment:
             os.makedirs(pathlib.PurePath(self.config_file_hon).parent)
         if not os.path.exists(self.config_file_logging):
             self.create_logging_configuration_file()
-        
-        self.database = RolesDatabase()
+
+        if not get_roles_database():
+            self.database = RolesDatabase()
+            set_roles_database(self.database)
+        else:
+            self.database = get_roles_database()
 
         if not self.database.add_default_data():
             agree = input("Welcome to HoNfigurator. By using our software, you agree to these terms and conditions.\
@@ -759,4 +764,3 @@ class SetupEnvironment:
         cleaned_string = cleaned_string[:8]
 
         return cleaned_string
-        

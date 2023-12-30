@@ -393,23 +393,23 @@ class GameServer:
     def reset_skipped_frames(self):
         self.game_state._performance['now_ingame_skipped_frames'] = 0
 
-    async def start_monitor_skipped_frames(self):
+    async def start_monitor_skipped_frames(self, threshold=6000, interval_seconds=120):
         """
             This function will monitor the skipped frames in segments and report on it in-game if it breaches a threshold.
         """
         while True:
             self.game_state._performance['monitored_skipped_frames'] = 0
-            for _ in range(60):
+            for _ in range(interval_seconds):
                 if stop_event.is_set():
                     break
                 await asyncio.sleep(1)
-            if self.game_state._performance['monitored_skipped_frames'] > 3000:
+            if self.game_state._performance['monitored_skipped_frames'] > threshold:
                 if self.game_state._performance['monitored_skipped_frames'] > 1000:
                     duration = f"{self.game_state._performance['monitored_skipped_frames'] / 1000} seconds"
                 else:
                     duration = f"{self.game_state._performance['monitored_skipped_frames']} miliseconds"
 
-                LOGGER.warn(f"GameServer #{self.id} - Server lagged {duration} in the last minute which is above threshold (3000ms).")
+                LOGGER.warn(f"GameServer #{self.id} - Server lagged {duration} in the last {interval_seconds} seconds which is above threshold ({threshold}ms).")
                 try:
                     await self.manager_event_bus.emit('cmd_message_server', self, f"Server lag detected on {self.global_config['hon_data']['svr_name']}-{self.id}. This is being monitored and will be reported to the administrator if it continues.")
                 except Exception:
