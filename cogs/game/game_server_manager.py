@@ -51,7 +51,7 @@ class GameServerManager:
         self.HON_LAS_VERSION_URL = "https://download.kongor.us/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
         self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "https://download.kongor.us/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
         if "svr_beta_mode" in self.global_config['hon_data'] and self.global_config['hon_data']['svr_beta_mode']:
-            self.global_config['hon_data']['architecture'] == "lxs-crIac6LASwoafrl8FrOa"
+            self.global_config['hon_data']['architecture'] = "lxs-crIac6LASwoafrl8FrOa"
             self.HON_LAS_VERSION_URL = "https://download.kongor.us/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
             self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "https://download.kongor.us/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
         """
@@ -435,7 +435,7 @@ class GameServerManager:
             LOGGER.debug(f"Upstream patch information: {parsed_patch_information}")
             self.latest_available_game_version = parsed_patch_information['latest']
 
-            if local_svr_version != self.latest_available_game_version:
+            if local_svr_version != self.latest_available_game_version and self.latest_available_game_version not in ["0.0.0.0","0.0.0"]:
                 LOGGER.info(f"A newer patch is available. Initiating server shutdown for patching.\n\tUpgrading from {local_svr_version} --> {parsed_patch_information['latest']}")
                 return True
 

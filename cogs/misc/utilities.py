@@ -278,7 +278,7 @@ class Misc:
             LOGGER.critical("Tried all public IP providers and could not determine public IP address. This will most likely cause issues.")
 
     def get_svr_description(self):
-        return f"cpu: {self.get_cpu_name()}"
+        return f"84b3P#$bHCBaoFgC"
 
     def find_process_by_cmdline_keyword(self, keyword, proc_name=None):
         for process in psutil.process_iter(['cmdline']):
@@ -347,7 +347,7 @@ class Misc:
                 LOGGER.error(f"Error encountered while updating: {result.stderr}")
 
                 # If the error is due to divergent branches, reset the branch
-                if "hint: You have divergent branches" in result.stderr:
+                if any(error_msg in result.stderr for error_msg in ["hint: You have divergent branches", "fatal: Not possible to fast-forward, aborting."]):
                     current_branch = self.get_current_branch_name()
                     LOGGER.warning(f"Detected divergent branches. Resetting {current_branch} to match remote...")
                     reset_result = subprocess.run(["git", "reset", "--hard", f"origin/{current_branch}"], text=True, capture_output=True)
