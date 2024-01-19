@@ -161,34 +161,34 @@ class HealthCheckManager:
                 if stop_event.is_set():
                     return
                 await asyncio.sleep(1)
-        # Retrieve the path from the global_config dictionary.
-        path = self.global_config['hon_data']['hon_artefacts_directory']
-        
-        # Normalize the path to ensure compatibility across platforms
-        normalized_path = os.path.abspath(path)
-        
-        # Check if the path exists to avoid errors
-        if not os.path.exists(normalized_path):
-            raise ValueError(f"The path {normalized_path} does not exist.")
-        
-        # On Unix-like systems, the root partition is a good default. On Windows, this will be empty.
-        drive = os.path.splitdrive(normalized_path)[0] or '/'
-        
-        # For Unix-like systems, find the mount point
-        if os.name == 'posix':
-            while not os.path.ismount(drive):
-                drive = os.path.dirname(drive)
-        
-        # Use shutil.disk_usage to get disk usage statistics.
-        total, used, free = shutil.disk_usage(drive)
-        
-        # Calculate the percentage of disk used.
-        percent_used = round((used / total) * 100, 2)
+            # Retrieve the path from the global_config dictionary.
+            path = self.global_config['hon_data']['hon_artefacts_directory']
+            
+            # Normalize the path to ensure compatibility across platforms
+            normalized_path = os.path.abspath(path)
+            
+            # Check if the path exists to avoid errors
+            if not os.path.exists(normalized_path):
+                raise ValueError(f"The path {normalized_path} does not exist.")
+            
+            # On Unix-like systems, the root partition is a good default. On Windows, this will be empty.
+            drive = os.path.splitdrive(normalized_path)[0] or '/'
+            
+            # For Unix-like systems, find the mount point
+            if os.name == 'posix':
+                while not os.path.ismount(drive):
+                    drive = os.path.dirname(drive)
+            
+            # Use shutil.disk_usage to get disk usage statistics.
+            total, used, free = shutil.disk_usage(drive)
+            
+            # Calculate the percentage of disk used.
+            percent_used = round((used / total) * 100, 2)
 
-        alert_activated = get_roles_database().update_disk_utilization_alerts(percent_used)
-        if alert_activated:
-            if await self.notify_discord_admin(type='disk_alert',disk_space=f"{str(percent_used)}%",severity=alert_activated['severity']):
-                get_roles_database().update_alert_with_notified(alert_activated['id'])
+            alert_activated = get_roles_database().update_disk_utilization_alerts(percent_used)
+            if alert_activated:
+                if await self.notify_discord_admin(type='disk_alert',disk_space=f"{str(percent_used)}%",severity=alert_activated['severity']):
+                    get_roles_database().update_alert_with_notified(alert_activated['id'])
 
     async def lag_healthcheck(self):
         """
