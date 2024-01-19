@@ -236,14 +236,19 @@ class GameServer:
                 await self.stop_server_network()
             elif value in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
                 skipped_frames = self.get_dict_value('now_ingame_skipped_frames')
+
+                performance = None
                 if 0 <= skipped_frames < 5000:
-                    performance = "Excellent."
+                    # performance = "Excellent." # we don't care
+                    pass
                 elif 5000 <= skipped_frames < 10000:
-                    performance = "Acceptable."
+                    # performance = "Acceptable." # we don't care
+                    pass
                 elif skipped_frames >= 10000:
                     performance = "Poor. Host has been notified."
-                    
-                await self.manager_event_bus.emit('cmd_message_server', self, f"Total server lag: {skipped_frames /1000} seconds. Lag rating: {performance}")
+                
+                if performance:
+                    await self.manager_event_bus.emit('cmd_message_server', self, f"Total server lag: {skipped_frames /1000} seconds. Lag rating: {performance}")
 
                 if skipped_frames > 5000 and value == GamePhase.GAME_ENDED.value:
                     # send request to management.honfig requesting administrator be notified
