@@ -854,6 +854,7 @@ async def main(config=None, from_main=True):
         parser = argparse.ArgumentParser()
         parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
         parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
+        parser.add_argument("--non-interactive", action='store_true', help="This will prevent the CLI from loading, and you must only interact with manager via its API.")
         parser.add_argument("--agree-tos", action='store_true', help="Agree to the terms of service")
         parser.add_argument("--discord-id", type=str, help="Your Discord ID")
         args = parser.parse_args()
