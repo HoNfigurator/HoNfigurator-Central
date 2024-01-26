@@ -467,32 +467,33 @@ class SetupEnvironment:
         else:
             self.database = get_roles_database()
 
-        if args.agree_tos:
-            pass
-        elif not self.database.add_default_data():
-            agree = input("Welcome to HoNfigurator. By using our software, you agree to these terms and conditions.\
-                        \n1. To ensure the legitimacy and effective administration of game servers, server administrators are required to authenticate using their Discord account.\
-                        \n2. You may receive alerts or notifications via Discord from the HoNfigurator bot regarding the status of your game servers.\
-                        \n3. The hosting of dedicated servers through HoNfigurator requires the use of HoN server binaries. Users acknowledge that these binaries are not owned or maintained by the author of HoNfigurator.\
-                        \n4. In order to monitor server performance and maintain game integrity, the following diagnostic data will be collected:\
-                        \n\t- This server's public IP address.\
-                        \n\t- Server administrator's Discord ID.\
-                        \n\t- Game server logs, including in-game events and chat logs.\
-                        \n\t- Player account names and public IP addresses.\
-                        \n   This data is essential for the effective operation of the server and for ensuring a fair gaming environment.\
-                        \n\n6. Game replays will be stored on the server and can be requested by players in-game. Server administrators may manage these replays using the provided HoNfigurator settings. We recommend retaining replays for a minimum of 60 days for player review and quality assurance purposes.\
-                        \n\nIn summary, by using HoNfigurator, users agree to:\
-                        \n\t- Properly manage and administer their game server.\
-                        \n\t- Ensure the privacy and security of collected data.\
-                        \n\t- Retain game replays for a minimum of 30 days (if practical).\
-                        \n\t- Not tamper with, or modify the game state in any way that may negatively affect the outcome of a match in progress.\
-                        \n\nDo you agree to these terms and conditions? (y/n): ")
-            if agree in ['y', 'Y']:
+        if self.database.add_default_data():
+            if args.agree_tos:
                 pass
             else:
-                LOGGER.fatal("You must agree to the terms and conditions to use HoNfigurator. If there are any questions, you may reach out to me on Discord (https://discordapp.com/users/197967989964800000).")
-                input("Press ENTER to exit.")
-                exit()
+                agree = input("Welcome to HoNfigurator. By using our software, you agree to these terms and conditions.\
+                            \n1. To ensure the legitimacy and effective administration of game servers, server administrators are required to authenticate using their Discord account.\
+                            \n2. You may receive alerts or notifications via Discord from the HoNfigurator bot regarding the status of your game servers.\
+                            \n3. The hosting of dedicated servers through HoNfigurator requires the use of HoN server binaries. Users acknowledge that these binaries are not owned or maintained by the author of HoNfigurator.\
+                            \n4. In order to monitor server performance and maintain game integrity, the following diagnostic data will be collected:\
+                            \n\t- This server's public IP address.\
+                            \n\t- Server administrator's Discord ID.\
+                            \n\t- Game server logs, including in-game events and chat logs.\
+                            \n\t- Player account names and public IP addresses.\
+                            \n   This data is essential for the effective operation of the server and for ensuring a fair gaming environment.\
+                            \n\n6. Game replays will be stored on the server and can be requested by players in-game. Server administrators may manage these replays using the provided HoNfigurator settings. We recommend retaining replays for a minimum of 60 days for player review and quality assurance purposes.\
+                            \n\nIn summary, by using HoNfigurator, users agree to:\
+                            \n\t- Properly manage and administer their game server.\
+                            \n\t- Ensure the privacy and security of collected data.\
+                            \n\t- Retain game replays for a minimum of 30 days (if practical).\
+                            \n\t- Not tamper with, or modify the game state in any way that may negatively affect the outcome of a match in progress.\
+                            \n\nDo you agree to these terms and conditions? (y/n): ")
+                if agree in ['y', 'Y']:
+                    pass
+                else:
+                    LOGGER.fatal("You must agree to the terms and conditions to use HoNfigurator. If there are any questions, you may reach out to me on Discord (https://discordapp.com/users/197967989964800000).")
+                    input("Press ENTER to exit.")
+                    exit()
             while True:
                 value = input(
                     "\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
@@ -525,10 +526,14 @@ class SetupEnvironment:
             self.hon_data = self.get_existing_configuration()
         
         if "discord" in self.application_data:
-            if int(self.database.get_discord_owner_id()) != self.application_data["discord"]["owner_id"]:
-                if self.application_data["discord"]["owner_id"] == 0:
-                    self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
-                else:
+            try:
+                if int(self.database.get_discord_owner_id()) != self.application_data["discord"]["owner_id"]:
+                    if self.application_data["discord"]["owner_id"] == 0:
+                        self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
+                    else:
+                        self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
+            except ValueError:
+                if int(self.application_data["discord"]["owner_id"]):
                     self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
 
         self.full_config = self.merge_config()
