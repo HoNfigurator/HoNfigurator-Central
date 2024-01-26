@@ -373,7 +373,7 @@ async def get_discord_user_id_from_api(discord_id):
                         set_discord_username(data.get('username'))
                     return data.get('username')
                 else:
-                    print_or_log("error","Failed to get Discord username for ID: {discord_id}")
+                    print_or_log("error",f"Failed to get Discord username for ID: {discord_id}")
                     return None
     except aiohttp.ClientError as e:
         print_or_log("error","Error occurred while making the API request: {e}")
