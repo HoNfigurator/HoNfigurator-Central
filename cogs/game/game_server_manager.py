@@ -35,7 +35,7 @@ MISC = get_misc()
 HOME_PATH = get_home()
 
 class GameServerManager:
-    def __init__(self, global_config, setup, run_cli):
+    def __init__(self, global_config, setup, launch_args):
         """
         Initializes a new GameServerManager object.
 
@@ -124,7 +124,7 @@ class GameServerManager:
         LOGGER.info(f"Manager running, starting {self.global_config['hon_data']['svr_total']} servers. Staggered start ({self.global_config['hon_data']['svr_max_start_at_once']} at a time)")
         self.create_all_game_servers()
 
-        if run_cli:
+        if not launch_args.non_interactive:
             coro = self.commands.handle_input()
             self.schedule_task(coro, 'cli_handler')
 

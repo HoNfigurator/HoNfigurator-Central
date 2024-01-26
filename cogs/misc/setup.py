@@ -467,7 +467,7 @@ class SetupEnvironment:
         else:
             self.database = get_roles_database()
 
-        if not self.database.add_default_data():
+        if not self.database.add_default_data() or not args.agree_tos:
             agree = input("Welcome to HoNfigurator. By using our software, you agree to these terms and conditions.\
                         \n1. To ensure the legitimacy and effective administration of game servers, server administrators are required to authenticate using their Discord account.\
                         \n2. You may receive alerts or notifications via Discord from the HoNfigurator bot regarding the status of your game servers.\
