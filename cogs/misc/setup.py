@@ -534,7 +534,7 @@ class SetupEnvironment:
                         self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
             except ValueError:
                 if int(self.application_data["discord"]["owner_id"]):
-                    self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
+                    self.database.add_default_data(self.application_data["discord"]["owner_id"])
 
         self.full_config = self.merge_config()
         if await self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
