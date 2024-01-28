@@ -495,6 +495,8 @@ class SetupEnvironment:
                     input("Press ENTER to exit.")
                     exit()
             while True:
+                if self.application_data["discord"]["owner_id"]:
+                    break
                 value = input("\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
                 try:
                     discord_id = int(value)
