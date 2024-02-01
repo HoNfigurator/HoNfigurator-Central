@@ -193,7 +193,7 @@ class SetupEnvironment:
         if 'svr_override_state' in self.hon_data and self.hon_data['svr_override_state']:
             state_code = self.hon_data['svr_state']
         else:
-            state_code = self.resolve_state_code(MISC.get_public_ip())
+            state_code = self.resolve_state_code(MISC.get_public_ip(), self.hon_data['svr_location'])
 
         if 'svr_override_suffix' in self.hon_data and self.hon_data['svr_override_suffix']:
             suffix = self.hon_data['svr_suffix']
@@ -730,14 +730,19 @@ class SetupEnvironment:
         else:
             return False
 
-    def resolve_state_code(self, ip_address):
+    def resolve_state_code(self, ip_address, region):
         API_KEY = "6822fd77ae464cafb5ce4f3be425f1ad"
         try:
             response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}')
             response_data = response.json()
 
             # Extract the state from the response
-            state_code = response_data.get('state_code', 'Unknown')
+            # Note: for smaller countries that doesnt really make sense.
+            # Go with the country for EU and add more if needed
+            if region in [ "EU" ]:
+                state_code = response_data.get('country_code2', 'Unknown')
+            else:
+                state_code = response_data.get('state_code', 'Unknown')
 
             if state_code in ['', 'Unknown']:
                 state_code = response_data.get('country_name', 'Unknown')
