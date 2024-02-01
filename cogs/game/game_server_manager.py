@@ -196,7 +196,7 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-            
+
     async def notify_discord_admin(self, **kwargs):
         url = 'https://management.honfigurator.app:3001/api-ui/sendDiscordMessage'
         headers = {'Content-Type': 'application/json'}
@@ -236,7 +236,7 @@ class GameServerManager:
                 if get_mqtt():
                     get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{kwargs.get('type')}_notification_success","message": "Successfully notified server administrator."})
                 return response.status, response_text
-              
+
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True, kill=False):
         try:
             if game_server is None: return False
@@ -376,20 +376,20 @@ class GameServerManager:
                 starting_port += 1
         except Exception as e:
             LOGGER.exception(e)
-    
+
     async def heartbeat(self):
         while not stop_event.is_set():
             # Introduce jitter: sleep for a random duration between 0 to 10 seconds
             jitter = random.uniform(0, 10)
             await asyncio.sleep(jitter)
-            
+
             for _ in range(60):
                 if stop_event.is_set():
                     return
                 await asyncio.sleep(1)
             if get_mqtt():
                 get_mqtt().publish_json("manager/status", {"event_type":"heartbeat", **self.manager_status()})
-    
+
     def manager_status(self):
         total_free_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.IDLE.value])
         total_occupied_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] != GamePhase.IDLE.value])
@@ -401,7 +401,7 @@ class GameServerManager:
         total_servers_in_match_started_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.MATCH_STARTED.value])
         total_servers_in_preparation_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.PREPERATION_PHASE.value])
         total_players_online = sum(game_server.game_state._state['num_clients'] for game_server in self.game_servers.values())
-        
+
         return {
             "total_free_servers": total_free_servers,
             "total_occupied_servers": total_occupied_servers,
@@ -474,7 +474,7 @@ class GameServerManager:
             host, game_server_to_mgr_port
         )
         LOGGER.highlight(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
-        
+
         if get_mqtt():
             get_mqtt().publish_json("manager/admin", {"event_type":"gameserver_listener_started"})
 
@@ -510,7 +510,7 @@ class GameServerManager:
             HoNAuthenticationError: If the authentication fails.
         """
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
-        
+
         if mserver_auth_response[1] != 200:
             prefix = (f"[{mserver_auth_response[1]}] Authentication to MasterServer failed. ")
             if mserver_auth_response[1] in [401, 403]:
@@ -520,12 +520,12 @@ class GameServerManager:
                 else:
                     msg = 'Credentials correct, but no permissions to host.'
                 self.set_masterserver_status(False, msg)
-                
+
             elif mserver_auth_response[1] > 500 and mserver_auth_response[1] < 600:
                 LOGGER.error(f"{prefix}The issue is most likely server side.")
                 self.set_masterserver_status(False,'Server side issue, master server is probably down.')
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
-        
+
         LOGGER.highlight("Authenticated to MasterServer.")
         self.set_masterserver_status(True)
 
@@ -592,7 +592,7 @@ class GameServerManager:
             raise HoNAuthenticationError(f"Chatserver authentication failure")
 
         LOGGER.highlight("Authenticated to ChatServer.")
-        
+
         self.set_chatserver_status(True)
 
         # Start handling packets from the chat server
@@ -624,7 +624,7 @@ class GameServerManager:
                 mqtt.set_chatsv_state(connected)
             else:
                 mqtt.set_mastersv_state(connected)
-        
+
         if current_status != connected:
             setattr(self, f"{server_type}_connected", connected)
             state_info = 'connected' if connected else 'disconnected'
@@ -777,6 +777,7 @@ class GameServerManager:
             else:
                 LOGGER.warn("No available ports for creating a new game server.")
 
+        logger.warning(start_server)
         coro = self.start_game_servers(start_servers)
         self.schedule_task(coro, 'gameserver_startup', override = True)
 
@@ -796,7 +797,7 @@ class GameServerManager:
                     self.cowmaster.stop_cow_master(disable=False)
                 await asyncio.sleep(0.1)
                 game_server.enable_server()
-    
+
     async def config_change_hook_actions(self):
         if not self.global_config['hon_data'].get('man_use_cowmaster') and self.cowmaster.client_connection:
             self.cowmaster.stop_cow_master()
@@ -908,7 +909,7 @@ class GameServerManager:
                 # The instance of this happening, is for example, someone is running 10 servers. They modify the config on the fly to be 5 servers. Servers 5-10 are scheduled for shutdown, but game server objects have been destroyed.
                 # since the game server isn't actually off yet, it will keep creating a connection.
             return True
-          
+
         else:
             #TODO: raise error or happy with logger?
             if port == self.cowmaster.get_port():
@@ -1179,7 +1180,7 @@ class GameServerManager:
         if MISC.get_proc(self.global_config['hon_data']['hon_executable_name']):
             LOGGER.debug("Some HoN servers are still running. Waiting until they've shut down.")
             return
-        
+
         if MISC.get_os_platform() == "win32":
             launcher_binary = 'hon_update_x64.exe'
             launcher_zip = 'hon_update_x64.zip'
