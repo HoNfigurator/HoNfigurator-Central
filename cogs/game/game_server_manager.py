@@ -99,6 +99,9 @@ class GameServerManager:
         # set the current state of patching
         self.patching = False
 
+        # allow launch_args to be available to entire class
+        self.launch_args = launch_args
+
         # set up connection to the local DB for the occasional query
         if not get_roles_database():
             self.roles_database = RolesDatabase()
@@ -1016,9 +1019,10 @@ class GameServerManager:
                 if game_server:
                     # game_server.reset_game_state() # this is happening prematurely, and crash reports are not aware of the current match ID or phase
                     game_server.unset_client_connection()
-                # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-                # await self.commands.initialise_commands()
-                self.commands.subcommands_changed.set()
+                
+                if not self.launch_args.non_interactive:
+                    # indicate that the sub commands should be regenerated since the list of connected servers has changed.
+                    self.commands.subcommands_changed.set()
                 return True
         return False
 
@@ -1140,9 +1144,10 @@ class GameServerManager:
 
             await asyncio.gather(*start_tasks)
 
-            # indicate that the sub commands should be regenerated since the list of connected servers has changed.
-            asyncio.create_task(self.commands.initialise_commands())
-            self.commands.subcommands_changed.set()
+            if not self.launch_args.non_interactive:
+                # indicate that the sub commands should be regenerated since the list of connected servers has changed.
+                asyncio.create_task(self.commands.initialise_commands())
+                self.commands.subcommands_changed.set()
 
         except Exception as e:
             LOGGER.error(f"GameServers failed to start\n{traceback.format_exc()}")
