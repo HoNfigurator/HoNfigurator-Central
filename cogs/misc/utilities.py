@@ -204,6 +204,9 @@ class Misc:
         elif self.cpu_count >12:
             return 4
 
+    def get_disk_usage(self):
+        return int(psutil.disk_usage(HOME_PATH))
+
     def get_total_allowed_servers(self,svr_total_per_core):
         total = svr_total_per_core * self.cpu_count
         if self.cpu_count < 5:
