@@ -467,6 +467,14 @@ class SetupEnvironment:
         else:
             self.database = get_roles_database()
 
+        # Load configuration from config file
+        try:
+            self.hon_data = self.get_existing_configuration()['hon_data']
+            self.application_data = self.get_existing_configuration()[
+                'application_data']
+        except KeyError:  # using old config format
+            self.hon_data = self.get_existing_configuration()
+
         if self.database.add_default_data():
             if args.agree_tos:
                 pass
@@ -517,15 +525,8 @@ class SetupEnvironment:
                         args.hon_install_directory)
             await self.create_hon_configuration_file(
                 detected="hon_install_directory")
-                    
-        # Load configuration from config file
-        try:
-            self.hon_data = self.get_existing_configuration()['hon_data']
-            self.application_data = self.get_existing_configuration()[
-                'application_data']
-        except KeyError:  # using old config format
-            self.hon_data = self.get_existing_configuration()
-        
+
+
         if "discord" in self.application_data:
             try:
                 if int(self.database.get_discord_owner_id()) != self.application_data["discord"]["owner_id"]:
