@@ -187,14 +187,14 @@ class SetupEnvironment:
         with open(self.config_file_hon, 'r') as config_file_hon:
             hon_data = json.load(config_file_hon)
         return hon_data
-    
+
     async def generate_server_name(self):
         # Get the city
         if 'svr_override_state' in self.hon_data and self.hon_data['svr_override_state']:
             state_code = self.hon_data['svr_state']
         else:
             state_code = self.resolve_state_code(MISC.get_public_ip())
-        
+
         if 'svr_override_suffix' in self.hon_data and self.hon_data['svr_override_suffix']:
             suffix = self.hon_data['svr_suffix']
             suffix = self.format_discord_username(suffix)
@@ -209,7 +209,7 @@ class SetupEnvironment:
                         suffix = await get_discord_user_id_from_api(self.database.get_discord_owner_id())
                 except Exception:
                     LOGGER.error(f"Failed to resolve the discord username, are you sure this discord ID is correct? {self.application_data['discord']['owner_id']}\n{traceback.format_exc()}")
-            
+
             if not suffix:
                 suffix = "Unknown"
 
@@ -222,7 +222,7 @@ class SetupEnvironment:
             state = state[1]
         else:
             state = state[0]
-        
+
         server_name = f"{self.hon_data['svr_location']}-{state} {suffix}"
 
         return server_name
@@ -233,8 +233,8 @@ class SetupEnvironment:
 
         if application_data:
             self.application_data = application_data
-        
-        
+
+
         # Since TH has over 10 servers hosted by a single person, we need to do more testing first on what the impact would be of having the same server names. So excluding from autogen for now.
         if self.hon_data['svr_location'] != "TH" and not self.server_name_generated:
             self.hon_data['svr_name'] = await self.generate_server_name()
@@ -373,7 +373,7 @@ class SetupEnvironment:
                 value = handle_path('location', app_dict['location'])
                 if value is not None:
                     app_dict['location'] = value
-            
+
         iterate_over_app_data(self.application_data, default_application_data)
 
         for key, value in list(self.hon_data.items()):
@@ -724,12 +724,12 @@ class SetupEnvironment:
 
     async def get_final_configuration(self):
         self.add_runtime_data()
-        
+
         if await self.validate_hon_data():
             return self.merge_config()
         else:
             return False
-        
+
     def resolve_state_code(self, ip_address):
         API_KEY = "6822fd77ae464cafb5ce4f3be425f1ad"
         try:
@@ -763,7 +763,7 @@ class SetupEnvironment:
         else:
             LOGGER.warning("State information not available.")
             return None
-    
+
     def format_discord_username(self, discord_username):
         # Remove special characters, whitespaces, and numbers
         cleaned_string = re.sub(r'[^A-Za-z]', '', discord_username)
