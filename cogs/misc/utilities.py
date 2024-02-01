@@ -64,8 +64,8 @@ class Misc:
 
             if config_global['hon_data']['svr_noConsole']:
                 base_cmd.insert(4, "-noconsole")
-            
-            
+
+
             if cowmaster:
                 base_cmd.insert(1, '-cowmaster')
                 base_cmd.insert(2, '-servicecvars')
@@ -78,6 +78,7 @@ class Misc:
                 base_cmd.insert(2, '-servicecvars')
                 base_cmd.insert(3, '-noconsole')
 
+        print(base_cmd)
         return base_cmd
 
     def parse_linux_procs(self, proc_name, slave_id):
@@ -304,7 +305,7 @@ class Misc:
                     return False
 
             return True
-        
+
         if not exists(hon_exe):
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
 
@@ -316,7 +317,7 @@ class Misc:
             version_len = 36
         else:
             raise HoNCompatibilityError("Unsupported OS")
-        
+
         with open(hon_exe, 'rb') as hon_x64:
             hon_x64.seek(version_offset, 1)
             version = hon_x64.read(version_len)
@@ -324,7 +325,7 @@ class Misc:
             split_bytes = version.split(b'\x00')
             # Decode the byte sequences and join them together
             version = ''.join(part.decode('utf-8') for part in split_bytes if part)
-        
+
         LOGGER.debug(f"Detected version number: {version}")
 
         if not validate_version_format(version):
@@ -411,12 +412,12 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
-    
+
     def check_github_tag(self):
         # Assuming 'misc' is an instance of your Misc class
         new_tag = self.get_github_tag()
         LOGGER.debug(f"Checked GitHub Tag: {new_tag}")
-    
+
     def get_github_tag(self):
         try:
             if self.tag:
@@ -426,7 +427,7 @@ class Misc:
         except subprocess.CalledProcessError:
             LOGGER.error("Error: Failed to get the tag. Make sure you're in a Git repository and have tags.")
             return None
-    
+
     def get_github_branch(self):
         if self.github_branch:
             return self.github_branch
