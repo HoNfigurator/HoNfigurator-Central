@@ -383,7 +383,7 @@ def get_memory_usage(token_and_user_info: dict = Depends(check_permission_factor
     return {"memory_usage": MISC.get_used_ram()}
 
 class DiskUsageResponse(BaseModel):
-disk_usage: int
+    disk_usage: int
 
 @app.get("/api/get_disk_usage", response_model=DiskUsageResponse)
 def get_disk_usage(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
