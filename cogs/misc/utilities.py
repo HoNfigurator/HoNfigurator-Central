@@ -78,7 +78,6 @@ class Misc:
                 base_cmd.insert(2, '-servicecvars')
                 base_cmd.insert(3, '-noconsole')
 
-        print(base_cmd)
         return base_cmd
 
     def parse_linux_procs(self, proc_name, slave_id):
