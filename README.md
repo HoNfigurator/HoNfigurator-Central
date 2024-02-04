@@ -106,11 +106,11 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
     - Replace DISCORD_USER_ID with your Discord User ID
 4. Optional: Adjust other values as you like
 5. Start with docker-compose up -d
+</details>
 
 > [!WARNING]
 > NEVER shut down container without stopping the instances gracefully via web gui. It will drop all current matches!
 
-</details>
 
 ## Remote Management - Web UI Front End
 You must have finished installing your server before linking the website.
