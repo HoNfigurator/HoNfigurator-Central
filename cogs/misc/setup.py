@@ -467,6 +467,14 @@ class SetupEnvironment:
         else:
             self.database = get_roles_database()
 
+        if not os.path.exists(self.config_file_hon):
+            if args:
+                if args.hon_install_directory:
+                    self.hon_data["hon_install_directory"] = Path(
+                        args.hon_install_directory)
+            await self.create_hon_configuration_file(
+                detected="hon_install_directory")
+
         # Load configuration from config file
         try:
             self.hon_data = self.get_existing_configuration()['hon_data']
@@ -518,13 +526,6 @@ class SetupEnvironment:
                     print(
                         "Value must be a more than 10 digits.")
 
-        if not os.path.exists(self.config_file_hon):
-            if args:
-                if args.hon_install_directory:
-                    self.hon_data["hon_install_directory"] = Path(
-                        args.hon_install_directory)
-            await self.create_hon_configuration_file(
-                detected="hon_install_directory")
 
 
         if "discord" in self.application_data:
