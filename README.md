@@ -93,7 +93,23 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
   - &check; Ubuntu 22.04
   - &#x2610; Ubuntu 22.10
   - &check; Ubuntu 23.04
+</details>
+<details>
+<summary>Docker</summary>
 
+0. Install docker-compose & docker
+1. Copy the docker-compose.yml in any directory and execute docker-compose pull
+2. Copy the config.json.sample to that directory, rename it to config.json
+3. Edit config.json (minimum)
+    - Replace HON_USERNAME with your username
+    - Replace HON_USERPASSWORD with your password
+    - Replace DISCORD_USER_ID with your Discord User ID
+4. Optional: Adjust other values as you like
+5. Start with docker-compose up -d
+
+> [!IMPORTANT]
+> NEVER shut down container without stopping the instances gracefully via web gui
+> It will drop all current matches!
 </details>
 
 ## Remote Management - Web UI Front End
