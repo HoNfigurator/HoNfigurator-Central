@@ -108,8 +108,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 5. Start with docker-compose up -d
 
   > [!IMPORTANT]
-  > NEVER shut down container without stopping the instances gracefully via web gui
-  > It will drop all current matches!
+  > NEVER shut down container without stopping the instances gracefully via web gui. It will drop all current matches!
 </details>
 
 ## Remote Management - Web UI Front End
