@@ -628,7 +628,7 @@ class GameServer:
 
         free_mem = psutil.virtual_memory().available
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
-        if free_mem < 1000000000:
+        if free_mem < 1000000000 and not self.global_config['hon_data']['man_use_cowmaster']:
             LOGGER.error((f"GameServer #{self.id} - cannot start as there is not enough free RAM"))
             raise HoNServerError(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
         LOGGER.info(f"GameServer #{self.id} - Starting...")
