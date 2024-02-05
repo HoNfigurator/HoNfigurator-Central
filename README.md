@@ -97,15 +97,16 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 <details>
 <summary>Docker</summary>
 
-0. Install docker-compose & docker
-1. Copy the docker-compose.yml in any directory and execute docker-compose pull
-2. Copy the config.json.sample to that directory, rename it to config.json
-3. Edit config.json (minimum)
+1. Install docker-compose & docker
+   - `sudo apt install docker.io docker-compose`
+1. Copy the `docker-compose.yml` into any directory and execute `docker-compose pull`
+1. Copy the `config.json.sample` to that directory, rename it to `config.json`
+1. Edit `config.json` (minimum)
     - Replace HON_USERNAME with your username
     - Replace HON_USERPASSWORD with your password
     - Replace DISCORD_USER_ID with your Discord User ID
-4. Optional: Adjust other values as you like
-5. Start with docker-compose up -d
+1. Optional: Adjust other values as you like
+1. Start with `docker-compose up -d`
 </details>
 
 > [!WARNING]

@@ -207,14 +207,17 @@ class Misc:
     def get_disk_usage(self):
         return int(psutil.disk_usage(HOME_PATH))
 
-    def get_total_allowed_servers(self,svr_total_per_core):
+    def get_total_allowed_servers(self,svr_total_per_core, override_cpu_limit=False):
         total = svr_total_per_core * self.cpu_count
-        if self.cpu_count < 5:
-            total -= 1
-        elif self.cpu_count > 4 and self.cpu_count < 13:
-            total -= 2
-        elif self.cpu_count >12:
-            total -= 4
+        if override_cpu_limit:
+            pass
+        else:
+            if self.cpu_count < 5:
+                total -= 1
+            elif self.cpu_count > 4 and self.cpu_count < 13:
+                total -= 2
+            elif self.cpu_count >12:
+                total -= 4
         return int(total)
 
     def get_server_affinity(self, server_id, svr_total_per_core):

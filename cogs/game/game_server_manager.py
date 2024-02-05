@@ -674,7 +674,7 @@ class GameServerManager:
             int or None: the next available port, or None if no ports are available
         """
         starting_game_port = self.global_config['hon_data']['svr_starting_gamePort']
-        total_allowed_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
+        total_allowed_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'], self.global_config['application_data'].get('ignore_cpu_limit'))
 
         for i in range(total_allowed_servers):
             game_port = starting_game_port + i
@@ -694,7 +694,7 @@ class GameServerManager:
         """
         max_servers = self.global_config['hon_data']['svr_total']
         if to_add == "all":
-            max_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
+            max_servers = MISC.get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'], self.global_config['application_data'].get('ignore_cpu_limit'))
         elif to_add > 0:
             max_servers += to_add
 

@@ -147,6 +147,7 @@ class SetupEnvironment:
                 "discord": {
                     "owner_id": 0
                 },
+                "ignore_cpu_limit": False
             }
         }
 
@@ -410,11 +411,16 @@ class SetupEnvironment:
                         minor_issues.append(
                             f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be at least {self.hon_data['svr_total']} (svr_total) higher than the starting game port.")
                 elif key == "svr_location" and new_value not in ALLOWED_REGIONS:
-                    major_issues.append(
-                        f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
+                    if new_value == 'auto':
+                        self.hon_data[key] = self.get_server_region()
+                        minor_issues.append('Auto resolved region for server.')
+                    else:
+                        major_issues.append(
+                            f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
                 elif key == "svr_total":
                     total_allowed = int(MISC.get_total_allowed_servers(
-                        float(self.hon_data['svr_total_per_core'])))
+                        float(self.hon_data['svr_total_per_core']),
+                        self.application_data.get('ignore_cpu_limit')))
                     if new_value > total_allowed:
                         self.hon_data[key] = total_allowed
                         minor_issues.append(
@@ -483,9 +489,11 @@ class SetupEnvironment:
         except KeyError:  # using old config format
             self.hon_data = self.get_existing_configuration()
 
-        if self.database.add_default_data():
+        default_data_added = self.database.add_default_data()
+        tos = self.database.get_tos_status()
+        if (not tos and tos is not None) or default_data_added:
             if args.agree_tos:
-                pass
+                self.database.update_tos_agreement()
             else:
                 agree = input("Welcome to HoNfigurator. By using our software, you agree to these terms and conditions.\
                             \n1. To ensure the legitimacy and effective administration of game servers, server administrators are required to authenticate using their Discord account.\
@@ -500,12 +508,11 @@ class SetupEnvironment:
                             \n\n6. Game replays will be stored on the server and can be requested by players in-game. Server administrators may manage these replays using the provided HoNfigurator settings. We recommend retaining replays for a minimum of 60 days for player review and quality assurance purposes.\
                             \n\nIn summary, by using HoNfigurator, users agree to:\
                             \n\t- Properly manage and administer their game server.\
-                            \n\t- Ensure the privacy and security of collected data.\
                             \n\t- Retain game replays for a minimum of 30 days (if practical).\
                             \n\t- Not tamper with, or modify the game state in any way that may negatively affect the outcome of a match in progress.\
                             \n\nDo you agree to these terms and conditions? (y/n): ")
                 if agree in ['y', 'Y']:
-                    pass
+                    self.database.update_tos_agreement()
                 else:
                     LOGGER.fatal("You must agree to the terms and conditions to use HoNfigurator. If there are any questions, you may reach out to me on Discord (https://discordapp.com/users/197967989964800000).")
                     input("Press ENTER to exit.")
@@ -525,8 +532,8 @@ class SetupEnvironment:
                 except ValueError:
                     print(
                         "Value must be a more than 10 digits.")
-
-
+        elif tos is None and not default_data_added:
+            self.database.update_tos_agreement()
 
         if "discord" in self.application_data:
             try:
@@ -718,7 +725,7 @@ class SetupEnvironment:
                 "cpu_count": MISC.get_cpu_count(),
                 "cpu_name": MISC.get_cpu_name(),
                 "total_ram": MISC.get_total_ram(),
-                "server_total_allowed": MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core']),
+                "server_total_allowed": MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core'], self.application_data.get('ignore_cpu_limit')),
                 "github_branch": MISC.get_github_branch()
             }
         )

@@ -408,7 +408,7 @@ class TotalAllowedServersResponse(BaseModel):
 
 @app.get("/api/get_total_allowed_servers", response_model=TotalAllowedServersResponse)
 def get_total_allowed_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-    return {"total_allowed_servers": MISC.get_total_allowed_servers(global_config['hon_data']['svr_total_per_core'])}
+    return {"total_allowed_servers": MISC.get_total_allowed_servers(global_config['hon_data']['svr_total_per_core'], global_config['application_data'].get('ignore_cpu_limit'))}
 
 class NumPlayersIngameResponse(BaseModel):
     num_players_ingame: int
