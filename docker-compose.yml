@@ -7,6 +7,9 @@ services:
       - type: bind
         source: ./config.json
         target: /opt/hon/honfigurator/config/config.json
+      - type: bind
+        source: ./logging.json
+        target: /opt/hon/honfigurator/config/logging.json
       - type: volume
         source: app
         target: /opt/hon/app
