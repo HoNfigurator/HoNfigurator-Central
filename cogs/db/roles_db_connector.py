@@ -206,7 +206,10 @@ class RolesDatabase:
         with self.get_conn() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT tos FROM USERS where nickname = 'owner'")
-            return cursor.fetchone()[0]
+            result = cursor.fetchone()
+            if result is None:
+                return None  # Or handle the absence of data in another appropriate way
+            return result[0]
 
     @health_check_decorator
     def update_disk_utilization_alerts(self, percent_used):
