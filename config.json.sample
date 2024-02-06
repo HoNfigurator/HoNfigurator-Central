@@ -11,7 +11,7 @@
         "svr_suffix": "auto",
         "svr_override_state": false,
         "svr_state": "auto",
-        "svr_location": "EU",
+        "svr_location": "auto",
         "svr_priority": "HIGH",
         "svr_total": 6,
         "svr_total_per_core": 1.0,
