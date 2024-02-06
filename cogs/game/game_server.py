@@ -783,8 +783,10 @@ class GameServer:
     async def stop_server_exe(self, disable=True, delete=False, kill=False):
         if disable:
             self.disable_server()
+            LOGGER.debug(f"GameServer #{self.id} - Disabled server")
         self.delete_me = delete
         if self._proc:
+            LOGGER.debug(f"GameServer #{self.id} - Stopping server executable")
             if disable:
                 self.disable_server()
             try:
@@ -803,6 +805,7 @@ class GameServer:
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
+            LOGGER.debug(f"GameServer #{self.id} - Removed from game server list")
 
     async def get_running_server(self,timeout=15):
         """
