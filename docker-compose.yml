@@ -1,0 +1,44 @@
+version: "3.2"
+services:
+  honfigurator:
+    container_name: honfigurator
+    image: superbjorn09/honfigurator:latest
+    volumes: 
+      - type: bind
+        source: ./config.json
+        target: /opt/hon/honfigurator/config/config.json
+      - type: bind
+        source: ./logging.json
+        target: /opt/hon/honfigurator/config/logging.json
+      - type: volume
+        source: app
+        target: /opt/hon/app
+      - type: volume
+        source: appdata
+        target: /opt/hon/config/KONGOR
+      - type: volume
+        source: honfigurator
+        target: /opt/hon/honfigurator
+      - type: volume
+        source: certificates
+        target: /root/.step
+      - type: volume 
+        source: filebeat
+        target: /usr/share/filebeat
+      - type: volume
+        target: /var/lib/filebeat
+        source: filebeatprotocol
+    ports: # thats rather static.. but hey, its a beta version.
+      - "5000:5000/tcp"
+      - "9999-10200:9999-10200/udp"
+    cap_add:
+      - SYS_NICE
+volumes:
+  app:
+  appdata:
+  honfigurator:
+  certificates:
+  filebeat:
+  filebeatprotocol:
+  binstep:
+  sharestep:

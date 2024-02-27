@@ -72,55 +72,40 @@ class RolesDatabase:
 
             conn.commit()
 
-
-    def create_tables(self, discord_id = None):
+    def create_tables(self, discord_id=None):
         with self.get_conn() as conn:
             cursor = conn.cursor()
-
-            cursor.execute("""
+            # Create tables if they don't exist
+            cursor.executescript("""
             CREATE TABLE IF NOT EXISTS roles (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 inherits TEXT
-            )
-            """)
-
-            cursor.execute("""
+            );
             CREATE TABLE IF NOT EXISTS permissions (
                 id INTEGER PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE
-            )
-            """)
-
-            cursor.execute("""
+            );
             CREATE TABLE IF NOT EXISTS role_permissions (
                 role_id INTEGER,
                 permission_id INTEGER,
                 FOREIGN KEY (role_id) REFERENCES roles (id),
                 FOREIGN KEY (permission_id) REFERENCES permissions (id),
                 UNIQUE (role_id, permission_id)
-            )
-            """)
-
-            cursor.execute("""
+            );
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY,
                 discord_id TEXT UNIQUE,
-                nickname TEXT
-            )
-            """)
-
-            cursor.execute("""
+                nickname TEXT,
+                tos BOOLEAN NOT NULL DEFAULT 0
+            );
             CREATE TABLE IF NOT EXISTS user_roles (
                 user_id INTEGER,
                 role_id INTEGER,
                 FOREIGN KEY (user_id) REFERENCES users (id),
                 FOREIGN KEY (role_id) REFERENCES roles (id),
                 UNIQUE (user_id, role_id)
-            )
-            """)
-
-            cursor.execute("""
+            );
             CREATE TABLE IF NOT EXISTS alerts (
                 id INTEGER PRIMARY KEY,
                 type TEXT NOT NULL,
@@ -128,17 +113,27 @@ class RolesDatabase:
                 threshold INTEGER NOT NULL,
                 active BOOLEAN NOT NULL DEFAULT 0,
                 notified BOOLEAN NOT NULL DEFAULT 0
-            )
+            );
             """)
+            # Example of adding a new column if it's missing (for a simple case)
+            # You need to handle this for each column you want to add.
+            # This is a simplistic approach and may not work for adding constraints.
+            cursor.execute("PRAGMA table_info(users)")
+            columns = [info[1] for info in cursor.fetchall()]  # Column names are in the second position
+            if 'tos' not in columns:
+                cursor.execute("ALTER TABLE users ADD COLUMN tos BOOLEAN")
+            
             conn.commit()
     
     def add_default_data(self, discord_id=None):
         with self.get_conn() as conn:
             cursor = conn.cursor()
+            database_updated = False
             
             # Insert default permissions if the permissions table is empty
             cursor.execute("SELECT COUNT(*) FROM permissions")
             if cursor.fetchone()[0] == 0:
+                database_updated = True
                 for permission in self.default_permissions:
                     cursor.execute(
                         "INSERT INTO permissions (name) VALUES (?)", (permission["name"],))
@@ -151,6 +146,7 @@ class RolesDatabase:
                 if discord_id is None:  # Quit here, so we can recall function with the discord ID.
                     return False
 
+                database_updated = True
                 for role in self.default_roles:
                     cursor.execute("INSERT INTO roles (name, inherits) VALUES (?, ?)",
                                 (role["name"], json.dumps(role["inherits"])))
@@ -169,6 +165,7 @@ class RolesDatabase:
                 if discord_id is None:  # Quit here, so we can recall function with the discord ID.
                     return False
 
+                database_updated = True
                 for default_user in self.default_users:
                     cursor.execute("INSERT INTO users (discord_id, nickname) VALUES (?, ?)",
                                 (discord_id, default_user["nickname"]))
@@ -180,7 +177,7 @@ class RolesDatabase:
                         cursor.execute("INSERT INTO user_roles (user_id, role_id) VALUES (?, ?)", (user_id, role_id))
 
                 conn.commit()
-        return True
+        return database_updated
 
     def add_default_alerts_data(self):
         initial_alerts = [(1, 'Warning', 'Disk Utilisation', 80, 0),
@@ -196,6 +193,23 @@ class RolesDatabase:
             ON CONFLICT(id) DO NOTHING
             """, initial_alerts)
             conn.commit()
+    
+    @health_check_decorator
+    def update_tos_agreement(self):
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE users SET tos = 1 WHERE nickname = 'owner'")
+            conn.commit()
+            
+    @health_check_decorator
+    def get_tos_status(self):
+        with self.get_conn() as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT tos FROM USERS where nickname = 'owner'")
+            result = cursor.fetchone()
+            if result is None:
+                return None  # Or handle the absence of data in another appropriate way
+            return result[0]
 
     @health_check_decorator
     def update_disk_utilization_alerts(self, percent_used):
@@ -294,7 +308,7 @@ class RolesDatabase:
 
             conn.commit()
 
-
+    @health_check_decorator
     def get_all_users(self) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
         with self.get_conn() as conn:
             cursor = conn.cursor()
