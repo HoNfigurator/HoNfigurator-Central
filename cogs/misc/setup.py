@@ -563,7 +563,7 @@ class SetupEnvironment:
     async def create_hon_configuration_file(self, detected=None, headless=False):
         if headless:
             self.add_env_data()
-        
+
         else:
             while True:
                 basic = input(
@@ -740,7 +740,8 @@ class SetupEnvironment:
         self.hon_data['svr_login'] = os.environ.get('HON_USERNAME')
         self.hon_data['svr_password'] = os.environ.get('HON_PASSWORD')
         self.hon_data['svr_location'] = os.environ.get('HON_LOCATION', 'auto')
-        
+        self.application_data["discord"]["owner_id"] = os.environ.get('DISCORD_ID')
+
     async def get_final_configuration(self):
         self.add_runtime_data()
         self.add_env_data()
