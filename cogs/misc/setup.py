@@ -478,8 +478,11 @@ class SetupEnvironment:
                 if args.hon_install_directory:
                     self.hon_data["hon_install_directory"] = Path(
                         args.hon_install_directory)
-            await self.create_hon_configuration_file(
-                detected="hon_install_directory")
+                if args.non_interactive:
+                    await self.create_hon_configuration_file(headless=True)
+            else:
+                await self.create_hon_configuration_file(
+                    detected="hon_install_directory")
 
         # Load configuration from config file
         try:
@@ -557,74 +560,78 @@ class SetupEnvironment:
             json.dump(self.get_default_logging_configuration(),
                       config_file_logging, indent=4)
 
-    async def create_hon_configuration_file(self, detected=None):
-        while True:
-            basic = input(
-                "\nWould you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
-            if basic in ['y', 'n', 'Y', 'N']:
-                if basic in ['n','N']:
-                    print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
-                break
-            print("Please provide 'y' for default settings or 'n' for advanced settings.")
-
-        for key, value in self.hon_data.items():
-            if basic in ['y', 'Y'] and (value or value == False):
-                continue
-            if key == "svr_name" and self.hon_data['svr_location'] != "TH": # skip server name as it's auto generated
-                continue
+    async def create_hon_configuration_file(self, detected=None, headless=False):
+        if headless:
+            self.add_env_data()
+        
+        else:
             while True:
-                if key == "svr_password":
-                    user_input = getpass(
-                        f"\tEnter the value for '{key}' (HINT: HoN Password): ")
-                elif key == "svr_login":
-                    user_input = input(
-                        f"\tEnter the value for '{key}' (HINT: HoN Username): ")
-                elif detected == key:
-                    user_input = input("\tEnter the value for '{}'{}: ".format(
-                        key, " (detected: {})".format(value) if value or value == False else ""))
-                else:
-                    user_input = input("\tEnter the value for '{}'{}: ".format(
-                        key, " (default: {})".format(value) if value or value == False else ""))
-                if user_input:
-                    default_value_type = type(value)
-                    new_value_type = type(user_input)
+                basic = input(
+                    "\nWould you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
+                if basic in ['y', 'n', 'Y', 'N']:
+                    if basic in ['n','N']:
+                        print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
+                    break
+                print("Please provide 'y' for default settings or 'n' for advanced settings.")
 
-                    if new_value_type == int:
-                        try:
-                            self.hon_data[key] = int(user_input)
-                            break
-                        except ValueError:
-                            print(
-                                f"\tInvalid integer value entered for {key}. Using the default value: {value}")
-                    elif new_value_type == bool:
-                        self.hon_data[key] = user_input.lower() == 'true'
-                        break
-                    elif new_value_type == str:
-                        if key == "svr_location":
-                            if user_input not in ALLOWED_REGIONS:
+            for key, value in self.hon_data.items():
+                if basic in ['y', 'Y'] and (value or value == False):
+                    continue
+                if key == "svr_name" and self.hon_data['svr_location'] != "TH": # skip server name as it's auto generated
+                    continue
+                while True:
+                    if key == "svr_password":
+                        user_input = getpass(
+                            f"\tEnter the value for '{key}' (HINT: HoN Password): ")
+                    elif key == "svr_login":
+                        user_input = input(
+                            f"\tEnter the value for '{key}' (HINT: HoN Username): ")
+                    elif detected == key:
+                        user_input = input("\tEnter the value for '{}'{}: ".format(
+                            key, " (detected: {})".format(value) if value or value == False else ""))
+                    else:
+                        user_input = input("\tEnter the value for '{}'{}: ".format(
+                            key, " (default: {})".format(value) if value or value == False else ""))
+                    if user_input:
+                        default_value_type = type(value)
+                        new_value_type = type(user_input)
+
+                        if new_value_type == int:
+                            try:
+                                self.hon_data[key] = int(user_input)
+                                break
+                            except ValueError:
                                 print(
-                                    f"\tIncorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
-                                continue
+                                    f"\tInvalid integer value entered for {key}. Using the default value: {value}")
+                        elif new_value_type == bool:
+                            self.hon_data[key] = user_input.lower() == 'true'
+                            break
+                        elif new_value_type == str:
+                            if key == "svr_location":
+                                if user_input not in ALLOWED_REGIONS:
+                                    print(
+                                        f"\tIncorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
+                                    continue
+                                else:
+                                    self.hon_data[key] = user_input
+                                    break
+                            elif key in self.PATH_KEYS_IN_HON_DATA_CONFIG_FILE:
+                                try:
+                                    user_input = user_input.replace("\"", "")
+                                    Path(user_input)
+                                    self.hon_data[key] = user_input
+                                    break
+                                except Exception:
+                                    print(
+                                        f"\tExpected valid file path. Please try again. Here is an example value: {self.hon_data[key]}")
                             else:
                                 self.hon_data[key] = user_input
                                 break
-                        elif key in self.PATH_KEYS_IN_HON_DATA_CONFIG_FILE:
-                            try:
-                                user_input = user_input.replace("\"", "")
-                                Path(user_input)
-                                self.hon_data[key] = user_input
-                                break
-                            except Exception:
-                                print(
-                                    f"\tExpected valid file path. Please try again. Here is an example value: {self.hon_data[key]}")
                         else:
-                            self.hon_data[key] = user_input
-                            break
+                            print(
+                                f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
                     else:
-                        print(
-                            f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
-                else:
-                    break
+                        break
         self.hon_data['svr_name'] = await self.generate_server_name()
         self.hon_data['svr_name'] = self.hon_data['svr_name'][:20]
         self.server_name_generated = True
@@ -729,9 +736,14 @@ class SetupEnvironment:
                 "github_branch": MISC.get_github_branch()
             }
         )
-
+    def add_env_data(self):
+        self.hon_data['svr_login'] = os.environ.get('HON_USERNAME')
+        self.hon_data['svr_password'] = os.environ.get('HON_PASSWORD')
+        self.hon_data['svr_location'] = os.environ.get('HON_LOCATION', 'auto')
+        
     async def get_final_configuration(self):
         self.add_runtime_data()
+        self.add_env_data()
 
         if await self.validate_hon_data():
             return self.merge_config()
