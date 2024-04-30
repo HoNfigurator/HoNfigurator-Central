@@ -166,7 +166,11 @@ async def public_serverinfo():
 
 @app.get("/api/public/get_honfigurator_version", description="Gets the current HoNfigurator Version #")
 async def get_honfigurator_version():
-    return {"version": MISC.get_github_tag()}
+    return {
+        "version": MISC.get_github_tag(),
+        "latest_github_update": MISC.get_git_commit_date(),
+        "github_branch": MISC.get_github_branch()
+    }
 
 @app.get("/api/public/check_filebeat_status", summary="Check whether Filebeat is installed and configured to send server logs.")
 async def filebeat_installed():
@@ -191,7 +195,7 @@ def get_skipped_frame_data(port: str):
     return Response(content=json_content, media_type="application/json")
 
 @app.get("/api/public/get_hon_version")
-async def get_hon_version(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+async def get_hon_version():
     return {"data":MISC.hon_version}
 
 """Protected Endpoints"""

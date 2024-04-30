@@ -278,7 +278,7 @@ class Misc:
             LOGGER.critical("Tried all public IP providers and could not determine public IP address. This will most likely cause issues.")
 
     def get_svr_description(self):
-        return f"84b3P#$bHCBaoFgC"
+        return f"84b3P#$bHCBaoFgC" # not a secret :) Just needed a value for the description
 
     def find_process_by_cmdline_keyword(self, keyword, proc_name=None):
         for process in psutil.process_iter(['cmdline']):

@@ -897,9 +897,12 @@ async def main(config=None, from_main=True):
 
             # initialise MQTT
             mqtt = MQTTHandler(global_config = global_config, certificate_path=get_filebeat_crt_path(), key_path=get_filebeat_key_path())
-            mqtt.connect()
+            try:
+                mqtt.connect()
+                mqtt.publish_json("manager/admin", {"event_type":"initialisation_complete"})
+            except Exception as e:
+                print_or_log('error',f"Failed to connect to MQTT broker: {e}")
             set_mqtt(mqtt)
-            get_mqtt().publish_json("manager/admin", {"event_type":"initialisation_complete"})
         
         return True
 
