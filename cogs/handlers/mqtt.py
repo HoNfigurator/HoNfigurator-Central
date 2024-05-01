@@ -17,6 +17,7 @@ class MQTTHandler:
         self.key_path = key_path
         self.mastersv_state = None
         self.chatsv_state = None
+        self.connected = False
 
         # Create a new MQTT client instance
         self.client = mqtt.Client()
@@ -42,8 +43,13 @@ class MQTTHandler:
     def _on_connect(self, client, userdata, flags, rc):
         if rc == 0:
             LOGGER.highlight("Connected successfully to MQTT broker")
+            self.connected = True
         else:
             LOGGER.error(f"Connection failed with code {rc}")
+            
+    def _on_disconnect(self, client, userdata, rc):
+        LOGGER.warn("Disconnected from MQTT broker")
+        self.connected = False
 
     def _on_publish(self, client, userdata, mid):
         LOGGER.debug(f"Message Published with MID: {mid}")
@@ -86,6 +92,13 @@ class MQTTHandler:
         return metadata
 
     def publish_json(self, topic, data, qos=1):
+        if not self.connected:
+            try:
+                self.connect()
+            except:
+                LOGGER.error("Failed to connect to MQTT broker")
+                return False
+
         data.update(self.add_metadata())
         payload = json.dumps(data)
         result = self.client.publish(topic, payload, qos)
