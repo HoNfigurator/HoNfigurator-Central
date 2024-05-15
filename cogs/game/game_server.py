@@ -173,6 +173,11 @@ class GameServer:
 
     async def start_disconnect_timer(self):
         while True:
+            if self.game_state.get('game_phase') not in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
+                break
+            if self.game_state.get('players') > 3:
+                break # Safety check to ensure we don't disconnect players if there are more than 3 players in the game, it's highly unlikely 3 players are stuck.
+
             self.idle_disconnect_timer += 1
             if self.idle_disconnect_timer >= 60:
                 await self.manager_event_bus.emit('cmd_message_server', self, "Removing idle players. Players have remained connected when game is over for 60+ seconds.")
@@ -184,6 +189,8 @@ class GameServer:
                         player_name = player['name']
                         player_name = re.sub(r'\[.*?\]', '', player_name)
                         LOGGER.info(f"GameServer #{self.id} - Attempting to terminate player: {player_name}")
+                        if get_mqtt():
+                            get_mqtt().publish_json("game_server/match",{"event_type":"player_kicked", "player_name":player_name, **self.game_state._state})
                         await self.manager_event_bus.emit('cmd_custom_command', self, f"terminateplayer {player_name}", delay=5)
 
                     LOGGER.info(f"GameServer #{self.id} - {self.game_state['players']} are still connected. Waiting for termination of idle players.")
