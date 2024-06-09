@@ -137,6 +137,14 @@ def check_permission(permission: str, token_and_user_info: dict = Depends(verify
 
     return token_and_user_info
 
+# For endpoints which use IP boundaries instead of discord access token permissions
+allowed_ips = ['65.109.19.104','127.0.0.1']
+# Dependency function to check IP
+def check_ip(request: Request):  # Use capitalized Request for type hint
+    client_ip = request.client.host  # Access the client's IP address
+    if client_ip not in allowed_ips:
+        raise HTTPException(status_code=401, detail="Unauthorized IP address")
+
 """
 API Endpoints below
 """
@@ -558,7 +566,9 @@ async def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(che
     return file_content[-num:][::-1]
 
 @app.get("/api/get_chat_logs/{match_id}", description="Retrieve a list of chat entries from a given match id")
-def get_chat_logs(match_id: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+def get_chat_logs(match_id: str, request: Request):
+    check_ip(request)  # Call check_ip with the request object
+
     if 'm' not in match_id.lower():
         match_id = f'M{match_id}'
     log_path = global_config['hon_data']['hon_logs_directory'] / f"{match_id}.log"
