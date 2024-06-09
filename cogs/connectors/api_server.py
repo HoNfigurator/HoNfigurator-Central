@@ -119,9 +119,6 @@ def has_permission(user_info: dict, required_permission: str) -> bool:
     user_id = user_info["id"]
     user_permissions = roles_database.get_user_permissions_by_discord_id(user_id)
 
-    if str(user_id) in ['102639162007515136','197967989964800000']: # Allow staff to perform admin actions for breakglass
-        return True
-    
     if not user_permissions:
         return False
 
