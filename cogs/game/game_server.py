@@ -635,7 +635,7 @@ class GameServer:
 
         free_mem = psutil.virtual_memory().available
         #   HoN server instances use up to 1GM RAM per instance. Check if this is free before starting.
-        if free_mem < 1000000000:
+        if free_mem < 1000000000 and not self.global_config['hon_data']['man_use_cowmaster']:
             LOGGER.error((f"GameServer #{self.id} - cannot start as there is not enough free RAM"))
             raise HoNServerError(f"GameServer #{self.id} - cannot start as there is not enough free RAM")
         LOGGER.info(f"GameServer #{self.id} - Starting...")
@@ -790,8 +790,10 @@ class GameServer:
     async def stop_server_exe(self, disable=True, delete=False, kill=False):
         if disable:
             self.disable_server()
+            LOGGER.debug(f"GameServer #{self.id} - Disabled server")
         self.delete_me = delete
         if self._proc:
+            LOGGER.debug(f"GameServer #{self.id} - Stopping server executable")
             if disable:
                 self.disable_server()
             try:
@@ -810,6 +812,7 @@ class GameServer:
         if self.delete_me:
             self.cancel_tasks()
             await self.manager_event_bus.emit('remove_game_server',self)
+            LOGGER.debug(f"GameServer #{self.id} - Removed from game server list")
 
     async def get_running_server(self,timeout=15):
         """

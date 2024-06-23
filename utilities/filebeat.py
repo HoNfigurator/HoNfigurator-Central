@@ -373,7 +373,7 @@ async def get_discord_user_id_from_api(discord_id):
                         set_discord_username(data.get('username'))
                     return data.get('username')
                 else:
-                    print_or_log("error","Failed to get Discord username for ID: {discord_id}")
+                    print_or_log("error",f"Failed to get Discord username for ID: {discord_id}")
                     return None
     except aiohttp.ClientError as e:
         print_or_log("error","Error occurred while making the API request: {e}")
@@ -787,25 +787,6 @@ async def restart_filebeat(filebeat_changed, silent=False):
         elif not filebeat_running:
             await restart()
 
-def add_cron_job(command):
-    # Get current cron jobs
-    current_crons = subprocess.run(["crontab", "-l"], text=True, capture_output=True).stdout
-    
-    # Don't add job if it's already there
-    if command in current_crons:
-        return
-    
-    with NamedTemporaryFile(delete=False) as tmp:
-        # Write current cron jobs into temporary file
-        tmp.write(current_crons.encode())
-        # Add new cron job
-        tmp.write(f"\n0 0 * * * {command}\n".encode())
-        
-    # Update cron jobs from the temporary file
-    subprocess.run(["crontab", tmp.name])
-    # Delete the temporary file
-    os.unlink(tmp.name)
-
 # Check the system
 async def install_filebeat():
     if operating_system == "Windows":
@@ -818,29 +799,6 @@ async def install_filebeat():
         print_or_log('info',"Unsupported operating system.")
         return False
 
-def remove_cron_job(command):
-    try:
-        # output the current crontab to a temporary file
-        tmpfile = "/tmp/crontab.txt"
-        subprocess.run(["crontab", "-l"], stdout=open(tmpfile, 'w'))
-
-        # read the file, remove the line, and write it back out
-        with open(tmpfile, 'r') as f:
-            lines = f.readlines()
-        with open(tmpfile, 'w') as f:
-            for line in lines:
-                if command not in line:
-                    f.write(line)
-
-        # load the revised crontab
-        subprocess.run(["crontab", tmpfile])
-
-        # remove the temporary file
-        os.remove(tmpfile)
-
-    except Exception as e:
-        print_or_log('error',f"Failed to remove cron job: {e}")
-
 async def main(config=None, from_main=True):
     try:
         global global_config
@@ -850,6 +808,9 @@ async def main(config=None, from_main=True):
         parser = argparse.ArgumentParser()
         parser.add_argument("-silent", action="store_true", help="Run in silent mode without asking for Discord ID")
         parser.add_argument("-test", action="store_true", help="Use an experimental filebeat configuration file")
+        parser.add_argument("--non-interactive", action='store_true', help="This will prevent the CLI from loading, and you must only interact with manager via its API.")
+        parser.add_argument("--agree-tos", action='store_true', help="Agree to the terms of service")
+        parser.add_argument("--discord-id", type=str, help="Your Discord ID")
         args = parser.parse_args()
 
         if from_main:
@@ -875,13 +836,6 @@ async def main(config=None, from_main=True):
                     # Delete the scheduled task
                     subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
                     print_or_log('info',"Scheduled task deleted successfully.")
-
-            # Delete cron job on Linux
-            if operating_system == "Linux":
-                script_path = os.path.abspath(__file__)
-                command = f"python3 {script_path} -silent"
-                remove_cron_job(command)
-                print_or_log('info',"Cron job deleted successfully.")
 
         # if filebeat_changed:
         certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())

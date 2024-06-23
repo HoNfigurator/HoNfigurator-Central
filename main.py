@@ -75,6 +75,9 @@ LOGGER = get_logger()
 def parse_arguments():
     parser = argparse.ArgumentParser(description="HoNfigurator API and Server Manager")
     parser.add_argument("-hondir", "--hon_install_directory", type=str, help="Path to the HoN install directory")
+    parser.add_argument("--non-interactive", action='store_true', help="This will prevent the CLI from loading, and you must only interact with manager via its API.")
+    parser.add_argument("--agree-tos", action='store_true', help="Agree to the terms of service")
+    parser.add_argument("--discord-id", type=str, help="Your Discord ID")
     # Add other arguments here
     return parser.parse_args()
 
@@ -108,7 +111,7 @@ async def main():
     global_config['hon_data']['autoping_responder_port'] = udp_ping_responder_port
 
     # instantiate the manager
-    game_server_manager = GameServerManager(global_config, setup)
+    game_server_manager = GameServerManager(global_config, setup, args)
 
     print_formatted_text("\nConfiguration Overview")
     for key,value in global_config['hon_data'].items():

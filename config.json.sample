@@ -1,0 +1,62 @@
+{
+    "hon_data": {
+        "hon_install_directory": "/opt/hon/app",
+        "hon_home_directory": "/opt/hon/config",
+        "svr_masterServer": "api.kongor.online",
+        "svr_patchServer": "api.kongor.online",
+        "svr_login": "HON_USERNAME",
+        "svr_password": "HON_USERPASSWORD",
+        "svr_name": "EU-DE Unknown",
+        "svr_override_suffix": false,
+        "svr_suffix": "auto",
+        "svr_override_state": false,
+        "svr_state": "auto",
+        "svr_location": "auto",
+        "svr_priority": "HIGH",
+        "svr_total": 6,
+        "svr_total_per_core": 1.0,
+        "svr_enableBotMatch": true,
+        "svr_start_on_launch": false,
+        "svr_max_start_at_once": 5,
+        "svr_starting_gamePort": 10001,
+        "svr_starting_voicePort": 10061,
+        "svr_managerPort": 1134,
+        "svr_startup_timeout": 180,
+        "svr_api_port": 5000,
+        "man_use_cowmaster": true,
+        "svr_restart_between_games": false,
+        "svr_beta_mode": false
+    },
+    "application_data": {
+        "timers": {
+            "manager": {
+                "public_ip_healthcheck": 1800,
+                "general_healthcheck": 60,
+                "lag_healthcheck": 120,
+                "check_for_hon_update": 120,
+                "disk_utilisation_healthcheck": 3600,
+                "check_for_honfigurator_update": 60,
+                "resubmit_match_stats": 20,
+                "filebeat_verification": 10800
+            },
+            "replay_cleaner": {
+                "active": true,
+                "max_replay_age_days": 60,
+                "max_temp_files_age_days": 1,
+                "max_temp_folders_age_days": 1,
+                "max_clog_age_days": 0,
+                "scheduled_time": "00:20"
+            }
+        },
+        "longterm_storage": {
+            "active": false,
+            "location": ""
+        },
+        "filebeat": {
+            "send_diagnostics_data": true
+        },
+        "discord": {
+            "owner_id": DISCORD_USER_ID
+        }
+    }
+}

@@ -254,16 +254,16 @@ async def get_replay(match_id: str, token_and_user_info: dict = Depends(check_pe
     if replay_exists:
         # Get the file size in bytes
         file_size = os.path.getsize(path)
-        
+
         # Convert file size to a human readable format
         file_size = convert_size(file_size)
-        
+
         # Get the creation time
         creation_time = os.path.getctime(path)
-        
+
         # Convert the creation time to a readable format
         creation_time = time.ctime(creation_time)
-        
+
         return {
             'match_id': str(match_id),
             'path': str(path),
@@ -324,7 +324,7 @@ def get_tasks_status(token_and_user_info: dict = Depends(check_permission_factor
             else:
                 task_summary[task_name] = {'status': 'Running'}
         return task_summary
-    
+
     temp = {}
     temp_gameserver_tasks = {}
 
@@ -394,6 +394,13 @@ class MemoryUsageResponse(BaseModel):
 def get_memory_usage(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     return {"memory_usage": MISC.get_used_ram()}
 
+class DiskUsageResponse(BaseModel):
+    disk_usage: int
+
+@app.get("/api/get_disk_usage", response_model=DiskUsageResponse)
+def get_disk_usage(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+    return {"disk_usage": MISC.get_disk_usage()}
+
 class MemoryTotalResponse(BaseModel):
     memory_total: float
 
@@ -413,7 +420,7 @@ class TotalAllowedServersResponse(BaseModel):
 
 @app.get("/api/get_total_allowed_servers", response_model=TotalAllowedServersResponse)
 def get_total_allowed_servers(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
-    return {"total_allowed_servers": MISC.get_total_allowed_servers(global_config['hon_data']['svr_total_per_core'])}
+    return {"total_allowed_servers": MISC.get_total_allowed_servers(global_config['hon_data']['svr_total_per_core'], global_config['application_data'].get('ignore_cpu_limit'))}
 
 class NumPlayersIngameResponse(BaseModel):
     num_players_ingame: int
@@ -560,7 +567,7 @@ async def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(che
     # return the contents of the current log file
     async with aiofiles.open(HOME_PATH / "logs" / "server.log", 'r') as f:
         file_content = await f.readlines()
-    
+
     # Remove the newlines from each string in the list
     file_content = [line.strip() for line in file_content]
     return file_content[-num:][::-1]
@@ -575,7 +582,7 @@ def get_chat_logs(match_id: str, request: Request):
 
     if not exists(log_path):
         return JSONResponse(status_code=404, content="Log file not found.")
-    
+
     match_parser = MatchParser(match_id, log_path)
     return match_parser.parse_chat()
 
@@ -644,7 +651,7 @@ def add_role(role_form: AddRole, token_and_user_info: dict = Depends(check_permi
     role_exists = [role for role in roles if role["name"] == role_form.name]
     if role_exists:
         return JSONResponse(status_code=501, content="Role with this name already exists.")
-    
+
     new_role = {
         "name": role_form.name.lower(),
         "permissions": role_form.permissions
@@ -743,7 +750,7 @@ def get_all_endpoints(token_and_user_info: dict = Depends(check_permission_facto
 def get_all_permissions(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     roles = roles_database.get_all_permissions()
     return roles
-    
+
 
 
 """Control Types"""
@@ -780,12 +787,12 @@ async def start_server(port: str, token_and_user_info: dict = Depends(check_perm
     """
     if port != "all":
         game_server = game_servers.get(int(port),None)
-        if game_server is None: 
+        if game_server is None:
             raise HTTPException(status_code=404, detail={"error":"Server not managed by manager."})
         await manager_event_bus.emit('start_game_servers_task',[game_server])
     else:
         await manager_event_bus.emit('start_game_servers_task','all')
-    
+
     return JSONResponse(status_code=200, content="Schedule start successful")
 
 @app.post("/api/add_servers/{num}", description="Add X number of game servers. Dynamically creates additional servers based on total allowed count.")
@@ -827,7 +834,7 @@ async def get_filebeat_oauth_url(token_and_user_info: dict = Depends(check_permi
 #     if 'spawned_filebeat_setup' in health_check_tasks:
 #         if health_check_tasks['spawned_filebeat_setup'] and not health_check_tasks['spawned_filebeat_setup'].done():
 #             return JSONResponse(status_code=400,content={"status":"filebeat setup already running."})
-    
+
 #     if not await filebeat.check_filebeat_installed():
 #         filebeat.install_filebeat()
 
@@ -947,9 +954,9 @@ async def asgi_server(app, host, port):
                 LOGGER.error(f"Server is not pingable over port {global_config['hon_data']['svr_api_port']}/tcp. Ensure that your firewall / router is configured to accept this traffic.")
         except Exception:
             LOGGER.error(f"Error when attempting to ping server from remote management\n{traceback.format_exc()}")
-            
+
         await stop_event.wait()
-        
+
     finally:
         server.should_exit = True  # this flag tells Uvicorn to wrap up and exit
         LOGGER.info("Shutting down API Server")
@@ -961,7 +968,7 @@ async def fetch_server_ping_response():
         'Selected-Server': global_config['hon_data']['svr_ip'],
         'Selected-Port': str(global_config['hon_data']['svr_api_port'])
     }
-    
+
     async with aiohttp.ClientSession() as session:
         async with session.get(url, headers=headers, ssl=False) as response:
             response_text = await response.text()

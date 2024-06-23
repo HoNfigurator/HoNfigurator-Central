@@ -147,6 +147,7 @@ class SetupEnvironment:
                 "discord": {
                     "owner_id": 0
                 },
+                "ignore_cpu_limit": False
             }
         }
 
@@ -187,14 +188,14 @@ class SetupEnvironment:
         with open(self.config_file_hon, 'r') as config_file_hon:
             hon_data = json.load(config_file_hon)
         return hon_data
-    
+
     async def generate_server_name(self):
         # Get the city
         if 'svr_override_state' in self.hon_data and self.hon_data['svr_override_state']:
             state_code = self.hon_data['svr_state']
         else:
-            state_code = self.resolve_state_code(MISC.get_public_ip())
-        
+            state_code = self.resolve_state_code(MISC.get_public_ip(), self.hon_data['svr_location'])
+
         if 'svr_override_suffix' in self.hon_data and self.hon_data['svr_override_suffix']:
             suffix = self.hon_data['svr_suffix']
             suffix = self.format_discord_username(suffix)
@@ -209,7 +210,7 @@ class SetupEnvironment:
                         suffix = await get_discord_user_id_from_api(self.database.get_discord_owner_id())
                 except Exception:
                     LOGGER.error(f"Failed to resolve the discord username, are you sure this discord ID is correct? {self.application_data['discord']['owner_id']}\n{traceback.format_exc()}")
-            
+
             if not suffix:
                 suffix = "Unknown"
 
@@ -222,7 +223,7 @@ class SetupEnvironment:
             state = state[1]
         else:
             state = state[0]
-        
+
         server_name = f"{self.hon_data['svr_location']}-{state} {suffix}"
 
         return server_name
@@ -233,8 +234,8 @@ class SetupEnvironment:
 
         if application_data:
             self.application_data = application_data
-        
-        
+
+
         # Since TH has over 10 servers hosted by a single person, we need to do more testing first on what the impact would be of having the same server names. So excluding from autogen for now.
         if self.hon_data['svr_location'] != "TH" and not self.server_name_generated:
             self.hon_data['svr_name'] = await self.generate_server_name()
@@ -373,7 +374,7 @@ class SetupEnvironment:
                 value = handle_path('location', app_dict['location'])
                 if value is not None:
                     app_dict['location'] = value
-            
+
         iterate_over_app_data(self.application_data, default_application_data)
 
         for key, value in list(self.hon_data.items()):
@@ -410,11 +411,16 @@ class SetupEnvironment:
                         minor_issues.append(
                             f"Resolved: Starting voice port reassigned to {self.hon_data[key]}. Must be at least {self.hon_data['svr_total']} (svr_total) higher than the starting game port.")
                 elif key == "svr_location" and new_value not in ALLOWED_REGIONS:
-                    major_issues.append(
-                        f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
+                    if new_value == 'auto':
+                        self.hon_data[key] = self.get_server_region()
+                        minor_issues.append('Auto resolved region for server.')
+                    else:
+                        major_issues.append(
+                            f"Incorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
                 elif key == "svr_total":
                     total_allowed = int(MISC.get_total_allowed_servers(
-                        float(self.hon_data['svr_total_per_core'])))
+                        float(self.hon_data['svr_total_per_core']),
+                        self.application_data.get('ignore_cpu_limit')))
                     if new_value > total_allowed:
                         self.hon_data[key] = total_allowed
                         minor_issues.append(
@@ -467,33 +473,57 @@ class SetupEnvironment:
         else:
             self.database = get_roles_database()
 
-        if not self.database.add_default_data():
-            agree = input("Welcome to HoNfigurator. By using our software, you agree to these terms and conditions.\
-                        \n1. To ensure the legitimacy and effective administration of game servers, server administrators are required to authenticate using their Discord account.\
-                        \n2. You may receive alerts or notifications via Discord from the HoNfigurator bot regarding the status of your game servers.\
-                        \n3. The hosting of dedicated servers through HoNfigurator requires the use of HoN server binaries. Users acknowledge that these binaries are not owned or maintained by the author of HoNfigurator.\
-                        \n4. In order to monitor server performance and maintain game integrity, the following diagnostic data will be collected:\
-                        \n\t- This server's public IP address.\
-                        \n\t- Server administrator's Discord ID.\
-                        \n\t- Game server logs, including in-game events and chat logs.\
-                        \n\t- Player account names and public IP addresses.\
-                        \n   This data is essential for the effective operation of the server and for ensuring a fair gaming environment.\
-                        \n\n6. Game replays will be stored on the server and can be requested by players in-game. Server administrators may manage these replays using the provided HoNfigurator settings. We recommend retaining replays for a minimum of 60 days for player review and quality assurance purposes.\
-                        \n\nIn summary, by using HoNfigurator, users agree to:\
-                        \n\t- Properly manage and administer their game server.\
-                        \n\t- Ensure the privacy and security of collected data.\
-                        \n\t- Retain game replays for a minimum of 30 days (if practical).\
-                        \n\t- Not tamper with, or modify the game state in any way that may negatively affect the outcome of a match in progress.\
-                        \n\nDo you agree to these terms and conditions? (y/n): ")
-            if agree in ['y', 'Y']:
-                pass
+        if not os.path.exists(self.config_file_hon):
+            if args:
+                if args.hon_install_directory:
+                    self.hon_data["hon_install_directory"] = Path(
+                        args.hon_install_directory)
+                if args.non_interactive:
+                    await self.create_hon_configuration_file(headless=True)
             else:
-                LOGGER.fatal("You must agree to the terms and conditions to use HoNfigurator. If there are any questions, you may reach out to me on Discord (https://discordapp.com/users/197967989964800000).")
-                input("Press ENTER to exit.")
-                exit()
+                await self.create_hon_configuration_file(
+                    detected="hon_install_directory")
+
+        # Load configuration from config file
+        try:
+            self.hon_data = self.get_existing_configuration()['hon_data']
+            self.application_data = self.get_existing_configuration()[
+                'application_data']
+        except KeyError:  # using old config format
+            self.hon_data = self.get_existing_configuration()
+
+        default_data_added = self.database.add_default_data()
+        tos = self.database.get_tos_status()
+        if (not tos and tos is not None) or default_data_added:
+            if args.agree_tos:
+                self.database.update_tos_agreement()
+            else:
+                agree = input("Welcome to HoNfigurator. By using our software, you agree to these terms and conditions.\
+                            \n1. To ensure the legitimacy and effective administration of game servers, server administrators are required to authenticate using their Discord account.\
+                            \n2. You may receive alerts or notifications via Discord from the HoNfigurator bot regarding the status of your game servers.\
+                            \n3. The hosting of dedicated servers through HoNfigurator requires the use of HoN server binaries. Users acknowledge that these binaries are not owned or maintained by the author of HoNfigurator.\
+                            \n4. In order to monitor server performance and maintain game integrity, the following diagnostic data will be collected:\
+                            \n\t- This server's public IP address.\
+                            \n\t- Server administrator's Discord ID.\
+                            \n\t- Game server logs, including in-game events and chat logs.\
+                            \n\t- Player account names and public IP addresses.\
+                            \n   This data is essential for the effective operation of the server and for ensuring a fair gaming environment.\
+                            \n\n6. Game replays will be stored on the server and can be requested by players in-game. Server administrators may manage these replays using the provided HoNfigurator settings. We recommend retaining replays for a minimum of 60 days for player review and quality assurance purposes.\
+                            \n\nIn summary, by using HoNfigurator, users agree to:\
+                            \n\t- Properly manage and administer their game server.\
+                            \n\t- Retain game replays for a minimum of 30 days (if practical).\
+                            \n\t- Not tamper with, or modify the game state in any way that may negatively affect the outcome of a match in progress.\
+                            \n\nDo you agree to these terms and conditions? (y/n): ")
+                if agree in ['y', 'Y']:
+                    self.database.update_tos_agreement()
+                else:
+                    LOGGER.fatal("You must agree to the terms and conditions to use HoNfigurator. If there are any questions, you may reach out to me on Discord (https://discordapp.com/users/197967989964800000).")
+                    input("Press ENTER to exit.")
+                    exit()
             while True:
-                value = input(
-                    "\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
+                if self.application_data["discord"]["owner_id"]:
+                    break
+                value = input("\n\t43 second guide: https://www.youtube.com/watch?v=ZPROrf4Fe3Q\n\tPlease provide your discord user ID: ")
                 try:
                     discord_id = int(value)
                     if len(str(discord_id)) < 10:
@@ -505,29 +535,19 @@ class SetupEnvironment:
                 except ValueError:
                     print(
                         "Value must be a more than 10 digits.")
+        elif tos is None and not default_data_added:
+            self.database.update_tos_agreement()
 
-        if not os.path.exists(self.config_file_hon):
-            if args:
-                if args.hon_install_directory:
-                    self.hon_data["hon_install_directory"] = Path(
-                        args.hon_install_directory)
-            await self.create_hon_configuration_file(
-                detected="hon_install_directory")
-                    
-        # Load configuration from config file
-        try:
-            self.hon_data = self.get_existing_configuration()['hon_data']
-            self.application_data = self.get_existing_configuration()[
-                'application_data']
-        except KeyError:  # using old config format
-            self.hon_data = self.get_existing_configuration()
-        
         if "discord" in self.application_data:
-            if int(self.database.get_discord_owner_id()) != self.application_data["discord"]["owner_id"]:
-                if self.application_data["discord"]["owner_id"] == 0:
-                    self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
-                else:
-                    self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
+            try:
+                if int(self.database.get_discord_owner_id()) != self.application_data["discord"]["owner_id"]:
+                    if self.application_data["discord"]["owner_id"] == 0:
+                        self.application_data["discord"]["owner_id"] = self.database.get_discord_owner_id()
+                    else:
+                        self.database.update_discord_owner_id(self.application_data["discord"]["owner_id"])
+            except ValueError:
+                if int(self.application_data["discord"]["owner_id"]):
+                    self.database.add_default_data(self.application_data["discord"]["owner_id"])
 
         self.full_config = self.merge_config()
         if await self.validate_hon_data(self.full_config['hon_data'], self.full_config['application_data']):
@@ -540,74 +560,78 @@ class SetupEnvironment:
             json.dump(self.get_default_logging_configuration(),
                       config_file_logging, indent=4)
 
-    async def create_hon_configuration_file(self, detected=None):
-        while True:
-            basic = input(
-                "\nWould you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
-            if basic in ['y', 'n', 'Y', 'N']:
-                if basic in ['n','N']:
-                    print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
-                break
-            print("Please provide 'y' for default settings or 'n' for advanced settings.")
+    async def create_hon_configuration_file(self, detected=None, headless=False):
+        if headless:
+            self.add_env_data()
 
-        for key, value in self.hon_data.items():
-            if basic in ['y', 'Y'] and (value or value == False):
-                continue
-            if key == "svr_name" and self.hon_data['svr_location'] != "TH": # skip server name as it's auto generated
-                continue
+        else:
             while True:
-                if key == "svr_password":
-                    user_input = getpass(
-                        f"\tEnter the value for '{key}' (HINT: HoN Password): ")
-                elif key == "svr_login":
-                    user_input = input(
-                        f"\tEnter the value for '{key}' (HINT: HoN Username): ")
-                elif detected == key:
-                    user_input = input("\tEnter the value for '{}'{}: ".format(
-                        key, " (detected: {})".format(value) if value or value == False else ""))
-                else:
-                    user_input = input("\tEnter the value for '{}'{}: ".format(
-                        key, " (default: {})".format(value) if value or value == False else ""))
-                if user_input:
-                    default_value_type = type(value)
-                    new_value_type = type(user_input)
+                basic = input(
+                    "\nWould you like to use mostly defaults or complete advanced setup? (y - defaults / n - advanced): ")
+                if basic in ['y', 'n', 'Y', 'N']:
+                    if basic in ['n','N']:
+                        print("Please provide the following information for the initial setup:\nJust press ENTER if the default value is okay.")
+                    break
+                print("Please provide 'y' for default settings or 'n' for advanced settings.")
 
-                    if new_value_type == int:
-                        try:
-                            self.hon_data[key] = int(user_input)
-                            break
-                        except ValueError:
-                            print(
-                                f"\tInvalid integer value entered for {key}. Using the default value: {value}")
-                    elif new_value_type == bool:
-                        self.hon_data[key] = user_input.lower() == 'true'
-                        break
-                    elif new_value_type == str:
-                        if key == "svr_location":
-                            if user_input not in ALLOWED_REGIONS:
+            for key, value in self.hon_data.items():
+                if basic in ['y', 'Y'] and (value or value == False):
+                    continue
+                if key == "svr_name" and self.hon_data['svr_location'] != "TH": # skip server name as it's auto generated
+                    continue
+                while True:
+                    if key == "svr_password":
+                        user_input = getpass(
+                            f"\tEnter the value for '{key}' (HINT: HoN Password): ")
+                    elif key == "svr_login":
+                        user_input = input(
+                            f"\tEnter the value for '{key}' (HINT: HoN Username): ")
+                    elif detected == key:
+                        user_input = input("\tEnter the value for '{}'{}: ".format(
+                            key, " (detected: {})".format(value) if value or value == False else ""))
+                    else:
+                        user_input = input("\tEnter the value for '{}'{}: ".format(
+                            key, " (default: {})".format(value) if value or value == False else ""))
+                    if user_input:
+                        default_value_type = type(value)
+                        new_value_type = type(user_input)
+
+                        if new_value_type == int:
+                            try:
+                                self.hon_data[key] = int(user_input)
+                                break
+                            except ValueError:
                                 print(
-                                    f"\tIncorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
-                                continue
+                                    f"\tInvalid integer value entered for {key}. Using the default value: {value}")
+                        elif new_value_type == bool:
+                            self.hon_data[key] = user_input.lower() == 'true'
+                            break
+                        elif new_value_type == str:
+                            if key == "svr_location":
+                                if user_input not in ALLOWED_REGIONS:
+                                    print(
+                                        f"\tIncorrect region. Can only be one of {(',').join(ALLOWED_REGIONS)}")
+                                    continue
+                                else:
+                                    self.hon_data[key] = user_input
+                                    break
+                            elif key in self.PATH_KEYS_IN_HON_DATA_CONFIG_FILE:
+                                try:
+                                    user_input = user_input.replace("\"", "")
+                                    Path(user_input)
+                                    self.hon_data[key] = user_input
+                                    break
+                                except Exception:
+                                    print(
+                                        f"\tExpected valid file path. Please try again. Here is an example value: {self.hon_data[key]}")
                             else:
                                 self.hon_data[key] = user_input
                                 break
-                        elif key in self.PATH_KEYS_IN_HON_DATA_CONFIG_FILE:
-                            try:
-                                user_input = user_input.replace("\"", "")
-                                Path(user_input)
-                                self.hon_data[key] = user_input
-                                break
-                            except Exception:
-                                print(
-                                    f"\tExpected valid file path. Please try again. Here is an example value: {self.hon_data[key]}")
                         else:
-                            self.hon_data[key] = user_input
-                            break
+                            print(
+                                f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
                     else:
-                        print(
-                            f"\tUnexpected value type ({new_value_type}) for {key}. Skipping this key.")
-                else:
-                    break
+                        break
         self.hon_data['svr_name'] = await self.generate_server_name()
         self.hon_data['svr_name'] = self.hon_data['svr_name'][:20]
         self.server_name_generated = True
@@ -708,27 +732,38 @@ class SetupEnvironment:
                 "cpu_count": MISC.get_cpu_count(),
                 "cpu_name": MISC.get_cpu_name(),
                 "total_ram": MISC.get_total_ram(),
-                "server_total_allowed": MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core']),
+                "server_total_allowed": MISC.get_total_allowed_servers(self.hon_data['svr_total_per_core'], self.application_data.get('ignore_cpu_limit')),
                 "github_branch": MISC.get_github_branch()
             }
         )
+    def add_env_data(self):
+        self.hon_data['svr_login'] = os.environ.get('HON_USERNAME')
+        self.hon_data['svr_password'] = os.environ.get('HON_PASSWORD')
+        self.hon_data['svr_location'] = os.environ.get('HON_LOCATION', 'auto')
+        self.application_data["discord"]["owner_id"] = os.environ.get('DISCORD_ID')
 
     async def get_final_configuration(self):
         self.add_runtime_data()
-        
+        self.add_env_data()
+
         if await self.validate_hon_data():
             return self.merge_config()
         else:
             return False
-        
-    def resolve_state_code(self, ip_address):
+
+    def resolve_state_code(self, ip_address, region):
         API_KEY = "6822fd77ae464cafb5ce4f3be425f1ad"
         try:
             response = requests.get(f'https://api.ipgeolocation.io/ipgeo?apiKey={API_KEY}&ip={ip_address}')
             response_data = response.json()
 
             # Extract the state from the response
-            state_code = response_data.get('state_code', 'Unknown')
+            # Note: for smaller countries that doesnt really make sense.
+            # Go with the country for EU and add more if needed
+            if region in [ "EU" ]:
+                state_code = response_data.get('country_code2', 'Unknown')
+            else:
+                state_code = response_data.get('state_code', 'Unknown')
 
             if state_code in ['', 'Unknown']:
                 state_code = response_data.get('country_name', 'Unknown')
@@ -754,7 +789,7 @@ class SetupEnvironment:
         else:
             LOGGER.warning("State information not available.")
             return None
-    
+
     def format_discord_username(self, discord_username):
         # Remove special characters, whitespaces, and numbers
         cleaned_string = re.sub(r'[^A-Za-z]', '', discord_username)
