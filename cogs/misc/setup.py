@@ -521,6 +521,13 @@ class SetupEnvironment:
                 'application_data']
         except KeyError:  # using old config format
             self.hon_data = self.get_existing_configuration()
+
+        # Update master server and patch server values
+        default_config = self.get_default_hon_configuration()['hon_data']
+        if not self.hon_data['svr_beta_mode']:
+            for key in ['svr_masterServer', 'svr_patchServer']:
+                if key not in self.hon_data or self.hon_data[key] != default_config[key]:
+                    self.hon_data[key] = default_config[key]
         
         if "discord" in self.application_data:
             if int(self.database.get_discord_owner_id()) != self.application_data["discord"]["owner_id"]:
