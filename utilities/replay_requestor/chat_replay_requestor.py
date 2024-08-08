@@ -19,7 +19,7 @@ class ClientConnect:
         Create a new chatserver object and connect using a cookie.
         """
         self.chat_server_handler = ChatServerHandler(
-            chat_address="chat.kongor.online",
+            chat_address="chat.projectkongor.com",
             chat_port="11031",
             external_ip=self.external_ip,
             cookie=self.session_cookie,
@@ -33,7 +33,7 @@ class ClientConnect:
         if not chat_auth_response:
             print(f"Chatserver authentication failure")
             return
-        
+
         handle_packets_task = asyncio.create_task(self.chat_server_handler.handle_packets())
 
         i = 0
@@ -49,7 +49,7 @@ class ClientConnect:
             print(f"Chatserver authentication failure")
             handle_packets_task.cancel()
             return
-        
+
         print("Authenticated to ChatServer.")
 
         await self.create_replay_request(match_id)
@@ -86,7 +86,7 @@ class ClientConnect:
                     print("Unknown error.")
                     break
             await asyncio.sleep(1)  # Sleep for a bit before checking again
-        
+
         # Close connection
         await self.chat_server_handler.close_connection()
         handle_packets_task.cancel()
