@@ -451,7 +451,6 @@ async def configure_filebeat(silent=False,test=False):
             'enabled': True,
             'paths': [str(Path(slave_log))],
             'ignore_older': '24h',
-            'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
             'include_lines': [
@@ -477,7 +476,6 @@ async def configure_filebeat(silent=False,test=False):
             'enabled': True,
             'paths': [str(Path(match_log))],
             'ignore_older': '24h',
-            'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
             'fields': {
@@ -494,7 +492,6 @@ async def configure_filebeat(silent=False,test=False):
             'enabled': True,
             'paths': [str(Path(diagnostic_log))],
             'ignore_older': '24h',
-            'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
             'fields': {
@@ -608,8 +605,7 @@ async def configure_filebeat(silent=False,test=False):
             'processors': [
                 {'add_host_metadata': {'when.not.contains.tags': 'forwarded'}},
                 {'add_locale': None}
-            ],
-            'filebeat.registry.flush': '60s'
+            ]
         }
 
         yaml_config = yaml.dump(filebeat_config)

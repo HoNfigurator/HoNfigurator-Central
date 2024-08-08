@@ -679,7 +679,7 @@ class ClientChatParser:
         if replay_status['status'] == 6: status = 'UPLOADING'
         if replay_status['status'] == 7:
             status = 'DONE'
-            self.log("info",f"Replay available: http://api.kongor.online/replays/M{replay_status['match_id']}.honreplay")
+            self.log("info",f"Replay available: http://api.projectkongor.com/replays/M{replay_status['match_id']}.honreplay")
 
         self.log("debug",f"{self.print_prefix}Replay status update\n\tMatch ID: {replay_status['match_id']}\n\tStatus: {status}")
 

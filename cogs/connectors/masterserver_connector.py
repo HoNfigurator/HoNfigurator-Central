@@ -11,7 +11,7 @@ MISC = get_misc()
 
 class MasterServerHandler:
 
-    def __init__(self, master_server="api.kongor.online", patch_server = "api.kongor.online", version="4.10.6.0", architecture="", event_bus=None):
+    def __init__(self, master_server="api.projectkongor.com", patch_server = "api.projectkongor.com", version="4.10.6.0", architecture="", event_bus=None):
         self.manager_event_bus = event_bus
         self.manager_event_bus.subscribe('replay_upload_request', self.get_replay_upload_info)
         self.manager_event_bus.subscribe('replay_upload_start', self.upload_replay_file)
