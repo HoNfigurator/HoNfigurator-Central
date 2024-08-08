@@ -22,7 +22,7 @@ This guide provides steps for linking the configured HoNfigurator server to a mo
     
 ## Requirements
 1. You must meet the [minimum system requirements](docs/hardware-requirements.md)
-1. You must have a registered [Project Kongor](https://kongor.online/) HoN account. **1 per server hosting**
+1. You must have a registered [Project Kongor](https://projectkongor.com/) HoN account. **1 per server hosting**
 1. You must be a member of the Project Kongor [Discord channel](https://discord.gg/kongor).
     > [!Note]
     > This is how hosts are onboarded, and given the appropriate roles.

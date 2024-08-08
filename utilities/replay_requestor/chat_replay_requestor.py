@@ -19,7 +19,7 @@ class ClientConnect:
         Create a new chatserver object and connect using a cookie.
         """
         self.chat_server_handler = ChatServerHandler(
-            chat_address="chat.kongor.online",
+            chat_address="chat.projectkongor.com",
             chat_port="11031",
             external_ip=self.external_ip,
             cookie=self.session_cookie,
