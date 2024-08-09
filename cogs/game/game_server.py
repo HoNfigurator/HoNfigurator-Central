@@ -175,7 +175,8 @@ class GameServer:
         while True:
             if self.game_state._state.get('game_phase') not in [GamePhase.GAME_ENDING.value,GamePhase.GAME_ENDED.value]:
                 break
-            if self.game_state._state.get('players',0) > 3:
+
+            if len(self.game_state['players']) > 3:
                 break # Safety check to ensure we don't disconnect players if there are more than 3 players in the game, it's highly unlikely 3 players are stuck.
 
             self.idle_disconnect_timer += 1
