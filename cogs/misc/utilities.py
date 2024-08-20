@@ -14,6 +14,8 @@ from cogs.misc.logger import get_logger, get_home
 from cogs.misc.exceptions import HoNUnexpectedVersionError, HoNCompatibilityError
 import ipaddress
 import asyncio
+import schedule
+import time
 
 
 LOGGER = get_logger()
@@ -29,10 +31,17 @@ class Misc:
         self.github_branch_all = self.get_all_branch_names()
         self.github_branch = self.get_current_branch_name()
         self.public_ip = self.lookup_public_ip()
+        self.tag = None
+        self.tag = self.get_github_tag()
+        schedule.every(10).minutes.do(self.check_github_tag)
         self.hon_version = None
         self.supported_thirdparty_proxies = ['quilkin']
 
     def build_commandline_args(self, config_local, config_global, cowmaster=False):
+
+        # remove host_affinity if override is enabled, which is used by the game to manage it's affinity. Instead, lets the code handle affinity assignment
+        if self.get_os_platform() == "windows" and config_local['params']['svr_override_affinity']:
+            config_local['params'].pop('host_affinity')
         # Prepare the parameters
         params = ';'.join(' '.join((f"Set {key}", str(val))) for (key, val) in config_local['params'].items())
 
@@ -249,7 +258,7 @@ class Misc:
         return self.public_ip
 
     async def lookup_public_ip_async(self):
-        providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
+        providers = ['http://4.ident.me','https://4.ident.me', 'http://api.ipify.org/', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
         timeout = aiohttp.ClientTimeout(total=5)  # Set the timeout for the request in seconds
 
         async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -273,7 +282,7 @@ class Misc:
             LOGGER.critical("Tried all public IP providers and could not determine public IP address. This will most likely cause issues.")
 
     def get_svr_description(self):
-        return f"cpu: {self.get_cpu_name()}"
+        return f"84b3P#$bHCBaoFgC" # not a secret :) Just needed a value for the description
 
     def find_process_by_cmdline_keyword(self, keyword, proc_name=None):
         for process in psutil.process_iter(['cmdline']):
@@ -289,7 +298,7 @@ class Misc:
     def get_svr_version(self,hon_exe):
         def validate_version_format(version):
             version_parts = version.split('.')
-            if len(version_parts) != 4:
+            if len(version_parts) < 3:
                 return False
 
             for part in version_parts:
@@ -299,7 +308,7 @@ class Misc:
                     return False
 
             return True
-
+        
         if not exists(hon_exe):
             raise FileNotFoundError(f"File {hon_exe} does not exist.")
 
@@ -340,6 +349,17 @@ class Misc:
             # Log any errors encountered
             if result.stderr and result.returncode != 0:
                 LOGGER.error(f"Error encountered while updating: {result.stderr}")
+
+                # If the error is due to divergent branches, reset the branch
+                if any(error_msg in result.stderr for error_msg in ["hint: You have divergent branches", "fatal: Not possible to fast-forward, aborting."]):
+                    current_branch = self.get_current_branch_name()
+                    LOGGER.warning(f"Detected divergent branches. Resetting {current_branch} to match remote...")
+                    reset_result = subprocess.run(["git", "reset", "--hard", f"origin/{current_branch}"], text=True, capture_output=True)
+
+                    if reset_result.stderr:
+                        LOGGER.error(f"Error resetting branch {current_branch}: {reset_result.stderr}")
+                    else:
+                        LOGGER.info(f"Successfully reset {current_branch} to match remote.")
 
             # Check if the update was successful
             if "Already up to date." not in result.stdout and "Fast-forward" in result.stdout:
@@ -395,6 +415,27 @@ class Misc:
         except subprocess.CalledProcessError as e:
             LOGGER.error(f"{HOME_PATH} Not a git repository: {e.output}")
             return None
+    
+    def check_github_tag(self):
+        # Assuming 'misc' is an instance of your Misc class
+        new_tag = self.get_github_tag()
+        LOGGER.debug(f"Checked GitHub Tag: {new_tag}")
+    
+    def get_github_tag(self):
+        try:
+            if self.tag:
+                return self.tag
+            tag = subprocess.check_output(['git', 'describe', '--tags'], stderr=subprocess.STDOUT).decode().strip()
+            return tag.split('-')[0]
+        except subprocess.CalledProcessError:
+            LOGGER.error("Error: Failed to get the tag. Make sure you're in a Git repository and have tags.")
+            return None
+    
+    def get_github_branch(self):
+        if self.github_branch:
+            return self.github_branch
+        else:
+            return self.get_current_branch_name()
 
     def get_git_commit_date(self):
         command = 'git log -1 --format="%cd" --date=format-local:"%Y-%m-%d %H:%M:%S"'

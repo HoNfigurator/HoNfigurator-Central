@@ -224,7 +224,7 @@ class Commands:
             sub_command = sub_command[key]
         sub_command.current_value = value
 
-        if self.setup.validate_hon_data(self.global_config['hon_data']):
+        if await self.setup.validate_hon_data(self.global_config['hon_data']):
             print_formatted_text(f"Value for key '{last_key}' changed from {old_value} to {value}")
             LOGGER.info("Saved local configuration")
             # TODO: If command line arguments change, then schedule restart..
@@ -385,8 +385,8 @@ class Commands:
             if game_server is None or command is None:
                 print_formatted_text("Usage: command <GameServer#> <command>")
                 return
-
-            if isinstance(command[0],str) and command[0].lower() not in ['message','terminateplayer','serverreset','addfakeplayer','adjustservertime','remake','flushserverlogs']:
+  
+            if isinstance(command[0],str) and command[0].lower() not in ['message','terminateplayer','serverreset','flushserverlogs']:
                 LOGGER.warn("Command disallowed")
                 return
             if game_server == "all":
@@ -446,7 +446,8 @@ class Commands:
 
     async def status(self):
         try:
-            if 'man_use_cowmaster' in self.global_config and self.global_config['hon_data'].get('man_use_cowmaster') and self.cowmaster:
+
+            if self.global_config['hon_data'].get('man_use_cowmaster') and self.cowmaster:
                 if self.cowmaster.client_connection:
                     print_formatted_text("Cowmaster is in use. Cowmaster connected.")
                 else:

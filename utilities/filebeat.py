@@ -16,6 +16,8 @@ import re
 import hashlib
 from tempfile import NamedTemporaryFile
 import yaml
+from cogs.handlers.mqtt import MQTTHandler
+import datetime
 
 # if code is launched independtly
 if __name__ == "__main__":
@@ -26,12 +28,16 @@ if __name__ == "__main__":
 else:
     # if imported into honfigurator main
     import utilities.step_certificate as step_certificate
-    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home
+    from cogs.misc.logger import get_logger, set_filebeat_auth_token, get_filebeat_auth_token, set_filebeat_auth_url, set_filebeat_status, get_misc, get_filebeat_auth_url, get_home, set_mqtt, get_mqtt, set_discord_username, get_discord_username, get_roles_database, set_roles_database
 
     from cogs.db.roles_db_connector import RolesDatabase
     from cogs.handlers.events import stop_event
     LOGGER = get_logger()
-    roles_database = RolesDatabase()
+    if not get_roles_database():
+        roles_database = RolesDatabase()
+        set_roles_database(roles_database)
+    else:
+        roles_database = get_roles_database()
     MISC = get_misc()
 
 def print_or_log(log_lvl='info', msg=''):
@@ -82,15 +88,24 @@ async def filebeat_status():
     installed = check_filebeat_installed()
     certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())
     certificate_status = 'non-existent'
+    certificate_valid = False
+    certificate_expired = False
+    certificate_expiry = None
+    timezone_offset = datetime.datetime.now(datetime.timezone.utc).astimezone().strftime('%z')
+    timezone_offset = timezone_offset[:-2] + ':' + timezone_offset[-2:]
 
     if certificate_exists:
         valid_to = step_certificate.get_certificate_valid_to(get_filebeat_crt_path())
+        certificate_expiry = str(valid_to)
         if step_certificate.is_certificate_expired(get_filebeat_crt_path()):
             certificate_status = f"expired ({valid_to})"
+            certificate_expired = True
         elif step_certificate.is_certificate_expiring(get_filebeat_crt_path()):
             certificate_status = f"expiring soon ({valid_to})"
+            certificate_valid = True
         else:
             certificate_status = f"valid (until {valid_to})"
+            certificate_valid = True
 
     filebeat_running = False
     if MISC.get_proc('filebeat') or MISC.get_proc('filebeat.exe'):
@@ -100,7 +115,11 @@ async def filebeat_status():
         "installed": installed,
         "running": filebeat_running,
         "certificate_exists": certificate_exists,
+        "certificate_valid": certificate_valid,
+        "certificate_expired": certificate_expired,
+        "certificate_expiry": certificate_expiry,
         "certificate_status": certificate_status,
+        "timezone": timezone_offset,
         "pending_oauth_url": True if get_filebeat_auth_url() else False
     }
 
@@ -135,25 +154,49 @@ def is_elastic_source_added():
 
 async def install_filebeat_linux():
     # Download and install the Public Signing Key:
-    # subprocess.run("wget -qO - https://artifacts.elastic.co/GPG-KEY-elasticsearch | sudo apt-key add -", shell=True, check=True)
-    await run_command(["wget","-qO","-","https://artifacts.elastic.co/GPG-KEY-elasticsearch","|","sudo","apt-key","add","-"])
+    wget_command = ["wget", "-qO", "-", "https://artifacts.elastic.co/GPG-KEY-elasticsearch"]
+    apt_key_command = ["sudo", "apt-key", "add", "-"]
+
+    wget_proc = subprocess.Popen(wget_command, stdout=subprocess.PIPE)
+    subprocess.run(apt_key_command, stdin=wget_proc.stdout, check=True)
+    wget_proc.stdout.close()  # Allow wget_proc to receive a SIGPIPE if apt-key exits.
 
     # Check if the Elastic source is already added before adding it
     if not is_elastic_source_added():
         # Save the repository definition to /etc/apt/sources.list.d/elastic-8.x.list:
-        # subprocess.run('echo "deb https://artifacts.elastic.co/packages/8.x/apt stable main" | sudo tee -a /etc/apt/sources.list.d/elastic-8.x.list', shell=True, check=True)
-        await run_command(["echo","'deb https://artifacts.elastic.co/packages/8.x/apt stable main'","|","sudo","tee","-a","/etc/apt/sources.list.d/elastic-8.x.list"])
+        with open('/etc/apt/sources.list.d/elastic-8.x.list', 'a') as f:
+            f.write("deb https://artifacts.elastic.co/packages/8.x/apt stable main\n")
+        subprocess.run(["sudo", "tee", "-a", "/etc/apt/sources.list.d/elastic-8.x.list"], input="deb https://artifacts.elastic.co/packages/8.x/apt stable main\n", text=True, check=True)
 
     # Update package lists for upgrades for packages that need upgrading
-    # subprocess.run(["sudo", "apt-get", "update"], check=True)
-    await run_command(["sudo","apt-get","update"])
+    await run_command(["sudo", "apt-get", "update"])
 
     # Install filebeat
-    # subprocess.run(["sudo", "apt-get", "install", "filebeat"], check=True)
-    await run_command(["sudo","apt-get","install","filebeat"])
+    await run_command(["sudo", "apt-get", "install", "filebeat"])
     return True
 
 async def install_filebeat_windows():
+    def run_powershell_installer(filebeat_install_dir):
+        command = [
+            "powershell.exe",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+            str(Path(filebeat_install_dir) / "install-service-filebeat.ps1")
+        ]
+        
+        # Run the command in a subprocess
+        process = subprocess.Popen(
+            command,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            shell=True
+        )
+
+        # Wait for the subprocess to finish
+        stdout, stderr = process.communicate()
+
+        return process.returncode, stdout, stderr
     # Download and install Filebeat using Python
     with tempfile.TemporaryDirectory() as temp_dir:
         zip_file = os.path.join(temp_dir, "filebeat-8.8.2-windows-x86_64.zip")
@@ -191,17 +234,18 @@ async def install_filebeat_windows():
             destination_path = os.path.join(windows_filebeat_install_dir, os.path.basename(file))
             shutil.move(source_path, destination_path)
         print_or_log('info',f"Filebeat installed successfully at: {windows_filebeat_install_dir}")
-        command = [
-            "powershell.exe",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-File",
-            str(Path(windows_filebeat_install_dir) / "install-service-filebeat.ps1")
-        ]
 
-        process = await asyncio.create_subprocess_exec(*command, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        stdout, stderr = await process.communicate()
-        if process.returncode == 0:
+        loop = asyncio.get_running_loop()
+    
+        # Use the default ThreadPoolExecutor
+        returncode, stdout, stderr = await loop.run_in_executor(
+            None,  # Uses the default executor
+            run_powershell_installer,
+            windows_filebeat_install_dir
+        )
+        
+        # Process the results
+        if returncode == 0:
             print_or_log('info', "Filebeat service installed successfully.")
         else:
             print_or_log('error', f"Failed to install Filebeat service. Error: {stderr.decode()}")
@@ -293,6 +337,7 @@ async def request_client_certificate(svr_name, filebeat_path):
                 # Construct the command for certificate renewal
                 result = step_certificate.renew_certificate(crt_file_path,key_file_path)
                 if (isinstance(result,bool) and result) or result.returncode == 0:
+                    await restart_filebeat(filebeat_changed=True,silent=False)
                     return True
                 else:
                     # Certificate request failed
@@ -324,16 +369,18 @@ async def get_discord_user_id_from_api(discord_id):
             async with session.get(api_url, ssl=False) as response:
                 if response.status == 200:
                     data = await response.json()
+                    if data.get('username'):
+                        set_discord_username(data.get('username'))
                     return data.get('username')
                 else:
-                    print(f"Failed to get Discord username for ID: {discord_id}")
+                    print_or_log("error","Failed to get Discord username for ID: {discord_id}")
                     return None
     except aiohttp.ClientError as e:
-        print(f"Error occurred while making the API request: {e}")
+        print_or_log("error","Error occurred while making the API request: {e}")
         return None
 
 async def get_public_ip():
-    providers = ['https://4.ident.me', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
+    providers = ['http://4.ident.me', 'https://4.ident.me', 'https://api.ipify.org', 'https://api.ipify.org', 'https://ifconfig.me','https://myexternalip.com/raw','https://wtfismyip.com/text']
     timeout = aiohttp.ClientTimeout(total=5)  # Set the timeout for the request in seconds
 
     async with aiohttp.ClientSession(timeout=timeout) as session:
@@ -364,30 +411,20 @@ async def configure_filebeat(silent=False,test=False):
         if operating_system == "Windows":
             slave_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "*.clog"
             match_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "M*.log"
+            diagnostic_log = Path(get_process_environment(process,"USERPROFILE")) / "Documents" / "Heroes of Newerth x64" / "KONGOR" / "logs" / "diagnostics" / "M*.log"
         else:
             slave_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "*.clog"
             match_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "M*.log"
+            diagnostic_log = Path(process.cwd()).parent / "config" / "KONGOR" / "logs" / "diagnostics" / "M*.log"
         
-        return slave_log, match_log
+        return slave_log, match_log, diagnostic_log
     
-    def resolve_filestream_indentation(text, target):
-        count = 0
-        new_text = ''
-        for line in text.split('\n'):
-            if target in line:
-                count += 1
-                if count == 2:
-                    line = '  ' + line
-            new_text += line + '\n'
-        return new_text
-    
-    def perform_config_replacements(svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder):
+    def perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, discord_username, destination_folder):
         server_values = {
             'Name': svr_name,
             'Launcher': launcher,
-            'Admin': looked_up_discord_username if looked_up_discord_username and not isinstance(looked_up_discord_username,bool) else existing_discord_id,
+            'Admin': discord_username,
             'Region': svr_location,
-            'Logging_Config_Version': '1.3',
             'Public_IP': external_ip if __name__ == "__main__" else global_config['hon_data']['svr_ip'],
             'HoN_User': global_config['hon_data']['svr_login'],
             'Servers_per_Core': global_config['hon_data']['svr_total_per_core'],
@@ -397,11 +434,16 @@ async def configure_filebeat(silent=False,test=False):
             'Priority': global_config['hon_data']['svr_priority'],
             'Affinity_Override': global_config['hon_data']['svr_override_affinity'] if operating_system == 'Windows' else None,
             'BotMatch_Allowed': global_config['hon_data']['svr_enableBotMatch'],
-            'GitHub_Branch': MISC.github_branch,
             'HoN_Server_Version': MISC.get_svr_version(global_config['hon_data']['hon_executable_path']),
-            'HoNfigurator_API_Port': global_config['hon_data']['svr_api_port'],
-            'Total_Servers': global_config['hon_data']['svr_total']
+            'Proxy_Enabled': global_config['hon_data']['man_enableProxy'] if 'man_enableProxy' in global_config else False
         }
+        honfigurator_values = {
+            'GitHub_Branch': MISC.github_branch,
+            'Total_Servers': global_config['hon_data']['svr_total']
+            'Version': MISC.get_github_tag(),
+            'API_Port': global_config['hon_data']['svr_api_port']
+        }
+
         filebeat_inputs = {}
         filebeat_inputs['slave_logs'] = \
         {
@@ -410,11 +452,20 @@ async def configure_filebeat(silent=False,test=False):
             'enabled': True,
             'paths': [str(Path(slave_log))],
             'ignore_older': '24h',
-            'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
+            'include_lines': [
+                r'Error: \[\d{2}:\d{2}:\d{2}\] CPacket::Write\(\) - Exceeded MAX_PACKET_SIZE while writing data: "0x[0-9a-fA-F]+", length: \d+', 
+                r'Warning: \[\d{2}:\d{2}:\d{2}\] Client #\d+ is flooding',
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Client #\d+ disconnected: disconnect_timed_out',
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Client #\d+ timing out', 
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] Name: .+', 
+                r'Sv: \[\d{2}:\d{2}:\d{2}\] IP: \d+\.\d+\.\d+\.\d+',
+                r'\[.*\] \[\d{2}:\d{2}:\d{2}\] >.*'
+            ],
             'fields': {
                 'Server': server_values,
+                'HoNfigurator': honfigurator_values,
                 'Log_Type': 'console'
             }
         }
@@ -426,14 +477,44 @@ async def configure_filebeat(silent=False,test=False):
             'enabled': True,
             'paths': [str(Path(match_log))],
             'ignore_older': '24h',
-            'scan_frequency': '60s',
             'exclude_files': '[".gz$"]',
             'fields_under_root': True,
-            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_SWAP','INFO_SETTINGS'],
             'fields': {
                 'Server': server_values,
+                'HoNfigurator': honfigurator_values,
                 'Log_Type': 'match'
-            }
+            },
+            'include_lines': ['PLAYER_CHAT','PLAYER_CONNECT','PLAYER_TEAM_CHANGE','PLAYER_SELECT','PLAYER_RANDOM','PLAYER_SWAP','INFO_SETTINGS', 'INFO_MAP', 'INFO_MATCH', 'PLAYER_CALL_VOTE', 'HERO_DEATH', 'GAME_CONCEDE', 'GAME_END']
+        }
+
+        filebeat_inputs['diagnostic_logs'] = {
+            'type': 'filestream',
+            'id': 'diagnostic_logs',
+            'enabled': True,
+            'paths': [str(Path(diagnostic_log))],
+            'ignore_older': '24h',
+            'exclude_files': '[".gz$"]',
+            'fields_under_root': True,
+            'fields': {
+                'Server': server_values,
+                'HoNfigurator': honfigurator_values,
+                'Log_Type': 'diagnostic'
+            },
+            'processors': [
+                {
+                    'drop_event': {
+                        'when': {
+                            'not': {
+                                'or': [
+                                    {'regexp': {'message': '.*:.*:0[0-5].*'}},
+                                    {'regexp': {'message': '.*:.*:2[0-5].*'}},
+                                    {'regexp': {'message': '.*:.*:4[0-5].*'}}
+                                ]
+                            }
+                        }
+                    }
+                }
+            ]
         }
         
         if global_config:
@@ -450,6 +531,7 @@ async def configure_filebeat(silent=False,test=False):
                     'fields_under_root': True,
                     'fields': {
                         'Server': server_values,
+                        'HoNfigurator': honfigurator_values,
                         'Log_Type': 'proxy'
                     }
                 }
@@ -463,9 +545,11 @@ async def configure_filebeat(silent=False,test=False):
                 'ignore_older': '24h',
                 'scan_frequency': '60s',
                 'exclude_files': '[".gz$"]',
+                'exclude_lines': ['DEBUG'],
                 'fields_under_root': True,
                 'fields': {
                     'Server': server_values,
+                    'HoNfigurator': honfigurator_values,
                     'Log_Type': 'honfigurator'
                 },
                 'parsers': [
@@ -483,13 +567,25 @@ async def configure_filebeat(silent=False,test=False):
         if operating_system == "Windows":
             filebeat_inputs['slave_logs']['encoding'] = 'utf-16le'
             filebeat_inputs['match_logs']['encoding'] = 'utf-16le'
+            filebeat_inputs['diagnostic_logs']['encoding'] = 'utf-16le'
             if 'proxy_logs' in filebeat_inputs:
                 filebeat_inputs['proxy_logs']['encoding'] = 'utf-8' 
         else:
             filebeat_inputs['slave_logs']['charset'] = 'BINARY'
             filebeat_inputs['match_logs']['charset'] = 'BINARY'
+            filebeat_inputs['diagnostic_logs']['charset'] = 'BINARY'
         if 'honfigurator_logs' in filebeat_inputs:
             filebeat_inputs['honfigurator_logs']['encoding'] = 'utf-8'
+        
+        if global_config and not global_config['application_data']['filebeat']['send_diagnostics_data']:
+            del filebeat_inputs['diagnostic_logs']
+        
+        # disabling slave logs, given the MQTT implementation
+        # del filebeat_inputs['slave_logs']
+        
+        # disabling proxy logs for now, dont want extra noise yet
+        if 'proxy_logs' in filebeat_inputs:
+            del filebeat_inputs['proxy_logs']
 
         filebeat_config = {
             'filebeat.inputs': list(filebeat_inputs.values()),
@@ -501,16 +597,16 @@ async def configure_filebeat(silent=False,test=False):
                 'index.number_of_shards': '1'
             },
             'output.logstash': {
-                'hosts': 'hon-elk.honfigurator.app:5044',
+                'hosts': 'logstash.honfigurator.app:5044',
                 'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
                 'ssl.certificate': str(Path(destination_folder) / "client.crt"),
-                'ssl.key': str(Path(destination_folder) / "client.key")
+                'ssl.key': str(Path(destination_folder) / "client.key"),
+                'compression_level': 3
             },
             'processors': [
                 {'add_host_metadata': {'when.not.contains.tags': 'forwarded'}},
                 {'add_locale': None}
-            ],
-            'filebeat.registry.flush': '60s'
+            ]
         }
 
         yaml_config = yaml.dump(filebeat_config)
@@ -555,6 +651,7 @@ async def configure_filebeat(silent=False,test=False):
     svr_desc = None
     slave_log = None
     match_log = None
+    diagnostic_log = None
 
     if global_config is not None and 'hon_data' in global_config:
         svr_name = global_config['hon_data'].get('svr_name')
@@ -563,6 +660,7 @@ async def configure_filebeat(silent=False,test=False):
         
         slave_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "*.clog")
         match_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "*.log")
+        diagnostic_log = str(Path(global_config['hon_data'].get('hon_logs_directory')) / "diagnostics" / "*.log")
 
     if svr_name is None or svr_location is None:
     
@@ -587,28 +685,29 @@ async def configure_filebeat(silent=False,test=False):
     svr_name = svr_name.rsplit(' ', 2)[0] if space_count >= 2 else svr_name
     if not svr_location: svr_location = extract_settings_from_commandline(process.cmdline(), "svr_location")
 
-    if not slave_log: slave_log, match_log = get_log_paths(process)
+    if not slave_log: slave_log, match_log, diagnostic_log = get_log_paths(process)
     if not svr_desc: svr_desc = extract_settings_from_commandline(process.cmdline(),"svr_description")
     launcher = "HoNfigurator" if svr_desc else "COMPEL"
 
-    looked_up_discord_username = await request_client_certificate(svr_name, Path(destination_folder))
+    certificate_requested = await request_client_certificate(svr_name, Path(destination_folder))
+
+    discord_username = get_discord_username()
+    if not discord_username:
+        discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
         
     existing_discord_id, old_config_hash = None, None
     if os.path.exists(config_file_path):
         old_config_hash = calculate_file_hash(config_file_path)
         existing_discord_id = read_admin_value_from_filebeat_config(config_file_path)
     
-    if not existing_discord_id and isinstance(looked_up_discord_username,bool):
-        if roles_database:
-            looked_up_discord_username = await get_discord_user_id_from_api(roles_database.get_discord_owner_id())
-        else:
-            looked_up_discord_username = await step_certificate.discord_oauth_flow_stepca(svr_name, get_filebeat_csr_path(), get_filebeat_crt_path(), get_filebeat_key_path(),get_filebeat_auth_token())
-    
-    if not looked_up_discord_username:
+    # In case of failure retrieving username, set to existing username (assuming it's set)
+    if not discord_username and existing_discord_id:
+        discord_username = existing_discord_id
+    elif not discord_username and not existing_discord_id:
         print_or_log('error', 'Failed to obtain discord user information and finish setting up the server for game server log submission.')
         return
         
-    filebeat_config = perform_config_replacements(svr_name, svr_location, slave_log, match_log, launcher, external_ip, existing_discord_id, looked_up_discord_username, destination_folder)
+    filebeat_config = perform_config_replacements(svr_name, svr_location, slave_log, match_log, diagnostic_log, launcher, external_ip, discord_username, destination_folder)
 
     temp_dir = tempfile.TemporaryDirectory()
     temp_file_path = Path(temp_dir.name) / 'filebeat.yml'
@@ -620,7 +719,7 @@ async def configure_filebeat(silent=False,test=False):
     if old_config_hash != new_config_hash:
         shutil.move(temp_file_path, config_file_path)
         print_or_log('info',f"Filebeat configuration file downloaded and placed at: {config_file_path}")
-        return True
+        return discord_username
     else:
         print_or_log('debug',"No configuration changes required")
         return False
@@ -635,19 +734,30 @@ FAILED_STOP = "Failed to stop Filebeat."
 ALREADY_STOPPED = "Filebeat is already stopped."
 
 
-async def run_command(command_list, success_message=None):
-    process = await asyncio.create_subprocess_shell(' '.join(command_list), stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-    stdout, stderr = await process.communicate()
-    if process.returncode == 0:
-        if success_message: print(success_message)
-        return process
-    else:
-        print(f"Command: {' '.join(command_list)}")
-        print(f"Return code: {process.returncode}")
-        print(f"Error: {stderr.decode()}")
-        return process
+def run_command_sync(command_list):
+    # Use Popen to run the command in a subprocess, without shell=True
+    process = subprocess.Popen(command_list, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    stdout, stderr = process.communicate()
+    return process.returncode, stdout.decode(), stderr.decode()
 
-async def restart_filebeat(filebeat_changed, silent):
+async def run_command(command_list, success_message=None):
+    loop = asyncio.get_running_loop()
+
+    returncode, stdout, stderr = await loop.run_in_executor(
+        None,  # Uses the default executor
+        run_command_sync,
+        command_list
+    )
+
+    if returncode == 0:
+        if success_message:
+            print_or_log('info', success_message)
+        return returncode, stdout, stderr
+    else:
+        print_or_log('error', f"Command: {' '.join(command_list)}\nReturn code: {returncode}\nError: {stderr}")
+        return returncode, stdout, stderr
+
+async def restart_filebeat(filebeat_changed, silent=False):
     async def restart():
         if operating_system == "Windows":
             process_name = "filebeat.exe"
@@ -673,12 +783,12 @@ async def restart_filebeat(filebeat_changed, silent):
         # If silent, only restart filebeat if config has changed and it's currently running
         if filebeat_changed and filebeat_running:
             if await restart():
-                print_or_log('info',"Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+                print_or_log('info',"Setup complete! Please visit https://elastic.honfigurator.app to view server monitoring")
     else:
         # If not silent, start filebeat if stopped, or restart if config changed
         if filebeat_changed and filebeat_running:
             if await restart():
-                print_or_log('info',"Setup complete! Please visit https://hon-elk.honfigurator.app:5601 to view server monitoring")
+                print_or_log('info',"Setup complete! Please visit https://elastic.honfigurator.app to view server monitoring")
         elif not filebeat_running:
             await restart()
 
@@ -768,6 +878,15 @@ async def main(config=None, from_main=True):
 
         if not __name__ == "__main__":
             await filebeat_status()    # sets the overall status of filebeat for retreival by other components
+
+            # initialise MQTT
+            mqtt = MQTTHandler(global_config = global_config, certificate_path=get_filebeat_crt_path(), key_path=get_filebeat_key_path())
+            try:
+                mqtt.connect()
+                mqtt.publish_json("manager/admin", {"event_type":"initialisation_complete"})
+            except Exception as e:
+                print_or_log('error',f"Failed to connect to MQTT broker: {e}")
+            set_mqtt(mqtt)
         
         return True
 

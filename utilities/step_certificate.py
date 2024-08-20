@@ -15,6 +15,7 @@ from datetime import datetime, timedelta
 import aiohttp
 from aiohttp import TCPConnector
 import asyncio
+import traceback
 
 version = "0.24.3"
 system = platform.system()
@@ -171,7 +172,7 @@ async def send_csr_to_server(server_url, csr, cert_name, token, ssl=False):
 async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, token=None):
     # Config
     discord_client_id = '1096750568388702228'
-    server_url = 'https://hon-elk.honfigurator.app:8443'
+    server_url = 'https://step-ca.honfigurator.app:8443'
 
     # Register the client and get a token
     if not token:
@@ -208,7 +209,7 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
                         cert_file.write(cert_text)
 
                     print_or_log('info','Certificate received and saved.')
-                    return response_content["username"]
+                    return True
                 else:
                     print_or_log('error','Failed to send CSR to server.')
             else:
@@ -222,11 +223,14 @@ async def discord_oauth_flow_stepca(cert_name, csr_path, cert_path, key_path, to
             return False
 
 def load_cert_info(cert_path):
-    # Fetch certificate information
-    cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
-    # Convert cert_info string into a dictionary
-    cert_info = json.loads(cert_info)
-    return cert_info
+    try:
+        # Fetch certificate information
+        cert_info = run_command([step_location, "certificate", "inspect", cert_path, "--format", "json"])
+        # Convert cert_info string into a dictionary
+        cert_info = json.loads(cert_info)
+        return cert_info
+    except Exception:
+        LOGGER.error(f"Error in loading cert info:\n\tStep client location: {step_location}\n\tCertificate location: {cert_path}\n{traceback.format_exc()}")
 
 def get_certificate_valid_to(cert_path):
     # Fetch the expiration date from the certificate info
@@ -325,7 +329,7 @@ async def main(stop_event_from_honfig=None,logger=None, set_auth_token=None, set
     else:
         print_or_log('debug',"Step CLI is already installed.")
 
-    ca_url = "https://hon-elk.honfigurator.app"
+    ca_url = "https://step-ca.honfigurator.app"
     if not is_ca_bootstrapped(ca_url):
         await bootstrap_ca(ca_url)
     else:

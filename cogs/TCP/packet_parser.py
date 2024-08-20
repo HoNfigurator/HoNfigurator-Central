@@ -1,4 +1,3 @@
-#from cogs.misc.logging import get_logger
 import traceback
 import inspect
 import re
@@ -22,8 +21,9 @@ def read_string(data, offset):
     return str.decode('utf-8'), offset
 
 class GameManagerParser:
-    def __init__(self, client_id,logger=None):
+    def __init__(self, client_id,logger=None,mqtt=None):
         self.logger = logger
+        self.mqtt = mqtt
         self.packet_handlers = {
             0x40: self.server_announce,
             0x41: self.server_closed,
@@ -36,6 +36,10 @@ class GameManagerParser:
             0x4A: self.replay_update
         }
         self.id = client_id
+    
+    def publish_event(self, topic, data):
+        if self.mqtt:
+            self.mqtt.publish_json(topic, data)
 
     def log(self,level,message):
         if self.logger:
@@ -96,6 +100,7 @@ class GameManagerParser:
             game_server.reset_game_state()
             # await game_server.save_gamestate_to_file()
             game_server.reset_skipped_frames()
+            self.publish_event(topic="game_server/status", data={ "type":"server_closed", **game_server.game_state._state})  
         else:
             self.log("debug",f"CowMaster #{self.id} - Received server closed packet: {packet}")
             cowmaster.reset_cowmaster_state()
@@ -109,32 +114,50 @@ class GameManagerParser:
 
                 Total Length is 54 w 0 Players
                 Contains:
-                    int 1 msg_type			# 0
-                    int 1 status			# 1
-                    int 4 uptime			# 2-6
-                    int 4 server load		# 6-10
-                    int 1 num_clients1		# 10
-                    int 1 match_started		# 11
-                    int 4 unknown           # 12-16
-                    int 4 unknown           # 16-20
-                    int 4 unknown           # 20-24
-                    int 4 unknown           # 24-28
-                    int 4 unknown           # 28-32
-                    int 4 unknown           # 32-36
-                    int 4 unknown           # 36-40
-                    int 1 game_phase        # 40
-                    int 4 unknown           # 40-44
-                    int 4 unknown           # 44-48
-                    int 4 unknown           # 48-52
-                    int 1 num_clients2      # 53
-                With Players, first 54 bytes remains as fixed values, so treat them first. Additional data is tacked on the end as the clients. See code below for parsing
+                    int 1 msg_type			            # 0
+                    int 1 status			            # 1
+                    int 4 uptime			            # 2-6
+                    int 4 server load		            # 6-10
+                    int 1 num_clients1		            # 10
+                    int 1 match_started		            # 11
+                    int 4 num_frame_bytes_sent          # 12-16
+                    int 4 num_frame_packets_sent        # 16-20
+                    int 4 num_frame_errors              # 20-24
+                    int 4 num_frame_packets_errors      # 24-28
+                    int 4 num_frame_bytes_received      # 28-32
+                    int 4 num_frame_packets_received    # 32-36
+                    int 4 memory_usage                  # 36-40
+                    int 1 game_phase                    # 40
+                    int 4 unknown (always 0)            # 40-44
+                    int 4 unknown (always 0)            # 44-48
+                    int 4 unknown (always -1)           # 48-52
+                    int 1 num_clients2                  # 53
+
+                    With Players, above 54 bytes remains as fixed structure, so treat them first. Additional data is tacked on the end as the clients. See code below for parsing
+                    Players bytes begins.
+                    for each client:
+                        -- int account_id
+                        -- string ip address
+                        -- string name
+                        -- string ??? possibly geoip
+                        -- short minping
+                        -- short avgping
+                        -- short maxping
+                        -- short num_reliable_packets_sent
+                        -- short num_reliable_packets_confirmed
+                        -- short num_reliable_packets_client_sent
+                        -- short num_reliable_packets_client_confirmed
+                        -- short num_unreliable_packets_sent
+                        -- short num_unreliable_packets_confirmed
+                        -- short num_unreliable_packets_client_sent
+                        -- short num_unreliable_packets_client_confirmed
         """
 
         # Parse fixed-length fields
         temp = ({
             'status': packet[1],                                        # extract status field from packet
             'uptime': int.from_bytes(packet[2:6], byteorder='little'),  # extract uptime field from packet
-            'cpu_core_util': f"{int.from_bytes(packet[6:10], byteorder='little') / 100}%",   # extract the server load value
+            'cpu_core_util': int.from_bytes(packet[6:10], byteorder='little') / 100,   # extract the server load value
             'num_clients': packet[10],                                  # extract number of clients field from packet
             'match_started': packet[11],                                # extract match started field from packet
             'game_phase': packet[40],                                   # extract game phase field from packet
@@ -148,32 +171,53 @@ class GameManagerParser:
         if len(packet) == 54:
             if game_server:
                 if game_server.game_state._state['num_clients'] == 0 and game_server.game_state._state['players'] != '':
-                    game_server.game_state._state['players'] = ''
+                    game_server.game_state.update({'players':[]})
             return
 
         # Otherwise, extract player data sections from the packet
         data = packet[53:]                                              # slice the packet to get player data section
         ip_pattern = re.compile(rb'\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3}')    # define regex pattern for matching IP addresses
 
-        # Parse the player data sections
+        cursor = 1
+        num_players = data[0]
+
         clients = []
         for idx, ip_match in enumerate(ip_pattern.finditer(data)):
             # Extract IP address, username, account ID, and location from the player data section
-            ip_start, ip_end = ip_match.span()
-            name_start = data[ip_end:].find(b'\x00') + ip_end
-            name_end = data[name_start+1:].find(b'\x00') + name_start + 1
-            name = data[name_start:name_end].decode('utf-8').replace('\x00', '')
-            account_id = int.from_bytes(data[ip_start-4:ip_start], byteorder='little')
-            location_start = data[name_end+1:].find(b'\x00') + name_end + 1
-            location_end = data[location_start+1:].find(b'\x00') + location_start + 1
-            location = data[location_start:location_end-1].decode('utf-8') if location_start > name_end+1 else ''
+            cursor, ip_end = ip_match.span()
+
+            account_id = int.from_bytes(data[cursor-4:cursor], byteorder='little')
+            
+            # Extract IP address
+            ip_end = data[cursor:].find(b'\x00') + cursor
+            ip = data[cursor:ip_end].decode('utf-8')
+            cursor = ip_end + 1
+            
+            # Extract name
+            name_end = data[cursor:].find(b'\x00') + cursor
+            name = data[cursor:name_end].decode('utf-8')
+            cursor = name_end + 1
+            
+            # Extract possible location
+            location_end = data[cursor:].find(b'\x00') + cursor
+            location = data[cursor:location_end].decode('utf-8')
+            cursor = location_end + 1
+            
+            # Extract shorts for statistics
+            minping = int.from_bytes(data[cursor:cursor+2], byteorder='little')
+            avgping = int.from_bytes(data[cursor+2:cursor+4], byteorder='little')
+            maxping = int.from_bytes(data[cursor+4:cursor+6], byteorder='little')
+            cursor += 6  # Move cursor ahead by 6 bytes (3 shorts)
 
             # Append extracted data to the clients list as a dictionary
             clients.append({
                 'account_id': account_id,
                 'name': name,
                 'location': location,
-                'ip': data[ip_start:ip_end].decode('utf-8')
+                'ip': ip,
+                'minping': minping,
+                'avgping': avgping,
+                'maxping': maxping
             })
         # Update game dictionary with player information and print
         if game_server:
@@ -189,7 +233,7 @@ class GameManagerParser:
         current_time = datetime.datetime.now().timestamp()  # Get current time in Unix timestamp format
         self.log("debug", f"GameServer #{self.id} - skipped server frame: {skipped_frames}msec")
         if game_server:
-            game_server.increment_skipped_frames(skipped_frames, current_time)
+            await game_server.increment_skipped_frames(skipped_frames, current_time)
 
 
 
@@ -233,6 +277,8 @@ class GameManagerParser:
             game_server.reset_skipped_frames()
 
         self.log("debug", f"GameServer #{self.id} - {lobby_info}")
+        self.publish_event(topic="game_server/match", data={ "type":"lobby_created", **game_server.game_state._state})
+        
 
     async def lobby_closed(self,packet, game_server=None, cowmaster=None):
         """   0x45 Lobby closed
@@ -250,6 +296,7 @@ class GameManagerParser:
             game_server.reset_game_state()
             # await game_server.save_gamestate_to_file()
             game_server.reset_skipped_frames()
+            self.publish_event(topic="game_server/match", data={ "type":"lobby_closed", **game_server.game_state._state})
         else:
             cowmaster.reset_cowmaster_state()
 
@@ -314,7 +361,7 @@ class GameManagerParser:
                 match_id = int(match.group(1))
                 self.log("debug",f"Updated running match data with Match ID: {match_id}")
                 game_server.update_dict_value('current_match_id',match_id)
-                await game_server.load_gamestate_from_file(match_only=True)
+                # await game_server.load_gamestate_from_file(match_only=True) # disabled function
             else:
                 self.log("debug","Match ID not found")
 
@@ -632,7 +679,7 @@ class ClientChatParser:
         if replay_status['status'] == 6: status = 'UPLOADING'
         if replay_status['status'] == 7:
             status = 'DONE'
-            self.log("info",f"Replay available: http://api.kongor.online/replays/M{replay_status['match_id']}.honreplay")
+            self.log("info",f"Replay available: http://api.projectkongor.com/replays/M{replay_status['match_id']}.honreplay")
 
         self.log("debug",f"{self.print_prefix}Replay status update\n\tMatch ID: {replay_status['match_id']}\n\tStatus: {status}")
 
@@ -641,11 +688,15 @@ class ClientChatParser:
     async def chat_authentication_ok(self,packet_data):
         offset = 2
         status, offset = read_int(packet_data, offset)
+
+        self.log("debug",f"{self.print_prefix}Authentication OK")
         return status
 
     async def chat_authentication_fail(self,packet_data):
         offset = 2
         status, offset = read_int(packet_data, offset)
+
+        self.log("debug",f"{self.print_prefix}Authentication FAIL")
         return status
 
 

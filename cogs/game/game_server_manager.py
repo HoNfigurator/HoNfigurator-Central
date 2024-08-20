@@ -10,31 +10,29 @@ from datetime import datetime, timedelta
 import inspect
 import tempfile
 import shutil
+import aiohttp
 from cogs.misc.exceptions import HoNAuthenticationError, HoNServerError
 from cogs.connectors.masterserver_connector import MasterServerHandler
 from cogs.connectors.chatserver_connector import ChatServerHandler
 from cogs.TCP.game_packet_lsnr import handle_clients
 from cogs.TCP.auto_ping_lsnr import AutoPingListener
 from cogs.connectors.api_server import start_api_server
+from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.game_server import GameServer
 from cogs.game.cow_master import CowMaster
 from cogs.handlers.commands import Commands
-from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GameServerCommands, EventBus as ManagerEventBus
-from cogs.misc.logger import get_logger, get_misc, get_home, get_filebeat_status, get_filebeat_auth_url
+from cogs.handlers.events import stop_event, ReplayStatus, GameStatus, GamePhase, GameServerCommands, EventBus as ManagerEventBus
+from cogs.misc.logger import get_logger, get_misc, get_home, get_mqtt, get_filebeat_status, get_filebeat_auth_url, get_roles_database, set_roles_database
 from pathlib import Path
 from cogs.game.healthcheck_manager import HealthCheckManager
 from enum import Enum
 from os.path import exists
-from utilities.filebeat import main as filebeat, filebeat_status
+from utilities.filebeat import main as filebeat, filebeat_status, get_filebeat_auth_url
+import random
 
 LOGGER = get_logger()
-from cogs.handlers.data_handler import get_cowmaster_configuration
 MISC = get_misc()
 HOME_PATH = get_home()
-HON_WAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
-HON_WAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
-HON_LAS_VERSION_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
-HON_LAS_LAUNCHER_DOWNLOAD_URL = "http://gitea.kongor.online/administrator/KONGOR/raw/branch/main/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
 
 class GameServerManager:
     def __init__(self, global_config, setup):
@@ -45,6 +43,22 @@ class GameServerManager:
         global_config (dict): A dictionary containing the global configuration for the game server.
         """
         self.global_config = global_config
+        """
+        Global class configuration. These are URLs for retrieval of game data for patching and updates.
+        """
+        self.HON_WAS_VERSION_URL = "https://download.kongor.us/patch/was-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+        self.HON_WAS_LAUNCHER_DOWNLOAD_URL = "https://download.kongor.us/patch/was-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
+        self.HON_LAS_VERSION_URL = "https://download.kongor.us/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+        self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "https://download.kongor.us/patch/las-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
+        if "svr_beta_mode" in self.global_config['hon_data'] and self.global_config['hon_data']['svr_beta_mode']:
+            if MISC.get_os_platform() == "win32":
+                self.global_config['hon_data']['architecture'] = "wxs-crIac6LASwoafrl8FrOa"
+            else:
+                self.global_config['hon_data']['architecture'] = "lxs-crIac6LASwoafrl8FrOa"
+            self.HON_LAS_VERSION_URL = "https://download.kongor.us/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/version.cfg"
+            self.HON_LAS_LAUNCHER_DOWNLOAD_URL = "https://download.kongor.us/patch/lxs-crIac6LASwoafrl8FrOa/x86-biarch/launcher.zip"
+            self.HON_WAS_VERSION_URL = "https://download.kongor.us/patch/wxs-crIac6LASwoafrl8FrOa/x86_64/version.cfg"
+            self.HON_WAS_LAUNCHER_DOWNLOAD_URL = "https://download.kongor.us/patch/wxs-crIac6LASwoafrl8FrOa/x86_64/hon_update_x64.zip"
         """
         Event Subscriptions. These are used to call other parts of the code in an event-driven approach within async functions.
         """
@@ -72,6 +86,7 @@ class GameServerManager:
         self.event_bus.subscribe('check_for_restart_required', self.check_for_restart_required)
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.event_bus.subscribe('update_server_start_semaphore', self.update_server_start_semaphore)
+        self.event_bus.subscribe('notify_discord_admin', self.notify_discord_admin)
         self.tasks = {
             'cli_handler':None,
             'health_checks':None,
@@ -82,11 +97,19 @@ class GameServerManager:
             'task_cleanup': None
         }
         self.schedule_task(self.cleanup_tasks_every_30_minutes(), 'task_cleanup')
+        self.schedule_task(self.heartbeat(), 'heartbeat')
         # initialise the config validator in case we need it
         self.setup = setup
 
         # set the current state of patching
         self.patching = False
+
+        # set up connection to the local DB for the occasional query
+        if not get_roles_database():
+            self.roles_database = RolesDatabase()
+            set_roles_database(self.roles_database)
+        else:
+            self.roles_database = get_roles_database()
 
         # preserve the current system path. We need it for a silly fix.
         self.preserved_path = os.environ["PATH"]
@@ -113,8 +136,10 @@ class GameServerManager:
 
         # Initialize MasterServerHandler and send requests
         self.chat_server_handler = None
-        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
-        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.global_config)
+        self.chat_server_connected = None
+        self.master_server_connected = None
+        self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], patch_server=self.global_config['hon_data']['svr_patchServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
+        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.notify_discord_admin, self.global_config)
 
         coro = self.health_check_manager.run_health_checks()
         self.schedule_task(coro, 'health_checks')
@@ -175,7 +200,47 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
-    
+            
+    async def notify_discord_admin(self, **kwargs):
+        url = 'https://management.honfigurator.app:3001/api-ui/sendDiscordMessage'
+        headers = {'Content-Type': 'application/json'}
+
+        body = {
+            "discordId": self.roles_database.get_discord_owner_id(),
+            "serverName": self.global_config['hon_data']['svr_name'],
+        }
+
+        if kwargs.get('type') == 'lag':
+            body["timeLagged"] = kwargs.get('time_lagged')
+            body["serverInstance"] = kwargs.get('instance'),
+            body["matchId"] = kwargs.get('match_id')
+            log_message = "server side lag"
+        elif kwargs.get('type') == 'crash':
+            body["timeCrashed"] = kwargs.get('time_of_crash')
+            body["gamePhase"] = kwargs.get('game_phase')
+            body["serverInstance"] = kwargs.get('instance'),
+            body["matchId"] = kwargs.get('match_id')
+            log_message = "server crash"
+        elif kwargs.get('type') == 'disk_alert':
+            body["diskUtilisation"] = kwargs.get('disk_space')
+            body["severity"] = kwargs.get('severity')
+            log_message = "disk space alert"
+        else:
+            raise ValueError(f"Unknown event type: {kwargs.get('type')}")
+
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=headers, json=body, ssl=False) as response:
+                response_text = await response.text()
+                if response.status != 200:
+                    LOGGER.error(f"Error notifying discord admin of {log_message}: {response.status} - {response_text}")
+                    if get_mqtt():
+                        get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{kwargs.get('type')}_notification_failure","message": f"Failed to notify server administrator. {response.status} - {response_text}", "response_code": response.status, "response_status": response.status})
+                    return response.status, response_text
+                LOGGER.info(f"Successfully notified discord admin of {log_message}.")
+                if get_mqtt():
+                    get_mqtt().publish_json("manager/admin", {"event_type": f"discord_{kwargs.get('type')}_notification_success","message": "Successfully notified server administrator."})
+                return response.status, response_text
+              
     async def cmd_shutdown_server(self, game_server=None, force=False, delay=0, delete=False, disable=True, kill=False):
         try:
             if game_server is None: return False
@@ -187,11 +252,15 @@ class GameServerManager:
                     client_connection.writer.write(GameServerCommands.SHUTDOWN_BYTES.value)
                     await client_connection.writer.drain()
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. FORCED.")
+                    if get_mqtt():
+                        get_mqtt().publish_json("manager/command", {"event_type":"server_shutdown_force"})
                     return True
                 else:
                     game_server.schedule_task(game_server.schedule_shutdown_server(delete=delete, disable=disable),'scheduled_shutdown')
                     # await asyncio.sleep(0)  # allow the scheduled task to be executed
                     LOGGER.info(f"Command - Shutdown packet sent to GameServer #{game_server.id}. Scheduled.")
+                    if get_mqtt():
+                        get_mqtt().publish_json("manager/command", {"event_type":"server_shutdown_scheduled"})
                     return True
             else:
                 # this server hasn't connected to the manager yet
@@ -264,7 +333,9 @@ class GameServerManager:
             client_connection.writer.write(length_bytes)
             client_connection.writer.write(command_bytes)
             await client_connection.writer.drain()
-            LOGGER.info(f"Command - command sent to GameServer #{game_server.id}.")
+            if get_mqtt():
+                get_mqtt().publish_json("manager/command", {"event_type":"custom_command","command":command})
+            LOGGER.info(f"Command - Custom command ({command}) sent to GameServer #{game_server.id}.")
         except Exception:
             LOGGER.exception(f"An error occurred while handling the {inspect.currentframe().f_code.co_name} function: {traceback.format_exc()}")
 
@@ -309,6 +380,45 @@ class GameServerManager:
                 starting_port += 1
         except Exception as e:
             LOGGER.exception(e)
+    
+    async def heartbeat(self):
+        while not stop_event.is_set():
+            # Introduce jitter: sleep for a random duration between 0 to 10 seconds
+            jitter = random.uniform(0, 10)
+            await asyncio.sleep(jitter)
+            
+            for _ in range(60):
+                if stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
+            if get_mqtt():
+                get_mqtt().publish_json("manager/status", {"event_type":"heartbeat", **self.manager_status()})
+    
+    def manager_status(self):
+        total_free_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.IDLE.value])
+        total_occupied_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] != GamePhase.IDLE.value])
+        total_servers_in_lobby = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.IN_LOBBY.value])
+        total_servers_in_picking_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.PICKING_PHASE.value])
+        total_servers_in_banning_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.BANNING_PHASE.value])
+        total_servers_in_game_ended_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.GAME_ENDED.value])
+        total_servers_in_game_ending_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.GAME_ENDING.value])
+        total_servers_in_match_started_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.MATCH_STARTED.value])
+        total_servers_in_preparation_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.PREPERATION_PHASE.value])
+        total_players_online = sum(game_server.game_state._state['num_clients'] for game_server in self.game_servers.values())
+        
+        return {
+            "total_free_servers": total_free_servers,
+            "total_occupied_servers": total_occupied_servers,
+            "total_servers_in_lobby": total_servers_in_lobby,
+            "total_servers_in_picking_phase": total_servers_in_picking_phase,
+            "total_servers_in_banning_phase": total_servers_in_banning_phase,
+            "total_servers_in_game_ended_phase": total_servers_in_game_ended_phase,
+            "total_servers_in_game_ending_phase": total_servers_in_game_ending_phase,
+            "total_servers_in_match_started_phase": total_servers_in_match_started_phase,
+            "total_servers_in_preparation_phase": total_servers_in_preparation_phase,
+            "total_players_online": total_players_online,
+            "total_configured_servers": len(self.game_servers)
+        }
 
     async def check_upstream_patch(self):
         if self.patching:
@@ -330,7 +440,7 @@ class GameServerManager:
             LOGGER.debug(f"Upstream patch information: {parsed_patch_information}")
             self.latest_available_game_version = parsed_patch_information['latest']
 
-            if local_svr_version != self.latest_available_game_version:
+            if local_svr_version != self.latest_available_game_version and self.latest_available_game_version not in ["0.0.0.0","0.0.0"]:
                 LOGGER.info(f"A newer patch is available. Initiating server shutdown for patching.\n\tUpgrading from {local_svr_version} --> {parsed_patch_information['latest']}")
                 return True
 
@@ -342,8 +452,12 @@ class GameServerManager:
     async def start_autoping_listener(self):
         LOGGER.debug("Starting AutoPingListener...")
         await self.auto_ping_listener.start_listener()
+        if get_mqtt():
+            get_mqtt().publish_json("manager/admin", {"event_type":"autoping_started"})
 
     async def start_api_server(self):
+        if get_mqtt():
+            get_mqtt().publish_json("manager/admin", {"event_type":"api_started"})
         await start_api_server(self.global_config, self.game_servers, self.tasks, self.health_check_manager.tasks, self.event_bus, self.find_replay_file, port=self.global_config['hon_data']['svr_api_port'])
 
     async def start_game_server_listener(self, host, game_server_to_mgr_port):
@@ -364,6 +478,9 @@ class GameServerManager:
             host, game_server_to_mgr_port
         )
         LOGGER.highlight(f"[*] HoNfigurator Manager - Listening on {host}:{game_server_to_mgr_port} (LOCAL)")
+        
+        if get_mqtt():
+            get_mqtt().publish_json("manager/admin", {"event_type":"gameserver_listener_started"})
 
         await stop_event.wait()
 
@@ -397,14 +514,25 @@ class GameServerManager:
             HoNAuthenticationError: If the authentication fails.
         """
         mserver_auth_response = await self.master_server_handler.send_replay_auth(f"{self.global_config['hon_data']['svr_login']}:", hashlib.md5(self.global_config['hon_data']['svr_password'].encode()).hexdigest())
+        
         if mserver_auth_response[1] != 200:
             prefix = (f"[{mserver_auth_response[1]}] Authentication to MasterServer failed. ")
             if mserver_auth_response[1] in [401, 403]:
                 LOGGER.error(f"{prefix}Please ensure your username and password are correct in {HOME_PATH / 'config' / 'config.json'}")
+                if mserver_auth_response[1] == 401:
+                    msg = 'Credentials incorrect'
+                else:
+                    msg = 'Credentials correct, but no permissions to host.'
+                self.set_masterserver_status(False, msg)
+                
             elif mserver_auth_response[1] > 500 and mserver_auth_response[1] < 600:
                 LOGGER.error(f"{prefix}The issue is most likely server side.")
+                self.set_masterserver_status(False,'Server side issue, master server is probably down.')
             raise HoNAuthenticationError(f"[{mserver_auth_response[1]}] Authentication error.")
+        
         LOGGER.highlight("Authenticated to MasterServer.")
+        self.set_masterserver_status(True)
+
         parsed_mserver_auth_response = phpserialize.loads(mserver_auth_response[0].encode('utf-8'))
         parsed_mserver_auth_response = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_auth_response.items()}
         self.master_server_handler.set_server_id(parsed_mserver_auth_response['server_id'])
@@ -437,6 +565,8 @@ class GameServerManager:
 
             except (HoNAuthenticationError, ConnectionResetError, Exception ) as e:
                 LOGGER.error(f"{e.__class__.__name__} occurred. Retrying in {retry} seconds...")
+                self.set_chatserver_status(False, e)
+
                 for _ in range(retry):
                     if stop_event.is_set():
                         break
@@ -466,6 +596,8 @@ class GameServerManager:
             raise HoNAuthenticationError(f"Chatserver authentication failure")
 
         LOGGER.highlight("Authenticated to ChatServer.")
+        
+        self.set_chatserver_status(True)
 
         # Start handling packets from the chat server
         await self.chat_server_handler.handle_packets()
@@ -486,6 +618,33 @@ class GameServerManager:
         parsed_mserver_stats_response = {key.decode() if isinstance(key, bytes) else key: (value.decode() if isinstance(value, bytes) else value) for key, value in parsed_mserver_stats_response.items()}
 
         return True
+
+    def set_server_status(self, server_type, connected, info=''):
+        current_status = getattr(self, f"{server_type}_connected", None)
+        mqtt = get_mqtt()
+
+        if mqtt:
+            if server_type == 'chatsv':
+                mqtt.set_chatsv_state(connected)
+            else:
+                mqtt.set_mastersv_state(connected)
+        
+        if current_status != connected:
+            setattr(self, f"{server_type}_connected", connected)
+            state_info = 'connected' if connected else 'disconnected'
+            if mqtt:
+                mqtt.publish_json("manager/admin", {"event_type": f"{server_type}_state_change", "info": state_info})
+
+        connection_event_type = f"{server_type}_connection_succeeded" if connected else f"{server_type}_connection_failed"
+        if mqtt:
+            mqtt.publish_json("manager/admin", {"event_type": connection_event_type, "info": str(info)})
+
+    def set_chatserver_status(self, connected, info=''):
+        self.set_server_status('chatsv', connected, info)
+
+    def set_masterserver_status(self, connected, info=''):
+        self.set_server_status('mastersv', connected, info)
+
 
     def create_all_game_servers(self):
         for id in range (1,self.global_config['hon_data']['svr_total']+1):
@@ -548,7 +707,7 @@ class GameServerManager:
         if max_servers < 0: max_servers = 0
         self.global_config['hon_data']['svr_total'] = max_servers
 
-        self.setup.validate_hon_data(self.global_config['hon_data'])
+        await self.setup.validate_hon_data(self.global_config['hon_data'])
 
         idle_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') != 3]
         occupied_servers = [game_server for game_server in self.game_servers.values() if game_server.get_dict_value('status') == 3]
@@ -816,8 +975,6 @@ class GameServerManager:
         upload_details_parsed = {key.decode(): (value.decode() if isinstance(value, bytes) else value) for key, value in upload_details[0].items()}
         LOGGER.debug(f"Uploading {replay_file_name} to {upload_details_parsed['TargetURL']}")
 
-        LOGGER.debug(f"Uploading {replay_file_name} to {upload_details_parsed['TargetURL']}")
-
         # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOADING)
         res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.UPLOADING)
         try:
@@ -825,15 +982,21 @@ class GameServerManager:
         except Exception:
             LOGGER.error(f"Error uploading replay file {replay_file_path}")
             LOGGER.error(f"Undefined Exception: {traceback.format_exc()}")
+            if get_mqtt():
+                get_mqtt().publish_json("manager/admin", {"event_type":"replay_upload_failure","message":f"failed. Premature failure."})
 
         if upload_result[1] not in [204,200]:
             # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.GENERAL_FAILURE)
             LOGGER.error(f"Replay upload failed! HTTP Upload Response ({upload_result[1]})\n\t{upload_result[0]}")
+            if get_mqtt():
+                get_mqtt().publish_json("manager/admin", {"event_type":"replay_upload_failure","message":f"failed. HTTP response code: {upload_result[1]}"})
             return
         # await self.event_bus.emit('replay_status_update', match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
         res = await self.chat_server_handler.create_replay_status_update_packet(match_id, account_id, ReplayStatus.UPLOAD_COMPLETE)
         LOGGER.debug("Replay upload completed successfully.")
+        if get_mqtt():
+            get_mqtt().publish_json("manager/admin", {"event_type":"replay_upload_success","message":"successful"})
 
 
     async def remove_client_connection(self,client_connection):
@@ -854,7 +1017,7 @@ class GameServerManager:
                 game_server = self.game_servers.get(key, None)
                 #   This is in case game server doesn't exist intentionally (maybe config changed)
                 if game_server:
-                    game_server.reset_game_state()
+                    # game_server.reset_game_state() # this is happening prematurely, and crash reports are not aware of the current match ID or phase
                     game_server.unset_client_connection()
                 # indicate that the sub commands should be regenerated since the list of connected servers has changed.
                 # await self.commands.initialise_commands()
@@ -1006,7 +1169,7 @@ class GameServerManager:
             LOGGER.error(f"URL: {url} - Error occurred while extracting CRC from file: {e}")
             return None
 
-    async def initialise_patching_procedure(self, timeout=1000, source='startup'):
+    async def initialise_patching_procedure(self, timeout=3600, source='startup'):
         if self.patching:
             LOGGER.warn("Patching is already in progress.")
             return
@@ -1024,13 +1187,13 @@ class GameServerManager:
         if MISC.get_os_platform() == "win32":
             launcher_binary = 'hon_update_x64.exe'
             launcher_zip = 'hon_update_x64.zip'
-            hon_version_url = HON_WAS_VERSION_URL
-            launcher_download_url = HON_WAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = self.HON_WAS_VERSION_URL
+            launcher_download_url = self.HON_WAS_LAUNCHER_DOWNLOAD_URL
         else:
             launcher_binary = 'launcher'
             launcher_zip = 'launcher.zip'
-            hon_version_url = HON_LAS_VERSION_URL
-            launcher_download_url = HON_LAS_LAUNCHER_DOWNLOAD_URL
+            hon_version_url = self.HON_LAS_VERSION_URL
+            launcher_download_url = self.HON_LAS_LAUNCHER_DOWNLOAD_URL
 
         launcher_crc = await self.patch_extract_crc_from_file(hon_version_url)
         if not launcher_crc:
@@ -1095,6 +1258,7 @@ class GameServerManager:
                 return False
 
             LOGGER.info("Patching successful!")
+            self.global_config['hon_data']['svr_version'] = svr_version
             if source == "startup":
                 return True
             elif source == "healthcheck":

@@ -31,18 +31,10 @@ class AutoPingListener(asyncio.DatagramProtocol):
 
     def __init__(self, config, port):
         self.config = config
-        self.server_name = config["hon_data"]["svr_name"]
         self.port = port
-        self.game_version = config["hon_data"]["svr_version"]
         self.server_address = '0.0.0.0'
         self.transport = None
         self.protocol = None
-        self.message_size = 69 + len(self.server_name) + len(self.game_version)
-        self.prepared_response = bytearray(self.message_size)
-        self.prepared_response[42] = 0x01
-        self.prepared_response[43] = 0x66
-        self.prepared_response[46: 46 + len(self.server_name)] = self.server_name.encode()
-        self.prepared_response[50 + len(self.server_name): 50 + len(self.server_name) + len(self.game_version)] = self.game_version.encode()
 
     def connection_made(self, transport):
         """
@@ -79,7 +71,16 @@ class AutoPingListener(asyncio.DatagramProtocol):
                 LOGGER.warn("Unknown message - 43")
                 return
 
-            response = self.prepared_response.copy()
+            # Prepare the response on the fly
+            server_name = self.config["hon_data"]["svr_name"]
+            game_version = self.config["hon_data"]["svr_version"]
+            message_size = 69 + len(server_name) + len(game_version)
+            response = bytearray(message_size)
+            response[42] = 0x01
+            response[43] = 0x66
+            response[46: 46 + len(server_name)] = server_name.encode()
+            response[50 + len(server_name): 50 + len(server_name) + len(game_version)] = game_version.encode()
+
             response[44] = data[44]
             response[45] = data[45]
 
@@ -87,7 +88,7 @@ class AutoPingListener(asyncio.DatagramProtocol):
             self.transport.sendto(response, addr)
 
         except Exception:
-            LOGGER.exception(traceback.format_exc())
+            LOGGER.error(traceback.format_exc())
 
     async def start_listener(self):
         """

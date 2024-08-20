@@ -9,8 +9,8 @@ def get_current_timestamp():
     return datetime.now().strftime('%Y-%m-%d %H:%M:%S')
 
 LOCAL_ADDR = "127.0.0.1"
-LOCAL_PORT = 81
-REMOTE_ADDR = "104.21.81.134"  # Replace with the target server's address
+LOCAL_PORT = 80
+REMOTE_ADDR = "172.67.141.3"  # Replace with the target server's address
 REMOTE_PORT = 80
 
 def my_print(*args, **kwargs):

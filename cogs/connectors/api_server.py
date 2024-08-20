@@ -15,7 +15,7 @@ from fastapi.responses import JSONResponse
 from typing import Any, Dict
 import uvicorn
 import asyncio
-from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url
+from cogs.misc.logger import get_logger, get_misc, get_home, get_setup, get_filebeat_auth_url, get_roles_database, set_roles_database
 from cogs.handlers.events import stop_event
 from cogs.db.roles_db_connector import RolesDatabase
 from cogs.game.match_parser import MatchParser
@@ -37,7 +37,11 @@ HOME_PATH = get_home()
 MISC = get_misc()
 SETUP = get_setup()
 
-roles_database = RolesDatabase()
+if not get_roles_database():
+    roles_database = RolesDatabase()
+    set_roles_database(roles_database)
+else:
+    roles_database = get_roles_database()
 
 CACHE_EXPIRY = timedelta(minutes=20)  # Change to desired cache expiry time
 user_info_cache = {}
@@ -133,6 +137,14 @@ def check_permission(permission: str, token_and_user_info: dict = Depends(verify
 
     return token_and_user_info
 
+# For endpoints which use IP boundaries instead of discord access token permissions
+allowed_ips = ['65.109.19.104','127.0.0.1']
+# Dependency function to check IP
+def check_ip(request: Request):  # Use capitalized Request for type hint
+    client_ip = request.client.host  # Access the client's IP address
+    if client_ip not in allowed_ips:
+        raise HTTPException(status_code=401, detail="Unauthorized IP address")
+
 """
 API Endpoints below
 """
@@ -160,6 +172,14 @@ async def public_serverinfo():
         }
     return JSONResponse(status_code = 200, content = response)
 
+@app.get("/api/public/get_honfigurator_version", description="Gets the current HoNfigurator Version #")
+async def get_honfigurator_version():
+    return {
+        "version": MISC.get_github_tag(),
+        "latest_github_update": MISC.get_git_commit_date(),
+        "github_branch": MISC.get_github_branch()
+    }
+
 @app.get("/api/public/check_filebeat_status", summary="Check whether Filebeat is installed and configured to send server logs.")
 async def filebeat_installed():
     status_dict = await filebeat_status()
@@ -169,6 +189,22 @@ async def filebeat_installed():
     else:
         return JSONResponse(status_code=404, content=status_dict)
 
+@app.get("/api/public/get_skipped_frame_data/{port}")
+def get_skipped_frame_data(port: str):
+    temp = {}
+    if port != "all":
+        game_server = game_servers.get(int(port),None)
+        if game_server is None: return
+        temp = game_server.get_dict_value("skipped_frames_detailed")
+    else:
+        for game_server in game_servers.values():
+            temp[game_server.config.get_local_by_key('svr_name')] = game_server.get_dict_value("skipped_frames_detailed")
+    json_content = json.dumps(temp, indent=2)
+    return Response(content=json_content, media_type="application/json")
+
+@app.get("/api/public/get_hon_version")
+async def get_hon_version():
+    return {"data":MISC.hon_version}
 
 """Protected Endpoints"""
 """Client registration to add server"""
@@ -241,7 +277,7 @@ async def get_replay(match_id: str, token_and_user_info: dict = Depends(check_pe
 @app.post("/api/set_hon_data", description="Sets the 'hon_data' key within the global manager data dictionary")
 async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     try:
-        validation = SETUP.validate_hon_data(hon_data=hon_data)
+        validation = await SETUP.validate_hon_data(hon_data=hon_data)
         if validation:
             global_config['hon_data'] = hon_data
             await manager_event_bus.emit('update_server_start_semaphore')
@@ -253,7 +289,7 @@ async def set_hon_data(hon_data: dict = Body(...), token_and_user_info: dict = D
 @app.post("/api/set_app_data", description="Sets the 'application_data' key within the global manager data dictionary")
 async def set_app_data(app_data: dict = Body(...), token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     try:
-        validation = SETUP.validate_hon_data(application_data=app_data)
+        validation = await SETUP.validate_hon_data(application_data=app_data)
         if validation:
             global_config['application_data'] = app_data
             await manager_event_bus.emit('check_for_restart_required', config_reload=True)
@@ -530,7 +566,9 @@ async def get_honfigurator_log(num: int, token_and_user_info: dict = Depends(che
     return file_content[-num:][::-1]
 
 @app.get("/api/get_chat_logs/{match_id}", description="Retrieve a list of chat entries from a given match id")
-def get_chat_logs(match_id: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
+def get_chat_logs(match_id: str, request: Request):
+    check_ip(request)  # Call check_ip with the request object
+
     if 'm' not in match_id.lower():
         match_id = f'M{match_id}'
     log_path = global_config['hon_data']['hon_logs_directory'] / f"{match_id}.log"
@@ -637,7 +675,7 @@ def get_all_users(token_and_user_info: dict = Depends(check_permission_factory(r
 def get_default_users(token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
     return roles_database.get_default_users()
 
-@app.get("/api/user", summary="Get specified user with associated roles")
+@app.get("/api/user", summary="Get current authenticated user with associated roles")
 # def get_user(user: str, token_and_user_info: dict = Depends(check_permission_factory(required_permission="configure"))):
 def get_user(token_and_user_info: dict = Depends(check_permission_factory(required_permission="monitor"))):
     roles = roles_database.get_user_roles_by_discord_id(token_and_user_info['user_info']['id'])

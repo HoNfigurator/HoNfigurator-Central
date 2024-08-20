@@ -22,17 +22,19 @@ This guide provides steps for linking the configured HoNfigurator server to a mo
     
 ## Requirements
 1. You must meet the [minimum system requirements](docs/hardware-requirements.md)
-1. You must have a registered [Project Kongor](https://kongor.online/) HoN account. **1 per server hosting**
+1. You must have a registered [Project Kongor](https://projectkongor.com/) HoN account. **1 per server hosting**
 1. You must be a member of the Project Kongor [Discord channel](https://discord.gg/kongor).
-> **Note** This is how hosts are onboarded, and given the appropriate roles.
+    > [!Note]
+    > This is how hosts are onboarded, and given the appropriate roles.
 1. You must accept the risks of hosting game servers.
-	- Your Public IP will be exposed to players connecting to your server.
-	- Hosting private game servers could have legal issues as it requires server files not public to original HoN. They are not provided in this repository.
+   - Your Public IP will be exposed to players connecting to your server.
+    > [!WARNING]
+    > Hosting private game servers requires the usage of binaries not available in the original and public HoN. You accept the risk of using such files that do not belong to you. They are not provided in this repository.
 1. You must be willing to submit match logs to upstream services. These are logs of occurances during games played on your server.
 	- We want to ensure that trends from games can be analysed in monitoring tools, and that a fair experienced is had by all players.
  	- How it works: [Monitoring](docs/monitoring.md)
 1. You must be onboarded as a HOST in the Project Kongor Discord channel. Only whitelisted accounts can host.
-   - Use the [hosting channel](https://discord.com/channels/991034716360687637/1018466634408673340) to express your interest
+   - Use the Project KONGOR [hosting channel](https://discord.com/channels/991034716360687637/1018466634408673340) to express your interest
 
 ## Installation
 <details>
@@ -59,15 +61,20 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 <details>
 <summary>Linux</summary>
 
-1. Install: curl sudo screen (e.g. ``apt install curl sudo screen -y``)
-2. ``curl https://kongor.superbjorn.de/scripts/las/installer.sh | sudo bash -``
-3. HoNfigurator should clone into /opt/hon/honfigurator once the installer completes.
-> **Warning** its strongly recommended to run the manager in screen  
-3. Switch to your HoNfigurator-Central directory and execute ./main.py
-	- ``cd /opt/hon/honfigurator``
-	- ``python3 main.py``
-
-> **Note** Your game-/config-/manager files can be found at /opt/hon/
+1. Install: curl sudo tmux
+    - ``apt install curl sudo screen -y``
+1. Run the installer
+    - Mirror 1: ``curl https://honfigurator.app/hon/server/las/installer.sh | sudo bash -``
+    - Mirror 2: ``curl https://las.superbjorn.de/installer.sh | sudo bash -``
+1. Once done, the files will be available here:
+    - HoNfigurator (Manager): ``/opt/hon/honfigurator``
+    - HoN Server: ``/opt/hon/app/``
+    - HoN Logs & Replays: ``/opt/hon/config/KONGOR``
+1. Switch to your HoNfigurator directory and execute ./main.py
+    - ``cd /opt/hon/honfigurator``
+    - ``python3 main.py``
+    > [!WARNING]
+    > It's strongly recommended to run the manager in screen
 
 - Building Pipeline (Installation):
   - &cross; CentOS 7 
@@ -83,7 +90,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
   - &cross; Debian 10
   - &check; Debian 11
   - &cross; Debian 12
-  - &#x2610; Ubuntu 22.04
+  - &check; Ubuntu 22.04
   - &#x2610; Ubuntu 22.10
   - &check; Ubuntu 23.04
 
@@ -93,14 +100,16 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
 You must have finished installing your server before linking the website.
 
 ### Linking your server
-> **Note** You require a discord account to use this service.
+  > [!IMPORTANT]
+  > You require a discord account to use this service.
 1. Browse to https://management.honfigurator.app
 1. Log in with Discord
 1. Select ``Add server to manage``
 1. Provide the name, and address (DNS or IP) of your server.
 	- This information is provided at server startup.
 1. Select OK
-> **Warning** If it fails, please follow the steps in the warning message. 
+    > [!WARNING]
+    > If it fails, please follow the steps in the warning message. 
 
 ### Managing your server
 Page Overview:
@@ -112,6 +121,8 @@ Page Overview:
   - Modify server configuration settings, add or remove servers from your server pool.
 - Users & Roles
   - Manage allowed users. Delegate access or control to different people. Discord ID is mandatory for users you want to add.
+- Replays
+  - Search any replay from any server as if you are in game. You can download them from the browser here.
 - Troubleshooting
   - View HoNfigurator logs, and component health reports.
 
@@ -122,17 +133,21 @@ Page Overview:
 | Admin       | :heavy_check_mark: |                       |                           | :heavy_check_mark:    |
 | User        |                    |                       |                           | :heavy_check_mark:    |
 
-> **Note** Only grant administrative roles to people that you trust.
+> [!NOTE]
+> Only grant administrative roles to people that you trust.
 
-> **Warning** Superadmins can view the hon username and password used to configure the server.  
+> [!WARNING]
+> Superadmins can view the hon username and password used to configure the server.  
 
 ## Monitoring
-When you are all done, your server should appear here after it's first match: https://hon-elk.honfigurator.app:5601
-> **Note** Select "Continue as Guest"
+When you are all done, your server should appear here after it's first match: https://elastic.honfigurator.app
+> [!NOTE]
+> Select "Continue as Guest"
 
 
 ## Final Notes	
-Please submit any feature requests, or issues, via the [Issues](https://github.com/frankthetank001/HoNfigurator-Central/issues) page for this repository.  
-Reach out and [Contact me](https://discordapp.com/users/197967989964800000) if there are any concerns, or ping me in the Project Kongor discord channel.  
+Please submit any feature requests, or issues, via the [Issues](https://github.com/frankthetank001/HoNfigurator-Central/issues) page for this repository.
+
+Reach out and [Contact me](https://discordapp.com/users/197967989964800000) if there are any concerns, or ping me in the Project Kongor discord channel.
+
 The code is fully open source, so any improvements you want to make to the code, please submit a pull request and I will review.
-](https://github.com/HoNfigurator/HoNfigurator-Central/tree/main)

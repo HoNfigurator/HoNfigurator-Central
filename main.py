@@ -48,7 +48,7 @@ import asyncio
 import argparse
 
 #   This must be first, to initialise logging which all other classes rely on.
-from cogs.misc.logger import get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup
+from cogs.misc.logger import get_logger,set_logger,set_home,print_formatted_text,set_misc,set_setup,set_mqtt,get_mqtt
 set_home(HOME_PATH)
 set_logger()
 
@@ -68,6 +68,7 @@ from cogs.handlers.events import stop_event
 from cogs.misc.exceptions import HoNConfigError
 from cogs.game.game_server_manager import GameServerManager
 from cogs.misc.scheduled_tasks import HonfiguratorSchedule
+# from cogs.handlers.mqtt import MQTTHandler
 
 LOGGER = get_logger()
 
@@ -83,9 +84,9 @@ async def main():
             LOGGER.warn("---- IMPORTANT ----\nYou have to run it as root (at the moment)\nReason is the priority setting on the game instances.\n---- IMPORTANT ----")
             return
 
-    config = setup.check_configuration(args)
+    config = await setup.check_configuration(args)
     if config:
-        global_config = setup.get_final_configuration()
+        global_config = await setup.get_final_configuration()
     else:
         LOGGER.exception(f"{traceback.format_exc()}")
         raise HoNConfigError(f"There are unresolved issues in the configuration file. Please address these manually in {CONFIG_FILE}")
@@ -97,7 +98,6 @@ async def main():
     # run scheduler
     jobs = HonfiguratorSchedule(global_config)
     jobs.setup_tasks()
-    # run_continuously()
 
     host = "127.0.0.1"
     game_server_to_mgr_port = global_config['hon_data']['svr_managerPort']
@@ -151,6 +151,10 @@ async def main():
 
 if __name__ == "__main__":
     try:
+        if sys.platform == "win32":
+            loop = asyncio.SelectorEventLoop()
+            asyncio.set_event_loop(loop)
+            
         args = parse_arguments()
         asyncio.run(main())
     except KeyboardInterrupt:
@@ -158,6 +162,10 @@ if __name__ == "__main__":
         stop_event.set()
     except asyncio.CancelledError:
         pass
+
+    if get_mqtt():
+        get_mqtt().publish_json("manager/admin",{"event_type":"shutdown", "message": "Manager shutting down"})
+        get_mqtt().disconnect()
 
     if MISC.get_os_platform() == "linux": subprocess.run(["reset"])
     sys.exit(0)

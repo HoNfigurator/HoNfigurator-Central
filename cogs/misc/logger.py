@@ -73,6 +73,9 @@ class PromptToolkitLogHandler(logging.Handler):
 
 FILEBEAT_AUTH_TOKEN = None
 FILEBEAT_AUTH_URL = None
+MQTT = None
+DISCORD_USERNAME = None
+ROLES_DATABASE = None
 
 # Get the path of the current script
 def get_script_dir(file):
@@ -93,6 +96,13 @@ def set_filebeat_auth_url(url):
 
 def get_filebeat_auth_url():
     return FILEBEAT_AUTH_URL
+
+def set_discord_username(username):
+    global DISCORD_USERNAME
+    DISCORD_USERNAME = username
+
+def get_discord_username():
+    return DISCORD_USERNAME
 
 def set_logger():
     global HOME_PATH
@@ -154,6 +164,14 @@ def get_misc():
     global MISC
     return MISC
 
+def get_mqtt():
+    global MQTT
+    return MQTT
+
+def set_mqtt(mqtt):
+    global MQTT
+    MQTT = mqtt
+
 def set_setup(setup_object):
     global SETUP
     SETUP = setup_object
@@ -176,6 +194,13 @@ def get_filebeat_status():
 def set_filebeat_status(status):
     global FILEBEAT_STATUS
     FILEBEAT_STATUS = status
+
+def get_roles_database():
+    return ROLES_DATABASE
+
+def set_roles_database(roles_database):
+    global ROLES_DATABASE
+    ROLES_DATABASE = roles_database
 
 def flatten_dict(d, parent_key='', sep=' '):
     items = []
