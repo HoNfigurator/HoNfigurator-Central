@@ -439,8 +439,9 @@ async def configure_filebeat(silent=False,test=False):
         }
         honfigurator_values = {
             'GitHub_Branch': MISC.github_branch,
+            'Total_Servers': global_config['hon_data']['svr_total']
             'Version': MISC.get_github_tag(),
-            'API_Port': global_config['hon_data']['svr_api_port'],
+            'API_Port': global_config['hon_data']['svr_api_port']
         }
 
         filebeat_inputs = {}
@@ -611,7 +612,11 @@ async def configure_filebeat(silent=False,test=False):
         yaml_config = yaml.dump(filebeat_config)
         return yaml_config.encode('utf-8')
 
-    external_ip = await get_public_ip()
+    if global_config and global_config['hon_data']['static_svr_ip'] != "0.0.0.0":
+        external_ip = global_config['hon_data']['static_svr_ip']
+    else:
+        external_ip = await get_public_ip()
+
     if not external_ip:
         print_or_log('error','Obtaining public IP address failed.')
 
@@ -865,23 +870,6 @@ async def main(config=None, from_main=True):
         filebeat_changed = False
         if await configure_filebeat(silent=args.silent, test=args.test):
             filebeat_changed = True
-            # Delete scheduled task on Windows
-            if operating_system == "Windows":
-                task_name = "Filebeat Task"
-
-                # Check if the task already exists
-                task_query = subprocess.run(["schtasks", "/query", "/tn", task_name], capture_output=True, text=True)
-                if "ERROR: The system cannot find the file specified." not in task_query.stderr:
-                    # Delete the scheduled task
-                    subprocess.run(["schtasks", "/delete", "/tn", task_name, "/f"])
-                    print_or_log('info',"Scheduled task deleted successfully.")
-
-            # Delete cron job on Linux
-            if operating_system == "Linux":
-                script_path = os.path.abspath(__file__)
-                command = f"python3 {script_path} -silent"
-                remove_cron_job(command)
-                print_or_log('info',"Cron job deleted successfully.")
 
         # if filebeat_changed:
         certificate_exists = check_certificate_exists(get_filebeat_crt_path(), get_filebeat_key_path())

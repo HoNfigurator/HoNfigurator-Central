@@ -105,6 +105,9 @@ class HealthCheckManager:
                 await asyncio.sleep(1)
             public_ip = await MISC.lookup_public_ip_async()
             if public_ip and public_ip != self.global_config['hon_data']['svr_ip']:
+                if self.global_config['hon_data']['static_svr_ip'] != "0.0.0.0":
+                    LOGGER.warn("Statically assigned IP does not match looked up public IP address. If this is expected, ignore this error. Otherwise, it may prevent your server from displaying in game.")
+            else:
                 self.global_config['hon_data']['svr_ip'] = public_ip
                 await self.event_bus.emit('check_for_restart_required')
 
@@ -127,26 +130,27 @@ class HealthCheckManager:
                 # proxy process cleanup
                 proxy_procs = MISC.get_proc("proxy.exe")
 
+            valid_proxies = []  # List to hold valid proxy processes associated with game servers
+
             for game_server in self.game_servers.values():
-                if game_server._proxy_process:
-                    # Capture the game_server._proxy_process in a local variable
-                    server_proxy_process = game_server._proxy_process
+                # Add all proxy processes of this game server to the valid proxies list
+                valid_proxies.extend([proxy for proxy in game_server._proxy_process if proxy])
 
-                    # Create a new list without the game_server._proxy_process if it exists in the proxy_procs list
-                    proxy_procs = [proc for proc in proxy_procs if proc != server_proxy_process]
-
-                    # Perform the general health check for each game server
-                    # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
-                    pass
+                # Perform the general health check for each game server
+                # Example: self.perform_health_check(game_server, HealthChecks.general_healthcheck)
+                pass
 
                 status_value = game_server.get_dict_value('status')
 
                 if status_value not in GameStatus._value2member_map_ and not game_server.client_connection and game_server._proc:
                     LOGGER.info(f"GameServer #{game_server.id} - Idle / stuck game server.")
-                    await self.event_bus.emit('cmd_shutdown_server',game_server, disable=False, kill=True)
-                
+                    await self.event_bus.emit('cmd_shutdown_server', game_server, disable=False, kill=True)
 
-            for proc in proxy_procs:
+            # Filter out valid proxy processes to identify orphaned proxy processes
+            orphaned_procs = [proc for proc in proxy_procs if proc not in valid_proxies]
+
+            for proc in orphaned_procs:
+                LOGGER.info(f"Removed orphan proxy.exe ({proc.pid}) process. It is not associated with any currently connected game server instances.")
                 proc.terminate()
     
     async def disk_utilisation_healthcheck(self):

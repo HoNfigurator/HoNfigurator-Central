@@ -28,14 +28,11 @@ def get_cowmaster_configuration(hon_data):
         'svr_name':f"{hon_data.get('svr_name')} 0",
         'svr_ip':hon_data.get('svr_ip') if 'svr_ip' in hon_data else MISC.get_public_ip(),
         'svr_port':hon_data.get('svr_starting_gamePort') - 2,
-#'svr_proxyPort':self.get_global_by_key('svr_starting_gamePort')+self.id+10000 - 1,
-#'svr_proxyLocalVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
-#'svr_proxyRemoteVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id+10000 - 1,
         'svr_voicePortStart':hon_data.get('svr_starting_voicePort'),
         'man_enableProxy':hon_data.get('man_enableProxy'),
         'svr_location':hon_data.get('svr_location'),
         # 'svr_enableBotMatch': hon_data.get('svr_enableBotMatch'),
-#'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
+        #'svr_override_affinity': self.get_global_by_key('svr_override_affinity'),
         'svr_broadcast':True,
         'upd_checkForUpdates':False,
         'sv_autosaveReplay':True,
@@ -57,7 +54,6 @@ def get_cowmaster_configuration(hon_data):
         'sv_logcollection_highping_value':100,
         'sv_logcollection_highping_reportclientnum':1,
         'sv_logcollection_highping_interval':120000,
-        #'host_affinity':','.join(MISC.get_server_affinity(self.id, self.gbl['hon_data']['svr_total_per_core'])),
         'man_cowServerPort':hon_data.get('svr_starting_gamePort') - 2,
         'cow_precache':True
     },
@@ -104,10 +100,10 @@ class ConfigManagement():
                 'svr_adminPassword':"",
                 'svr_name':f"{self.get_global_by_key('svr_name')} {self.id} 0",
                 'svr_ip':self.get_global_by_key('svr_ip') if 'svr_ip' in self.gbl['hon_data'] else MISC.get_public_ip(),
-                'svr_port':self.get_global_by_key('svr_starting_gamePort')+self.id - 1,
-                'svr_proxyPort':self.get_global_by_key('svr_starting_gamePort')+self.id+10000 - 1 if self.get_global_by_key('man_enableProxy') else self.get_global_by_key('svr_starting_gamePort')+self.id - 1,
-                'svr_proxyLocalVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
-                'svr_proxyRemoteVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id+10000 - 1 if self.get_global_by_key('man_enableProxy') else self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
+                'svr_port':self.get_global_by_key('svr_starting_gamePort') + self.id - 1,
+                'svr_proxyPort':self.get_global_by_key('svr_starting_gamePort') + self.id + self.gbl['hon_data']['man_proxyPortIncrement'] - 1,
+                'svr_proxyLocalVoicePort':self.get_global_by_key('svr_starting_voicePort') + self.id - 1,
+                'svr_proxyRemoteVoicePort':self.get_global_by_key('svr_starting_voicePort')+self.id + self.gbl['hon_data']['man_proxyPortIncrement'] - 1,
                 'svr_voicePortStart':self.get_global_by_key('svr_starting_voicePort')+self.id - 1,
                 'man_enableProxy':self.get_global_by_key('man_enableProxy'),
                 'svr_location':self.get_global_by_key('svr_location'),
@@ -139,5 +135,23 @@ class ConfigManagement():
             },
             'name' : f'{self.get_global_by_key("svr_name")}-{self.id}'
         })
+
+        if MISC.get_os_platform() == "linux":
+            if not self.gbl['hon_data']['man_enableProxy']:
+                pass
+
+            elif not self.gbl['hon_data']['man_thirdPartyProxy']:
+                LOGGER.warn(f"Proxy configuration enabled but no third party proxy provided. You're either intending to run the proxy on another host, or you've forgotten to set this setting. Supported third party proxies: {MISC.get_supported_thirdparty_proxies()}")
+            
+            elif self.gbl['hon_data']['man_thirdPartyProxy'] not in MISC.get_supported_thirdparty_proxies():
+                LOGGER.warn(f"Unsupported thirdparty proxy provided ({self.gbl['hon_data']['man_thirdPartyProxy']}). Supported third party proxies: {MISC.get_supported_thirdparty_proxies()}")
+
+            else:
+                if self.gbl['hon_data']['man_thirdPartyProxy'] == "quilkin":
+                    self.local['config']['proxy_game_cmdline'] = ["quilkin","--no-admin","proxy","-p",f"{self.local['params']['svr_proxyPort']}","--to",f"127.0.0.1:{self.local['params']['svr_port']}"]
+                    self.local['config']['proxy_voice_cmdline'] = ["quilkin","--no-admin","proxy","-p",f"{self.local['params']['svr_proxyRemoteVoicePort']}","--to",f"127.0.0.1:{self.local['params']['svr_proxyLocalVoicePort']}"]
+
+        if self.get_global_by_key('svr_override_affinity'):
+            self.local['params'].pop('host_affinity', None)  # Remove 'host_affinity' key if svr_override_affinity is True
 
         return self.local

@@ -35,6 +35,7 @@ class Misc:
         self.tag = self.get_github_tag()
         schedule.every(10).minutes.do(self.check_github_tag)
         self.hon_version = None
+        self.supported_thirdparty_proxies = ['quilkin']
 
     def build_commandline_args(self, config_local, config_global, cowmaster=False):
 
@@ -96,7 +97,10 @@ class Misc:
                                     if int(item.split(" ")[-1]) == slave_id:
                                         return [ proc ]
         return []
-
+    
+    def get_supported_thirdparty_proxies(self):
+        return self.supported_thirdparty_proxies
+    
     def get_proc(self, proc_name, slave_id=''):
         if sys.platform == "linux":
             return self.parse_linux_procs(proc_name, slave_id)
