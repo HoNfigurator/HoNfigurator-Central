@@ -478,22 +478,6 @@ class GameServer:
         """
         return b'\x28' + self.id.to_bytes(1, "little") + self.port.to_bytes(2, "little") + b'\x00'
 
-    def set_server_affinity(self):
-        if not self.global_config['hon_data']['svr_override_affinity']:
-            return
-        affinity = []
-        for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
-            affinity.append(int(_))
-        self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
-
-    def set_server_affinity(self):
-        if not self.global_config['hon_data']['svr_override_affinity']:
-            return
-        affinity = []
-        for _ in MISC.get_server_affinity(self.id, self.global_config['hon_data']['svr_total_per_core']):
-            affinity.append(int(_))
-        self._proc_hook.cpu_affinity(affinity)  # Set CPU affinity
-
 
     async def start_server(self, timeout=180):
         self.reset_game_state()
