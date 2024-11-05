@@ -40,7 +40,7 @@ class MatchParser:
             "player_details": self.player_details
         }
         
-        return json.dumps(result, indent=4)  # Pretty-print JSON output
+        return result
 
     def parse_player_ids(self):
         try:
