@@ -65,7 +65,7 @@ If there are any issues, [Contact me](https://discordapp.com/users/1979679899648
     - ``apt install curl sudo screen -y``
 1. Run the installer
     - Mirror 1: ``curl https://honfigurator.app/hon/server/las/installer.sh | sudo bash -``
-    - Mirror 2: ``curl https://kongor.superbjorn.de/scripts/las/installer.sh | sudo bash -``
+    - Mirror 2: ``curl https://las.superbjorn.de/installer.sh | sudo bash -``
 1. Once done, the files will be available here:
     - HoNfigurator (Manager): ``/opt/hon/honfigurator``
     - HoN Server: ``/opt/hon/app/``
