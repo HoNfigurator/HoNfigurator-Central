@@ -33,7 +33,8 @@ class GameServer:
             'botmatch_shutdown': None,
             'proxy_task': None,
             'idle_disconnect_timer': None,
-            'shutdown_self': None
+            'shutdown_self': None,
+            'periodic_restart': None,
         }
         self.manager_event_bus = manager_event_bus
         self.port = port
@@ -54,6 +55,8 @@ class GameServer:
         self.client_connection = None
         self.idle_disconnect_timer = 0
         self.game_in_progress = False
+        # self.max_uptime = random.uniform(1 * 60, 5 * 60) * 1000  # For testing: between 1-5 minutes (in milliseconds)
+        self.max_uptime = random.uniform(24 * 60 * 60, 48 * 60 * 60) * 1000  # Between 24-48 hours (in milliseconds)
         """
         Game State specific variables
         """
@@ -72,6 +75,7 @@ class GameServer:
         # Start the heartbeat task. This sends a status update to MQTT
         coro = self.heartbeat
         self.schedule_task(coro, 'heartbeat', coro_bracket=True)
+        self.schedule_task(self.periodic_restart, 'periodic_restart', coro_bracket=True)
 
     def schedule_task(self, coro, name, coro_bracket = False):
         existing_task = self.tasks.get(name)  # Get existing task if any
@@ -207,6 +211,19 @@ class GameServer:
                 break
             await asyncio.sleep(1)
 
+    async def periodic_restart(self):
+        while not stop_event.is_set():
+            await asyncio.sleep(60)  # Check every 5 seconds
+            
+            current_uptime = self.get_dict_value('uptime')
+            if current_uptime is None:
+                continue
+                
+            if current_uptime >= self.max_uptime:
+                if self.enabled and not self.scheduled_shutdown:
+                    LOGGER.info(f"GameServer #{self.id} - Initiating periodic restart after {current_uptime/1000:.1f} seconds uptime")
+                    await self.schedule_shutdown_server(disable=False)
+
     async def stop_disconnect_timer(self):
         self.stop_task(self.tasks['idle_disconnect_timer'])
         self.idle_disconnect_timer = 0
@@ -227,6 +244,7 @@ class GameServer:
                     coro = self.schedule_shutdown_server(disable=False)
                     self.schedule_task(coro,'shutdown_self')
                     self.game_in_progress = False
+
             elif value == 1:
                 LOGGER.info(f"GameServer #{self.id} -  Game Started: {self.game_state._state['current_match_id']}")
                 if get_mqtt():
