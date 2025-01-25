@@ -395,8 +395,8 @@ class GameServerManager:
                 get_mqtt().publish_json("manager/status", {"event_type":"heartbeat", **self.manager_status()})
     
     def manager_status(self):
-        total_free_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.IDLE.value])
-        total_occupied_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] != GamePhase.IDLE.value])
+        total_free_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['status'] == GameStatus.READY.value])
+        total_occupied_servers = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['status'] == GameStatus.OCCUPIED.value])
         total_servers_in_lobby = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.IN_LOBBY.value])
         total_servers_in_picking_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.PICKING_PHASE.value])
         total_servers_in_banning_phase = len([game_server for game_server in self.game_servers.values() if game_server.game_state._state['game_phase'] == GamePhase.BANNING_PHASE.value])
