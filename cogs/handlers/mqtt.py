@@ -84,7 +84,9 @@ class MQTTHandler:
             'chatsv_state': self.chatsv_state,
             'mastersv_state': self.mastersv_state,
             'branch_version': get_misc().get_github_tag(),
-            'hon_user': self.global_config['hon_data']['svr_login']
+            'hon_user': self.global_config['hon_data']['svr_login'],
+            'last_commit_date': get_misc().get_git_commit_date(),
+            'svr_max_servers': get_misc().get_total_allowed_servers(self.global_config['hon_data']['svr_total_per_core'])
         }
         if get_discord_username():
             metadata.update({'discord_id':get_discord_username()})
