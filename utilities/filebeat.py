@@ -575,6 +575,11 @@ async def configure_filebeat(silent=False,test=False):
             filebeat_inputs['diagnostic_logs']['charset'] = 'BINARY'
         if 'honfigurator_logs' in filebeat_inputs:
             filebeat_inputs['honfigurator_logs']['encoding'] = 'utf-8'
+            filebeat_inputs['honfigurator_logs']['close_inactive'] = '5m'
+        
+        filebeat_inputs['slave_logs']['close_inactive'] = '5m'
+        filebeat_inputs['match_logs']['close_inactive'] = '5m'
+        filebeat_inputs['diagnostic_logs']['close_inactive'] = '5m'
         
         if global_config and not global_config['application_data']['filebeat']['send_diagnostics_data']:
             del filebeat_inputs['diagnostic_logs']
@@ -587,6 +592,12 @@ async def configure_filebeat(silent=False,test=False):
             del filebeat_inputs['proxy_logs']
 
         filebeat_config = {
+            'max_procs': 1,  # Limit Filebeat to 1 CPU core
+            'queue.mem': {
+                'events': 8192,  # Increase event buffer size
+                'flush.min_events': 4096,  # Send larger batches
+                'flush.timeout': '5s'  # Reduce CPU spikes by flushing less often
+            },
             'filebeat.inputs': list(filebeat_inputs.values()),
             'filebeat.config.modules': {
                 'path': '${path.config}/modules.d/*.yml',
@@ -596,7 +607,11 @@ async def configure_filebeat(silent=False,test=False):
                 'index.number_of_shards': '1'
             },
             'output.logstash': {
-                'hosts': ['elastic-node1.honfigurator.app:5044','elastic-node2.honfigurator.app:5044','elastic-node3.honfigurator.app:5044'],
+                'hosts': [
+                    'elastic-node1.honfigurator.app:5044',
+                    'elastic-node2.honfigurator.app:5044',
+                    'elastic-node3.honfigurator.app:5044'
+                ],
                 'loadbalance': True,
                 'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
                 'ssl.certificate': str(Path(destination_folder) / "client.crt"),
