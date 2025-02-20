@@ -610,7 +610,7 @@ async def configure_filebeat(silent=False,test=False):
                 'hosts': [
                     'elastic-node1.honfigurator.app:5044',
                     'elastic-node2.honfigurator.app:5044',
-                    'elastic-node3.honfigurator.app:5044'
+                    'elastic-node3.honfigurator.app:5045'
                 ],
                 'loadbalance': True,
                 'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
@@ -621,7 +621,18 @@ async def configure_filebeat(silent=False,test=False):
             'processors': [
                 {'add_host_metadata': {'when.not.contains.tags': 'forwarded'}},
                 {'add_locale': None}
-            ]
+            ],
+            'monitoring': {
+                'enabled': True,
+                'elasticsearch': {
+                    'hosts': ['https://elastic.monitoring.honfigurator.app:9200'],  # Monitoring cluster
+                    'ssl.certificate_authorities': str(Path(destination_folder) / "honfigurator-chain.pem"),
+                    'ssl.certificate': str(Path(destination_folder) / "client.crt"),
+                    'ssl.key': str(Path(destination_folder) / "client.key"),
+                    'username': '',
+                    'password': '' 
+                }
+            }
         }
 
         yaml_config = yaml.dump(filebeat_config)
