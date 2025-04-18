@@ -216,18 +216,28 @@ class GameServerManager:
         """
         LOGGER.info("Restarting AutoPing listener...")
         
-        # Stop the existing listener if it exists
-        if hasattr(self, 'auto_ping_listener') and self.auto_ping_listener:
+        # Stop the existing listener
+        if hasattr(self, 'auto_ping_listener'):
             self.auto_ping_listener.stop_listener()
+        
+        # Give OS time to fully release the port
+        await asyncio.sleep(1)
         
         # Create a new AutoPing listener
         self.auto_ping_listener = AutoPingListener(self.global_config, self.global_config['hon_data']['autoping_responder_port'])
         
         # Start the listener
         success = self.auto_ping_listener.start_listener()
-        if success and get_mqtt():
-            get_mqtt().publish_json("manager/admin", {"event_type":"autoping_restarted"})
-        LOGGER.info("AutoPing listener successfully restarted")
+        
+        if success:
+            LOGGER.info("AutoPing listener successfully restarted")
+            if get_mqtt():
+                get_mqtt().publish_json("manager/admin", {"event_type":"autoping_restarted"})
+        else:
+            LOGGER.error("Failed to restart AutoPing listener")
+            # Try again after a longer delay
+            await asyncio.sleep(5)
+            await self.event_bus.emit('restart_autoping_listener')
             
     async def notify_discord_admin(self, **kwargs):
         url = 'https://management.honfigurator.app:3001/api-ui/sendDiscordMessage'
