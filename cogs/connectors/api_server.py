@@ -884,7 +884,7 @@ def check_renew_self_signed_certificate(ssl_certfile, ssl_keyfile, days_before_e
         time_remaining = cert.not_valid_after - now
 
         if time_remaining < timedelta(days=days_before_expiration):
-            asyncio.run(create_self_signed_certificate(ssl_certfile, ssl_keyfile))
+            create_self_signed_certificate(ssl_certfile, ssl_keyfile)
             LOGGER.info("Self-signed certificate has been renewed.")
         else:
             LOGGER.debug("Self-signed certificate is still valid. No renewal needed.")
