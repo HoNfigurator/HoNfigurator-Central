@@ -87,6 +87,7 @@ class GameServerManager:
         self.event_bus.subscribe('resubmit_match_stats_to_masterserver', self.resubmit_match_stats_to_masterserver)
         self.event_bus.subscribe('update_server_start_semaphore', self.update_server_start_semaphore)
         self.event_bus.subscribe('notify_discord_admin', self.notify_discord_admin)
+        self.event_bus.subscribe('restart_autoping_listener', self.restart_autoping_listener)
         self.tasks = {
             'cli_handler':None,
             'health_checks':None,
@@ -139,7 +140,15 @@ class GameServerManager:
         self.chat_server_connected = None
         self.master_server_connected = None
         self.master_server_handler = MasterServerHandler(master_server=self.global_config['hon_data']['svr_masterServer'], patch_server=self.global_config['hon_data']['svr_patchServer'], version=self.global_config['hon_data']['svr_version'], architecture=f'{self.global_config["hon_data"]["architecture"]}', event_bus=self.event_bus)
-        self.health_check_manager = HealthCheckManager(self.game_servers, self.event_bus, self.check_upstream_patch, self.resubmit_match_stats_to_masterserver, self.notify_discord_admin, self.global_config)
+        self.health_check_manager = HealthCheckManager(
+            self.game_servers, 
+            self.event_bus, 
+            self.check_upstream_patch, 
+            self.resubmit_match_stats_to_masterserver, 
+            self.notify_discord_admin, 
+            self.global_config,
+            self.auto_ping_listener
+        )
 
         coro = self.health_check_manager.run_health_checks()
         self.schedule_task(coro, 'health_checks')
@@ -200,6 +209,35 @@ class GameServerManager:
         task.add_done_callback(lambda t: setattr(t, 'end_time', datetime.now()))
         self.tasks[name] = task
         return task
+    
+    async def restart_autoping_listener(self):
+        """
+        Restarts the AutoPing listener if it's not responsive.
+        """
+        LOGGER.info("Restarting AutoPing listener...")
+        
+        # Stop the existing listener
+        if hasattr(self, 'auto_ping_listener'):
+            self.auto_ping_listener.stop_listener()
+        
+        # Give OS time to fully release the port
+        await asyncio.sleep(1)
+        
+        # Create a new AutoPing listener
+        self.auto_ping_listener = AutoPingListener(self.global_config, self.global_config['hon_data']['autoping_responder_port'])
+        
+        # Start the listener
+        success = self.auto_ping_listener.start_listener()
+        
+        if success:
+            LOGGER.info("AutoPing listener successfully restarted")
+            if get_mqtt():
+                get_mqtt().publish_json("manager/admin", {"event_type":"autoping_restarted"})
+        else:
+            LOGGER.error("Failed to restart AutoPing listener")
+            # Try again after a longer delay
+            await asyncio.sleep(5)
+            await self.event_bus.emit('restart_autoping_listener')
             
     async def notify_discord_admin(self, **kwargs):
         url = 'https://management.honfigurator.app:3001/api-ui/sendDiscordMessage'
@@ -457,8 +495,9 @@ class GameServerManager:
 
     async def start_autoping_listener(self):
         LOGGER.debug("Starting AutoPingListener...")
-        await self.auto_ping_listener.start_listener()
-        if get_mqtt():
+        # This now returns immediately since the actual work is in a separate thread
+        success = self.auto_ping_listener.start_listener()
+        if success and get_mqtt():
             get_mqtt().publish_json("manager/admin", {"event_type":"autoping_started"})
 
     async def start_api_server(self):

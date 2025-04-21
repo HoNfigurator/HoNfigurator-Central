@@ -8,6 +8,7 @@ import traceback
 import os
 import shutil
 import re
+import socket
 from datetime import datetime
 
 # Initialize loggers and miscellaneous utilities
@@ -20,22 +21,16 @@ class HealthCheckManager:
     IP changes, and more. It schedules and manages various asynchronous tasks to monitor and maintain server health.
     """
 
-    def __init__(self, game_servers, event_bus, callback_check_upstream_patch, callback_resubmit_match_stats, callback_notify_discord_admin, global_config):
-        """
-        Initializes the HealthCheckManager.
-
-        :param game_servers: A collection of game server instances to monitor.
-        :param event_bus: Event bus for inter-process or inter-thread communication.
-        :param callback_check_upstream_patch: Callback function to check for game updates.
-        :param callback_resubmit_match_stats: Callback function to handle game statistics.
-        :param global_config: Global configuration settings.
-        """
+    def __init__(self, game_servers, event_bus, callback_check_upstream_patch, 
+             callback_resubmit_match_stats, callback_notify_discord_admin, 
+             global_config, auto_ping_listener):
         self.game_servers = game_servers
         self.event_bus = event_bus
         self.check_upstream_patch = callback_check_upstream_patch
         self.resubmit_match_stats = callback_resubmit_match_stats
         self.notify_discord_admin = callback_notify_discord_admin
         self.global_config = global_config
+        self.auto_ping_listener = auto_ping_listener  # Store a reference, not inside config
         self.patching = False
         self.tasks = {
             'hon_update_check': None,
@@ -261,7 +256,32 @@ class HealthCheckManager:
                 await self.event_bus.emit('update')
             except Exception:
                 LOGGER.error(traceback.format_exc())
-    
+
+    async def autoping_listener_healthcheck(self):
+        """
+        Periodically checks if the AutoPing UDP listener is responsive.
+        Uses the listener's built-in health check capability.
+        """
+        while not stop_event.is_set():
+            for _ in range(self.global_config['application_data']['timers']['manager'].get('autoping_listener_healthcheck', 60)):
+                if stop_event.is_set():
+                    return
+                await asyncio.sleep(1)
+            
+            try:
+                if not self.auto_ping_listener:
+                    LOGGER.warn("AutoPing listener object not found")
+                    continue
+                    
+                if not self.auto_ping_listener.check_health():
+                    LOGGER.warn("AutoPing listener health check failed, triggering restart...")
+                    await self.event_bus.emit('restart_autoping_listener')
+                else:
+                    LOGGER.debug("AutoPing listener is healthy")
+            except Exception as e:
+                LOGGER.error(f"Error during AutoPing listener health check: {e}")
+                LOGGER.error(traceback.format_exc())
+
     async def poll_for_game_stats(self):
         """
         Regularly polls the game statistics and processes them. Handles and resubmits match stats to the master server.
@@ -303,6 +323,7 @@ class HealthCheckManager:
         self.tasks['filebeat_verification'] = self.schedule_task(self.filebeat_verification(), 'filebeat_verification')
         self.tasks['general_healthcheck'] = self.schedule_task(self.general_healthcheck(), 'general_healthcheck')
         self.tasks['disk_utilisation_healthcheck'] = self.schedule_task(self.disk_utilisation_healthcheck(), 'disk_utilisation_healthcheck')
+        self.tasks['autoping_listener_healthcheck'] = self.schedule_task(self.autoping_listener_healthcheck(), 'autoping_listener_healthcheck')
 
         while not stop_event.is_set():
             for task_name, task in self.tasks.items():
@@ -327,6 +348,8 @@ class HealthCheckManager:
                         self.tasks[task_name] = self.schedule_task(self.general_healthcheck(), task_name)
                     elif task_name == 'disk_utilisation_healthcheck':
                         self.tasks[task_name] = self.schedule_task(self.disk_utilisation_healthcheck(), task_name)
+                    elif task_name == 'autoping_listener_healthcheck':
+                        self.tasks[task_name] = self.schedule_task(self.autoping_listener_healthcheck(), task_name)
 
             # Sleep for a bit before checking tasks again
             for _ in range(10):
