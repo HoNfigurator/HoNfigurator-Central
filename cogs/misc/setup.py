@@ -126,7 +126,8 @@ class SetupEnvironment:
                         "disk_utilisation_healthcheck": 3600,
                         "check_for_honfigurator_update": 60,
                         "resubmit_match_stats": 20,
-                        "filebeat_verification": 10800
+                        "filebeat_verification": 10800,
+                        "autoping_listener_healthcheck": 300
                     },
                     "replay_cleaner": {
                         "active": False,
